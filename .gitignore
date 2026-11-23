@@ -12,6 +12,8 @@ devenv.local.yaml
 # worker
 node_modules
 .wrangler
+# built from worker/dashboard by `npm run build`
+worker/src/dashboard.html
 
 # cli
 cli/dist

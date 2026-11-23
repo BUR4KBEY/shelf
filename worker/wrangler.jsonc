@@ -2,6 +2,9 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "shelf",
   "main": "src/index.ts",
+  // The dashboard is a React app built into src/dashboard.html, which the Worker imports as text.
+  // watch_dir keeps `wrangler dev` from rebuilding on its own output in src/.
+  "build": { "command": "npm run build", "watch_dir": "dashboard" },
   "compatibility_date": "2026-11-20",
   // No IDs: wrangler (and the Deploy to Cloudflare button) creates the bucket and database on first deploy.
   "r2_buckets": [{ "binding": "BUCKET" }],
