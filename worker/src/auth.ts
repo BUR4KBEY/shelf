@@ -13,7 +13,9 @@ export async function apiKey(req: Request, env: Env, ctx: ExecutionContext): Pro
 }
 
 const enc = new TextEncoder();
-const ITERATIONS = 100_000; // workerd's maximum for PBKDF2
+// ≈2 ms of CPU, inside the Workers Free plan's 10 ms per request (100k took ≈11 ms). The per-IP rate limit
+// is the real brute-force defence. Each stored hash records its own count, so changing this keeps old passwords working.
+const ITERATIONS = 20_000;
 
 async function pbkdf2(password: string, salt: Uint8Array, iterations: number): Promise<ArrayBuffer> {
   const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
