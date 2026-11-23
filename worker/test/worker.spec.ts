@@ -284,7 +284,7 @@ describe("dashboard", () => {
   it("serves the page with a per-request script nonce", async () => {
     const res = await dash("/dashboard");
     const nonce = res.headers.get("content-security-policy")!.match(/'nonce-([^']+)'/)![1];
-    expect(await res.text()).toContain(`<script nonce="${nonce}"`);
+    expect(await res.text()).toMatch(new RegExp(`<script[^>]*\\snonce="${nonce}"`));
     expect((await dash("/dashboard/api/me").then((r) => r.json())) as object).toEqual({ email: "me@example.com" });
   });
 

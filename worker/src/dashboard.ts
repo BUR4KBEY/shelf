@@ -7,7 +7,9 @@ export function dashboardPage(): Response {
   return new Response(page.replaceAll("__NONCE__", nonce), {
     headers: {
       "content-type": "text/html; charset=utf-8",
-      "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      // Scripts need the nonce. Styles allow inline because shadcn/Radix inject <style> tags at runtime;
+      // React escapes all user data, so there is no markup injection to abuse it.
+      "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; font-src data:; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
       "cache-control": "no-store",
       "referrer-policy": "no-referrer",
       "x-robots-tag": "noindex",
