@@ -2,7 +2,7 @@
 
 Publish a file or folder to your own Cloudflare account and get a link you can share. A minimal, self-hosted take on [postplan](https://www.npmjs.com/package/postplan).
 
-> Work in progress. The Worker, HTTP API, Go CLI and agent skills work. The dashboard API works, but its page is a placeholder for now.
+> Early but working: Worker, HTTP API, dashboard, Go CLI and agent skills.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/BUR4KBEY/shelf/tree/main/worker)
 
@@ -24,9 +24,19 @@ Then, in the Cloudflare dashboard:
 
 `/view/*` and `/api/*` stay public. Readers need the link (and the password if you set one), and the API needs a key.
 
-## Create an API key
+## Dashboard
 
-Until the dashboard page lands, insert a key's hash with wrangler (use `--local` instead of `--remote` for `npm run dev`):
+`https://your-domain/dashboard` (dark only, React + shadcn/ui):
+
+- Docs list with search and favorites. Upload by dropping a file or folder anywhere on the page.
+- A page per doc for title, slug, password, expiry, new versions, version history and delete.
+- Keys: mint a key for each machine or agent (shown once), and revoke it.
+
+The page source is in `worker/dashboard/`. It is built into one HTML file (`worker/src/dashboard.html`, not committed) that the Worker serves. `wrangler dev`, `wrangler deploy` and `npm test` build it first.
+
+## First API key
+
+Mint keys in the dashboard under **Keys**. Without Access set up yet, you can insert one with wrangler instead (use `--local` instead of `--remote` for `npm run dev`):
 
 ```sh
 KEY="sk_$(openssl rand -hex 32)"
@@ -116,7 +126,7 @@ The dev shell is managed with [devenv](https://devenv.sh). It provides Node 22 a
 
 ```sh
 devenv shell -- sh -c 'cd worker && npm install && npm run dev'   # :8787, dashboard signed in as you@localhost
-devenv shell -- sh -c 'cd worker && npm test && npm run typecheck'
+devenv shell -- sh -c 'cd worker && npm test && npm run typecheck && npm run typecheck:dashboard'
 devenv shell -- sh -c 'cd cli && go test ./...'
 ```
 
