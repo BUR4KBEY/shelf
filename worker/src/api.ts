@@ -100,7 +100,7 @@ interface PushBody extends Settings {
  * if any are missing, nothing is written and `{missing}` lists them.
  * Target doc: `ref` (id or slug), else the doc that owns `slug`, else a new doc.
  */
-export async function push(req: Request, env: Env, keyId: string): Promise<Response> {
+export async function push(req: Request, env: Env, keyId: string | null): Promise<Response> {
   const body = (await req.json().catch(() => null)) as PushBody | null;
   if (!body || !Array.isArray(body.files) || body.files.length === 0 || body.files.length > MAX_FILES) {
     return json({ error: `files: 1 to ${MAX_FILES} entries required` }, 400);

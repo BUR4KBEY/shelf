@@ -1,7 +1,9 @@
 import { env, exports } from "cloudflare:workers";
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { sha256Hex } from "../src/util";
 import { sweep } from "../src/api";
+import worker from "../src";
 
 const BASE = "https://shelf.test";
 const AUTH = { authorization: "Bearer sk_test" };
@@ -260,5 +262,57 @@ describe("docs api", () => {
     const detail = (await (await api(`/api/docs/${fav.id}`)).json()) as { favorite: boolean; versions: { n: number; message: string | null; keyName: string }[] };
     expect(detail.favorite).toBe(true);
     expect(detail.versions.map((v) => [v.n, v.message, v.keyName])).toEqual([[2, "second", "test"], [1, null, "test"]]);
+  });
+});
+
+describe("dashboard", () => {
+  /** Calls the worker as if Cloudflare Access had signed `email` in. */
+  async function dash(path: string, init: RequestInit = {}) {
+    const ctx = createExecutionContext();
+    Object.defineProperty(ctx, "access", { value: { aud: "test", getIdentity: async () => ({ email: "me@example.com" }) } });
+    const res = await worker.fetch(new Request(`${BASE}${path}`, { redirect: "manual", ...init }) as Parameters<typeof worker.fetch>[0], env, ctx);
+    await waitOnExecutionContext(ctx);
+    return res;
+  }
+  const sameOrigin = { origin: BASE, "content-type": "application/json" };
+
+  it("refuses requests that did not pass Cloudflare Access", async () => {
+    expect((await get("/dashboard")).status).toBe(403);
+    expect((await get("/dashboard/api/docs")).status).toBe(403);
+  });
+
+  it("serves the page with a per-request script nonce", async () => {
+    const res = await dash("/dashboard");
+    const nonce = res.headers.get("content-security-policy")!.match(/'nonce-([^']+)'/)![1];
+    expect(await res.text()).toContain(`<script nonce="${nonce}"`);
+    expect((await dash("/dashboard/api/me").then((r) => r.json())) as object).toEqual({ email: "me@example.com" });
+  });
+
+  it("refuses cross-origin writes, including from sandboxed docs", async () => {
+    for (const origin of ["https://evil.example", "null"]) {
+      const res = await dash("/dashboard/api/keys", { method: "POST", headers: { origin }, body: JSON.stringify({ name: "x" }) });
+      expect(res.status).toBe(403);
+    }
+  });
+
+  it("mints keys that work until revoked", async () => {
+    const { id, key } = (await (await dash("/dashboard/api/keys", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "laptop" }) })).json()) as { id: string; key: string };
+    const withKey = () => exports.default.fetch(`${BASE}/api/docs`, { headers: { authorization: `Bearer ${key}` } });
+    expect((await withKey()).status).toBe(200);
+    const keys = (await (await dash("/dashboard/api/keys")).json()) as { id: string; name: string }[];
+    expect(keys.find((k) => k.id === id)?.name).toBe("laptop");
+    expect((await dash(`/dashboard/api/keys/${id}/revoke`, { method: "POST", headers: sameOrigin })).status).toBe(204);
+    expect((await withKey()).status).toBe(401);
+  });
+
+  it("uploads through the dashboard api without an api key", async () => {
+    const sha = await sha256Hex("from browser");
+    const body = JSON.stringify({ files: [{ path: "b.html", sha256: sha }] });
+    // A Request built in-process has no Content-Length header; browsers always send one.
+    const put = await dash(`/dashboard/api/blobs/${sha}`, { method: "PUT", headers: { origin: BASE, "content-length": "12" }, body: "from browser" });
+    expect(put.status).toBe(204);
+    const doc = (await (await dash("/dashboard/api/push", { method: "POST", headers: sameOrigin, body })).json()) as { id: string };
+    const detail = (await (await dash(`/dashboard/api/docs/${doc.id}`)).json()) as { versions: { keyName: string | null }[] };
+    expect(detail.versions[0].keyName).toBeNull();
   });
 });

@@ -1,11 +1,26 @@
 import { deleteDoc, getDoc, listDocs, patchDoc, push, putBlob, sweep } from "./api";
 import { apiKey } from "./auth";
+import { createKey, dashboardPage, listKeys, revokeKey } from "./dashboard";
 import { json } from "./util";
 import { unlock, view } from "./view";
 
+/** Doc routes shared by /api (API key) and /dashboard/api (Cloudflare Access). `keyId` is null for the dashboard. */
+async function docRoutes(req: Request, env: Env, path: string, keyId: string | null): Promise<Response | undefined> {
+  let m: RegExpMatchArray | null;
+  if (req.method === "POST" && path === "/api/push") return push(req, env, keyId);
+  if (req.method === "PUT" && (m = path.match(/^\/api\/blobs\/([0-9a-f]{64})$/))) return putBlob(req, env, m[1]);
+  if (req.method === "GET" && path === "/api/docs") return listDocs(req, env);
+  if ((m = path.match(/^\/api\/docs\/([A-Za-z0-9-]{1,64})$/))) {
+    if (req.method === "GET") return getDoc(req, env, m[1]);
+    if (req.method === "PATCH") return patchDoc(req, env, m[1]);
+    if (req.method === "DELETE") return deleteDoc(env, m[1]);
+  }
+}
+
 export default {
   async fetch(req, env, ctx): Promise<Response> {
-    const path = new URL(req.url).pathname;
+    const url = new URL(req.url);
+    const path = url.pathname;
     let m: RegExpMatchArray | null;
 
     if ((m = path.match(/^\/view\/([A-Za-z0-9-]{1,64})(?:@(\d{1,9}))?(\/.*)?$/))) {
@@ -17,13 +32,24 @@ export default {
     if (path.startsWith("/api/")) {
       const keyId = await apiKey(req, env, ctx);
       if (!keyId) return json({ error: "unauthorized" }, 401);
-      if (req.method === "POST" && path === "/api/push") return push(req, env, keyId);
-      if (req.method === "PUT" && (m = path.match(/^\/api\/blobs\/([0-9a-f]{64})$/))) return putBlob(req, env, m[1]);
-      if (req.method === "GET" && path === "/api/docs") return listDocs(req, env);
-      if ((m = path.match(/^\/api\/docs\/([A-Za-z0-9-]{1,64})$/))) {
-        if (req.method === "GET") return getDoc(req, env, m[1]);
-        if (req.method === "PATCH") return patchDoc(req, env, m[1]);
-        if (req.method === "DELETE") return deleteDoc(env, m[1]);
+      return (await docRoutes(req, env, path, keyId)) ?? json({ error: "not found" }, 404);
+    }
+
+    if (path === "/") return Response.redirect(`${url.origin}/dashboard`, 302);
+
+    if (path === "/dashboard" || path.startsWith("/dashboard/")) {
+      // Set only when Cloudflare Access authenticated this request, so workers.dev and preview URLs that skip Access get nothing.
+      if (!ctx.access) return new Response("This page requires Cloudflare Access. See the README.", { status: 403 });
+      if (path === "/dashboard" && req.method === "GET") return dashboardPage();
+      if (path.startsWith("/dashboard/api/")) {
+        // CSRF: browsers always send Origin on non-GET requests, and a sandboxed doc sends "null".
+        if (req.method !== "GET" && req.headers.get("origin") !== url.origin) return json({ error: "cross-origin request refused" }, 403);
+        const sub = path.slice("/dashboard".length);
+        if (req.method === "GET" && sub === "/api/me") return json({ email: (await ctx.access.getIdentity())?.email ?? null });
+        if (req.method === "GET" && sub === "/api/keys") return listKeys(env);
+        if (req.method === "POST" && sub === "/api/keys") return createKey(req, env);
+        if (req.method === "POST" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})\/revoke$/))) return revokeKey(env, m[1]);
+        return (await docRoutes(req, env, sub, null)) ?? json({ error: "not found" }, 404);
       }
     }
 
