@@ -2,30 +2,31 @@
 
 Publish a file or folder to your own Cloudflare account and get a link you can share. A minimal, self-hosted take on [postplan](https://www.npmjs.com/package/postplan).
 
-> Work in progress. The Worker and HTTP API are done. The dashboard, Go CLI and agent skills are next.
+> Work in progress. The Worker, HTTP API, Go CLI and agent skills work. The dashboard API works, but its page is a placeholder for now.
 
-## Run locally
-
-The dev shell is managed with [devenv](https://devenv.sh). It provides Node 22.
-
-```sh
-cd worker
-devenv shell -- npm install
-devenv shell -- npm run dev      # applies D1 migrations, serves on :8787
-devenv shell -- npm test
-```
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/BUR4KBEY/shelf/tree/main/worker)
 
 ## Deploy
 
+Either click the button above, which creates the Worker, R2 bucket and D1 database in your account, or deploy from a clone:
+
 ```sh
 cd worker
+npm install
 npx wrangler login
-npm run deploy                   # creates the R2 bucket and D1 database on first deploy
+npm run deploy      # deploys (creating the bucket and database on first run), then applies D1 migrations
 ```
+
+Then, in the Cloudflare dashboard:
+
+1. **Add a custom domain** to the `shelf` Worker (Workers & Pages → shelf → Settings → Domains & Routes).
+2. **Protect the dashboard with Cloudflare Access.** Zero Trust → Access → Applications → add a self-hosted app for `your-domain/dashboard`. Its policy should allow only your own email. The Worker refuses `/dashboard` unless Access signed the request in, so `workers.dev` URLs can't reach it.
+
+`/view/*` and `/api/*` stay public. Readers need the link (and the password if you set one), and the API needs a key.
 
 ## Create an API key
 
-Until the dashboard exists, insert a key's hash by hand (`--local` instead of `--remote` for dev):
+Until the dashboard page lands, insert a key's hash with wrangler (use `--local` instead of `--remote` for `npm run dev`):
 
 ```sh
 KEY="sk_$(openssl rand -hex 32)"
@@ -34,6 +35,27 @@ npx wrangler d1 execute DB --remote --command \
   "INSERT INTO api_keys (id, name, hash, created_at) VALUES ('k_$(openssl rand -hex 6)', 'bootstrap', '$HASH', unixepoch() * 1000)"
 echo "$KEY"   # shown once; only the hash is stored
 ```
+
+## CLI
+
+Download a binary from [Releases](https://github.com/BUR4KBEY/shelf/releases), or `go install github.com/BUR4KBEY/shelf/cli/cmd/shelf@latest`.
+
+```sh
+shelf login                                  # server URL + API key, saved to ~/.config/shelf (0600)
+shelf push plan.html                         # prints the link; pushing the same path again adds a version
+shelf push ./report/                         # a folder with an index.html
+echo "$PW" | shelf push plan.md --slug q3-plan --password-stdin --expires 7d
+shelf ls                                     # ★ favorites first, 🔒 locked
+shelf set q3-plan --fav --expires never
+shelf get https://your-domain/view/q3-plan --password-stdin
+shelf rm q3-plan
+```
+
+`SHELF_URL` and `SHELF_KEY` override the saved login. `--json` on `push`, `ls` and `set` prints machine-readable output.
+
+## Agent skills
+
+[`skills/shelf-publish`](skills/shelf-publish/SKILL.md) lets an agent write a page and publish it with the CLI. [`skills/shelf-read`](skills/shelf-read/SKILL.md) lets it read a shelf link someone gives it. Copy them into your agent's skills directory (for example `~/.claude/skills/`).
 
 ## Publish with curl
 
@@ -87,6 +109,16 @@ curl -X DELETE -H "Authorization: Bearer $KEY" $U/api/docs/<ref>
 - PDFs, images, audio, video, text, CSS and JS are served inline. Any other type downloads.
 - Range requests work, so video seeking works.
 - Password docs show a password form. The unlock lasts 30 days, until the password changes. Agents send `X-Doc-Password: <password>` instead. Password attempts are limited to 10 per minute per IP and doc.
+
+## Develop
+
+The dev shell is managed with [devenv](https://devenv.sh). It provides Node 22 and Go.
+
+```sh
+devenv shell -- sh -c 'cd worker && npm install && npm run dev'   # :8787, dashboard signed in as you@localhost
+devenv shell -- sh -c 'cd worker && npm test && npm run typecheck'
+devenv shell -- sh -c 'cd cli && go test ./...'
+```
 
 ## License
 
