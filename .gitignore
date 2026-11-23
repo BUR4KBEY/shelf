@@ -12,3 +12,6 @@ devenv.local.yaml
 # worker
 node_modules
 .wrangler
+
+# cli
+cli/dist

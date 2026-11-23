@@ -5,4 +5,5 @@
 
   languages.javascript.enable = true;
   languages.javascript.package = pkgs.nodejs_22;
+  languages.go.enable = true;
 }
