@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "shelf",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-20",
+  // No IDs: wrangler (and the Deploy to Cloudflare button) creates the bucket and database on first deploy.
+  "r2_buckets": [{ "binding": "BUCKET" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "shelf" }]
+}
