@@ -1,6 +1,7 @@
-import { exports } from "cloudflare:workers";
+import { env, exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { sha256Hex } from "../src/util";
+import { sweep } from "../src/api";
 
 const BASE = "https://shelf.test";
 const AUTH = { authorization: "Bearer sk_test" };
@@ -21,7 +22,7 @@ async function publish(files: Record<string, string>, extra: object = {}) {
   }
   const res = await pushManifest({ ...extra, files: manifest });
   expect(res.status).toBe(200);
-  return (await res.json()) as { id: string; version: number; url: string };
+  return (await res.json()) as { id: string; slug: string | null; version: number; url: string; versionUrl: string; created: boolean };
 }
 
 describe("api auth", () => {
@@ -103,5 +104,161 @@ describe("view", () => {
 
   it("404s on unknown docs", async () => {
     expect((await exports.default.fetch(`${BASE}/view/doesnotexist`)).status).toBe(404);
+  });
+});
+
+// Redirects are part of what we test, so never follow them.
+const get = (path: string, init: RequestInit = {}) =>
+  exports.default.fetch(path.startsWith("http") ? path : `${BASE}${path}`, { redirect: "manual", ...init });
+
+describe("versions", () => {
+  it("does not create a version for identical content", async () => {
+    const a = await publish({ "same.html": "same" });
+    const b = await publish({ "same.html": "same" }, { ref: a.id });
+    expect(b).toMatchObject({ id: a.id, version: 1, created: false });
+  });
+
+  it("pins old versions with @n", async () => {
+    const v1 = await publish({ "pin.html": "first" });
+    await publish({ "pin.html": "second" }, { ref: v1.id });
+    const res = await get(v1.versionUrl);
+    expect(await res.text()).toBe("first");
+    expect(res.headers.get("cache-control")).toContain("immutable");
+    expect((await get(`/view/${v1.id}@9`)).status).toBe(404);
+  });
+});
+
+describe("folders", () => {
+  const site = {
+    "index.html": "home",
+    "style.css": "body{}",
+    "guide.html": "guide",
+    "docs/index.html": "docs home",
+    "img/a b.png": "png",
+  };
+
+  it("serves under a trailing slash with clean urls", async () => {
+    const { id } = await publish(site);
+    const root = await get(`/view/${id}`);
+    expect(root.status).toBe(301);
+    expect(root.headers.get("location")).toBe(`${BASE}/view/${id}/`);
+    expect(await (await get(`/view/${id}/`)).text()).toBe("home");
+    expect(await (await get(`/view/${id}/guide`)).text()).toBe("guide");
+    expect(await (await get(`/view/${id}/guide.html`)).text()).toBe("guide");
+    expect((await get(`/view/${id}/docs`)).headers.get("location")).toBe(`${BASE}/view/${id}/docs/`);
+    expect(await (await get(`/view/${id}/docs/`)).text()).toBe("docs home");
+    expect((await get(`/view/${id}/style.css`)).headers.get("content-type")).toBe("text/css; charset=utf-8");
+    expect(await (await get(`/view/${id}/img/a%20b.png`)).text()).toBe("png");
+    expect((await get(`/view/${id}/nope`)).status).toBe(404);
+  });
+
+  it("requires an index.html", async () => {
+    const files = [{ path: "a.html", sha256: await sha256Hex("a") }, { path: "b.html", sha256: await sha256Hex("b") }];
+    expect((await pushManifest({ files })).status).toBe(400);
+  });
+});
+
+describe("slugs and passwords", () => {
+  it("refuses a slug without a password", async () => {
+    const res = await pushManifest({ slug: "no-pass", files: [{ path: "a", sha256: await sha256Hex("a") }] });
+    expect(res.status).toBe(400);
+  });
+
+  it("publishes at the slug, and the same slug updates the same doc", async () => {
+    const a = await publish({ "s.html": "one" }, { slug: "my-plan", password: "hunter22" });
+    expect(a.url).toBe(`${BASE}/view/my-plan`);
+    const b = await publish({ "s.html": "two" }, { slug: "my-plan" });
+    expect(b).toMatchObject({ id: a.id, version: 2 });
+    const taken = await pushManifest({ slug: "my-plan", password: "hunter22", ref: (await publish({ "o.html": "o" })).id, files: [{ path: "o.html", sha256: await sha256Hex("o") }] });
+    expect(taken.status).toBe(409);
+  });
+
+  it("refuses removing the password while a slug is set", async () => {
+    await publish({ "k.html": "k" }, { slug: "keep-pass", password: "hunter22" });
+    expect((await api("/api/docs/keep-pass", { method: "PATCH", body: JSON.stringify({ password: null }) })).status).toBe(400);
+  });
+
+  it("locks a doc until the password is given by header or form", async () => {
+    const { id } = await publish({ "lock.html": "secret" }, { password: "hunter22" });
+    const locked = await get(`/view/${id}`);
+    expect(locked.status).toBe(401);
+    expect(await locked.text()).not.toContain("secret");
+
+    expect((await get(`/view/${id}`, { headers: { "x-doc-password": "wrongpass" } })).status).toBe(401);
+    const ok = await get(`/view/${id}`, { headers: { "x-doc-password": "hunter22" } });
+    expect(await ok.text()).toBe("secret");
+    expect(ok.headers.get("cache-control")).toBe("private, no-store");
+
+    const form = new FormData();
+    form.set("password", "hunter22");
+    form.set("next", "https://evil.example/");
+    const unlocked = await get(`/view/${id}/unlock`, { method: "POST", body: form });
+    expect(unlocked.status).toBe(303);
+    expect(unlocked.headers.get("location")).toBe(`/view/${id}`);
+    const cookie = unlocked.headers.get("set-cookie")!.split(";")[0];
+    expect(await (await get(`/view/${id}@1`, { headers: { cookie } })).text()).toBe("secret");
+
+    // Changing the password invalidates cookies issued for the old one.
+    await api(`/api/docs/${id}`, { method: "PATCH", body: JSON.stringify({ password: "newpass99" }) });
+    expect((await get(`/view/${id}`, { headers: { cookie } })).status).toBe(401);
+  });
+
+  it("rate-limits password attempts", async () => {
+    const { id } = await publish({ "rl.html": "rl" }, { password: "hunter22" });
+    const statuses: number[] = [];
+    for (let i = 0; i < 11; i++) statuses.push((await get(`/view/${id}`, { headers: { "x-doc-password": "wrongpass" } })).status);
+    expect(statuses.at(-1)).toBe(429);
+  });
+});
+
+describe("markdown", () => {
+  it("renders to sandboxed html, ?raw returns the source", async () => {
+    const { url } = await publish({ "notes.md": "# Hello\n\n<script>x()</script>" });
+    const res = await get(url);
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(res.headers.get("content-security-policy")).toContain("sandbox");
+    expect(await res.text()).toContain("<h1>Hello</h1>");
+    const raw = await get(`${url}?raw`);
+    expect(raw.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(await raw.text()).toBe("# Hello\n\n<script>x()</script>");
+  });
+});
+
+describe("expiry, delete and sweep", () => {
+  it("serves 410 after expiry, and the sweep deletes the doc", async () => {
+    const { id } = await publish({ "exp.html": "exp" }, { expires: "1h" });
+    expect((await get(`/view/${id}`)).status).toBe(200);
+    await env.DB.prepare("UPDATE docs SET expires_at = 1 WHERE id = ?").bind(id).run();
+    expect((await get(`/view/${id}`)).status).toBe(410);
+    await sweep(env);
+    expect((await get(`/view/${id}`)).status).toBe(404);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS c FROM files WHERE doc_id = ?").bind(id).first("c")).toBe(0);
+  });
+
+  it("deletes docs, and the sweep removes only blobs nothing references", async () => {
+    const shared = await publish({ "keep.html": "shared bytes" });
+    const gone = await publish({ "index.html": "shared bytes", "only.txt": "only here" });
+    expect((await api(`/api/docs/${gone.id}`, { method: "DELETE" })).status).toBe(204);
+    expect((await get(`/view/${gone.id}/`)).status).toBe(404);
+
+    await sweep(env, Date.now() + 2 * 86_400_000);
+    expect(await env.BUCKET.head(`docs/${await sha256Hex("only here")}`)).toBeNull();
+    expect(await env.BUCKET.head(`docs/${await sha256Hex("shared bytes")}`)).not.toBeNull();
+    expect(await (await get(shared.url)).text()).toBe("shared bytes");
+  });
+});
+
+describe("docs api", () => {
+  it("lists favorites first and shows version history", async () => {
+    const fav = await publish({ "fav.html": "fav" });
+    await publish({ "fav.html": "fav 2" }, { ref: fav.id, message: "second" });
+    await api(`/api/docs/${fav.id}`, { method: "PATCH", body: JSON.stringify({ favorite: true }) });
+    await publish({ "newer.html": "newer" });
+
+    const list = (await (await api("/api/docs")).json()) as { id: string }[];
+    expect(list[0].id).toBe(fav.id);
+    const detail = (await (await api(`/api/docs/${fav.id}`)).json()) as { favorite: boolean; versions: { n: number; message: string | null; keyName: string }[] };
+    expect(detail.favorite).toBe(true);
+    expect(detail.versions.map((v) => [v.n, v.message, v.keyName])).toEqual([[2, "second", "test"], [1, null, "test"]]);
   });
 });
