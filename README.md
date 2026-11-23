@@ -2,7 +2,7 @@
 
 Publish a file or folder to your own Cloudflare account and get a link you can share. A minimal, self-hosted take on [postplan](https://www.npmjs.com/package/postplan).
 
-> Work in progress. What exists today: API key auth, uploads, and serving single files.
+> Work in progress. The Worker and HTTP API are done. The dashboard, Go CLI and agent skills are next.
 
 ## Run locally
 
@@ -46,19 +46,47 @@ M="{\"files\":[{\"path\":\"plan.html\",\"sha256\":\"$SHA\"}]}"
 
 curl -H "Authorization: Bearer $KEY" -d "$M" $U/api/push                 # {"missing":["<sha>"]}
 curl -X PUT -H "Authorization: Bearer $KEY" --data-binary @plan.html $U/api/blobs/$SHA
-curl -H "Authorization: Bearer $KEY" -d "$M" $U/api/push                 # {"id","version","url"}
+curl -H "Authorization: Bearer $KEY" -d "$M" $U/api/push                 # {"id","url","versionUrl","version",...}
 ```
 
-To publish a new version of an existing doc, add `"ref":"<id>"` to the manifest.
+Optional fields in the push body:
+
+| Field | Effect |
+|---|---|
+| `ref` | Id or slug of an existing doc; the push becomes its next version. |
+| `slug` | Publish at `/view/<slug>`. A slug is guessable, so it requires a password. Pushing with a slug that exists updates that doc. |
+| `password` | Readers must enter it (8+ chars). `null` removes it. |
+| `expires` | `30m`, `12h`, `7d`, `2w`; `null` for never. Expired links return 410 and are deleted by a daily cron. |
+| `title`, `message` | Shown in listings and version history. |
+
+Pushing identical content creates no new version (`"created": false`).
+
+A folder is a manifest with many paths and an `index.html`. Pages link to each other with relative paths.
+
+### Manage docs
+
+```sh
+curl -H "Authorization: Bearer $KEY" $U/api/docs                          # list, favorites first
+curl -H "Authorization: Bearer $KEY" $U/api/docs/<ref>                    # detail + version history
+curl -X PATCH -H "Authorization: Bearer $KEY" -d '{"favorite":true,"expires":"7d"}' $U/api/docs/<ref>
+curl -X DELETE -H "Authorization: Bearer $KEY" $U/api/docs/<ref>
+```
+
+`PATCH` takes the same `slug`, `password`, `expires` and `title` fields as push, plus `favorite`.
 
 ## What readers get
 
-`/view/<id>` serves the latest version.
+| URL | Serves |
+|---|---|
+| `/view/<id-or-slug>` | The latest version. A folder redirects to `/view/<ref>/` so relative links work. |
+| `/view/<ref>@3` | Version 3, pinned. |
+| `/view/<ref>/guide` | `guide.html` in a folder; `/docs/` serves `docs/index.html`. |
+| `?raw` | Markdown source instead of the rendered page. |
 
-- HTML, SVG and everything else except PDF are served under a sandbox CSP with an opaque origin. Inline scripts run, but they can't reach cookies, storage, the network, forms or frames.
-- PDFs, images, audio, video, text, CSS and JS are served inline.
-- Any other file type downloads.
+- HTML, SVG, rendered Markdown and every other type except PDF get a sandbox CSP with an opaque origin. Inline scripts run, but they can't reach cookies, storage, the network, forms or frames.
+- PDFs, images, audio, video, text, CSS and JS are served inline. Any other type downloads.
 - Range requests work, so video seeking works.
+- Password docs show a password form. The unlock lasts 30 days, until the password changes. Agents send `X-Doc-Password: <password>` instead. Password attempts are limited to 10 per minute per IP and doc.
 
 ## License
 
