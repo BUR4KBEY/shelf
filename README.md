@@ -38,10 +38,11 @@ Then, in the Cloudflare dashboard:
 - Every upload has a copy-link button, a star for favorites and the doc's settings (title, slug, password, expiry, delete); click anywhere on the upload to open or close them. Filter by favorites, password protected or expiring, and search titles, slugs, ids and messages.
 - Expired docs are hidden until the daily sweep deletes them: the **Expired** filter and the sidebar's "Show expired" bring them back.
 - The sidebar lists every doc, favorites first, so one that has not changed in months is still one click away. It folds down to a narrow rail that keeps the logo and the theme switch. A doc's page has its link, settings, a place to upload a new version and its whole history.
-- Keys sit in the sidebar with their uploads over the last 14 days: mint a key for each machine or agent (shown once). A new key's dialog also copies *agent instructions*: your domain, the key, and where to find `llms.txt` and the MCP server, ready to paste into an agent. A key's page shows how much and how often it uploads: totals, uploads over the last 7 days, 30 days, 90 days or year (you pick), the time of day it is busiest in that period, and a GitHub-style heatmap of its last year. Below that, every doc it uploaded to and its uploads as a log; revoke it there. Revoked keys are archived: hidden from the sidebar until you click "Show revoked".
+- Keys sit in the sidebar with their uploads over the last 14 days: mint a key for each machine or agent (shown once) and pick its space. A new key's dialog also copies *agent instructions*: your domain, the key, and where to find `llms.txt` and the MCP server, ready to paste into an agent. A key's page shows how much and how often it uploads: totals, uploads over the last 7 days, 30 days, 90 days or year (you pick), the time of day it is busiest in that period, and a GitHub-style heatmap of its last year. Below that, every doc it uploaded to and its uploads as a log; move it to another space or revoke it there. Revoked keys are archived: hidden from the sidebar until you click "Show revoked".
 - **Quotas.** On a key's page, set how much it may keep on the shelf (every version it uploaded that still exists counts in full) and what an upload that doesn't fit does: *Refuse it* (HTTP 413), or *Delete this key's oldest uploads*, oldest first until it fits. Deleting keeps favorites, and the current version of a doc that has older versions from another key or the dashboard; a doc left with no versions is deleted. An upload bigger than the whole quota is always refused. Dashboard uploads have no quota.
 - **Settings** (in the sidebar) holds app-wide settings. *New uploads expire after* gives every new doc uploaded without an expiry (from the dashboard, the CLI or the API) a default one, e.g. 7 days. An upload that sets its own expiry, or `never`, keeps it; existing docs and new versions of them don't change. *Longest expiry allowed* (30 days unless changed) caps any expiry set from then on; never is always allowed, and docs that already expire later keep their date.
 - **Appearance**, at the top of Settings: the theme (system, light, dark) and the colour (indigo, violet, plum, rose, sand, olive, green, teal, ocean, graphite). The logo and the favicon change with them. Both are per browser, kept in the `theme` and `palette` cookies, so the password form and rendered Markdown follow them in that browser too.
+- **Spaces** (in Settings) keep keys apart. Each key belongs to one space, and its uploads land there. A key lists, reads, updates and deletes only its own space's docs; another space's docs are "not found" to it, and another space's slug is "taken". Everything starts in *Default*, so nothing changes until you add a second space. Per space you choose whether its keys may delete docs and read its password-protected docs without the password (MCP `read_doc`). *Keys see only their own space* turns isolation off for the whole app; even then a key never skips another space's password. The dashboard sees every space: a doc's settings move it to another space, and docs uploaded from the dashboard start in *Default*. Public `/view` links are not affected.
 - Upload by dropping a file or folder anywhere on the page. On a doc's page, a drop adds a version to that doc.
 
 The page source is in `worker/dashboard/`. It is built into one HTML file (`worker/src/dashboard.html`, not committed) that the Worker serves. `wrangler dev`, `wrangler deploy` and `npm test` build it first.
@@ -79,10 +80,10 @@ shelf rm q3-plan
 
 Agents don't need the CLI. Every deployment describes itself to them in two ways. The quickest start is **Copy agent instructions** when you mint a key in the dashboard.
 
-An API key acts as you, with the same power over docs as the dashboard: it can publish, read, change and delete any doc, password-protected ones included. Give each agent its own key so you can revoke it alone.
+An API key acts as you inside its space (see Spaces above): it can publish, read, change and delete that space's docs, password-protected ones included, unless the space's settings say otherwise. Give each agent its own key so you can revoke it alone.
 
 - **`https://your-domain/llms.txt`**: a plain-text guide to reading and publishing with HTTP, with your domain filled in. Tell an agent "read https://your-domain/llms.txt and publish this; the key is in `$SHELF_KEY`".
-- **`https://your-domain/mcp`**: an MCP server (Streamable HTTP) with the tools `publish`, `read_doc`, `list_docs`, `get_doc`, `update_doc` and `delete_doc`. It takes the same API key as the HTTP API, as `Authorization: Bearer <key>`. `read_doc` reads any doc without its password. For Claude Code:
+- **`https://your-domain/mcp`**: an MCP server (Streamable HTTP) with the tools `publish`, `read_doc`, `list_docs`, `get_doc`, `update_doc` and `delete_doc`. It takes the same API key as the HTTP API, as `Authorization: Bearer <key>`. `read_doc` reads any doc in the key's space without its password, unless that is turned off for the space. For Claude Code:
 
   ```sh
   claude mcp add --transport http shelf https://your-domain/mcp --header "Authorization: Bearer $SHELF_KEY"
@@ -123,9 +124,9 @@ A folder is a manifest with many paths and an `index.html`. Pages link to each o
 ### Manage docs
 
 ```sh
-curl -H "Authorization: Bearer $KEY" $U/api/docs                          # list, favorites first
+curl -H "Authorization: Bearer $KEY" $U/api/docs                          # list the key's space, favorites first
 curl -H "Authorization: Bearer $KEY" $U/api/docs/<ref>                    # detail + version history
-curl -H "Authorization: Bearer $KEY" $U/api/uploads                       # newest 200 uploads across all docs
+curl -H "Authorization: Bearer $KEY" $U/api/uploads                       # newest 200 uploads in the key's space
 curl -X PATCH -H "Authorization: Bearer $KEY" -d '{"favorite":true,"expires":"7d"}' $U/api/docs/<ref>
 curl -X DELETE -H "Authorization: Bearer $KEY" $U/api/docs/<ref>
 ```
