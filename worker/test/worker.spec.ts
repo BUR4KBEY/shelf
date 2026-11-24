@@ -43,7 +43,7 @@ describe("push", () => {
     const doc = await publish({ "a.html": "<h1>hi</h1>" });
     expect(doc.version).toBe(1);
     expect(doc.url).toBe(`${BASE}/view/${doc.id}`);
-    expect(doc.id).toMatch(/^[0-9A-Za-z]{12}$/);
+    expect(doc.id).toMatch(/^[0-9a-z]{12}$/);
   });
 
   it("rejects a blob whose bytes do not match its hash", async () => {
@@ -181,6 +181,27 @@ describe("slugs and passwords", () => {
     expect((await get("/view/CASE-plan", { headers: { "x-doc-password": "hunter22" } })).status).toBe(200);
     expect(await (await api("/api/docs/CASE-PLAN")).json()).toMatchObject({ id: a.id });
     expect(await publish({ "c.html": "case 2" }, { slug: "case-PLAN" })).toMatchObject({ id: a.id, version: 2 });
+  });
+
+  it("opens a doc by its id in any case", async () => {
+    const a = await publish({ "i.html": "ids" });
+    expect(a.id).toBe(a.id.toLowerCase());
+    expect((await get(`/view/${a.id.toUpperCase()}`)).status).toBe(200);
+    expect(await (await api(`/api/docs/${a.id.toUpperCase()}`)).json()).toMatchObject({ id: a.id });
+  });
+
+  it("migration lowercases existing mixed-case ids with their versions and files", async () => {
+    const db = env.DB;
+    await db.batch([
+      db.prepare("INSERT INTO docs (id, latest, created_at, updated_at) VALUES ('ZQIZ4KHAUHBn', 1, 0, 0)"),
+      db.prepare("INSERT INTO versions (doc_id, n, manifest_hash, size, created_at) VALUES ('ZQIZ4KHAUHBn', 1, 'm', 1, 0)"),
+      db.prepare("INSERT INTO files (doc_id, n, path, sha256, size) VALUES ('ZQIZ4KHAUHBn', 1, 'a.html', 'h', 1)"),
+    ]);
+    const m = env.TEST_MIGRATIONS.find((x) => x.name.startsWith("0002"))!;
+    await db.batch(m.queries.map((q) => db.prepare(q)));
+    expect(await db.prepare("SELECT COUNT(*) AS c FROM files WHERE doc_id = 'zqiz4khauhbn'").first("c")).toBe(1);
+    expect(await db.prepare("SELECT COUNT(*) AS c FROM versions WHERE doc_id = 'zqiz4khauhbn'").first("c")).toBe(1);
+    expect(await db.prepare("SELECT id FROM docs WHERE id = 'zqiz4khauhbn'").first("id")).toBe("zqiz4khauhbn");
   });
 
   it("refuses removing the password while a slug is set", async () => {
