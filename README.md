@@ -73,9 +73,20 @@ shelf rm q3-plan
 
 `SHELF_URL` and `SHELF_KEY` override the saved login. `--json` on `push`, `ls` and `set` prints machine-readable output.
 
-## Agent skills
+## Agents
 
-[`skills/shelf-publish`](skills/shelf-publish/SKILL.md) lets an agent write a page and publish it with the CLI. [`skills/shelf-read`](skills/shelf-read/SKILL.md) lets it read a shelf link someone gives it. Copy them into your agent's skills directory (for example `~/.claude/skills/`).
+Agents don't need the CLI. Every deployment describes itself to them in two ways:
+
+- **`https://your-domain/llms.txt`**: a plain-text guide to reading and publishing with HTTP, with your domain filled in. Tell an agent "read https://your-domain/llms.txt and publish this; the key is in `$SHELF_KEY`".
+- **`https://your-domain/mcp`**: an MCP server (Streamable HTTP) with the tools `publish`, `read_doc`, `list_docs`, `get_doc`, `update_doc` and `delete_doc`. It takes the same API key as the HTTP API, as `Authorization: Bearer <key>`. `read_doc` reads any doc without its password, since the key's owner owns every doc. For Claude Code:
+
+  ```sh
+  claude mcp add --transport http shelf https://your-domain/mcp --header "Authorization: Bearer $SHELF_KEY"
+  ```
+
+  The server only takes a bearer key, not OAuth, so clients that can only connect with OAuth (claude.ai and ChatGPT connectors) can't use it yet. `publish` sends file contents through the model's context, so use the CLI or curl for large files.
+
+[`skills/shelf-publish`](skills/shelf-publish/SKILL.md) lets an agent write a page and publish it, with the CLI when it is installed and with MCP or `llms.txt` when it isn't. [`skills/shelf-read`](skills/shelf-read/SKILL.md) lets it read a shelf link someone gives it. Copy them into your agent's skills directory (for example `~/.claude/skills/`).
 
 ## Publish with curl
 
