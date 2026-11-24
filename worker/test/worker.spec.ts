@@ -175,6 +175,14 @@ describe("slugs and passwords", () => {
     expect(taken.status).toBe(409);
   });
 
+  it("matches slugs case-insensitively and stores them lowercase", async () => {
+    const a = await publish({ "c.html": "case" }, { slug: "Case-Plan", password: "hunter22" });
+    expect(a.slug).toBe("case-plan");
+    expect((await get("/view/CASE-plan", { headers: { "x-doc-password": "hunter22" } })).status).toBe(200);
+    expect(await (await api("/api/docs/CASE-PLAN")).json()).toMatchObject({ id: a.id });
+    expect(await publish({ "c.html": "case 2" }, { slug: "case-PLAN" })).toMatchObject({ id: a.id, version: 2 });
+  });
+
   it("refuses removing the password while a slug is set", async () => {
     await publish({ "k.html": "k" }, { slug: "keep-pass", password: "hunter22" });
     expect((await api("/api/docs/keep-pass", { method: "PATCH", body: JSON.stringify({ password: null }) })).status).toBe(400);
