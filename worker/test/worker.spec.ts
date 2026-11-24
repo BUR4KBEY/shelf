@@ -294,6 +294,20 @@ describe("expiry, delete and sweep", () => {
     expect(await env.DB.prepare("SELECT COUNT(*) AS c FROM files WHERE doc_id = ?").bind(id).first("c")).toBe(0);
   });
 
+  it("caps expiry at 30 days and treats 0 as never", async () => {
+    const { id } = await publish({ "cap.html": "cap" }, { expires: "30d" });
+    const patch = (expires: unknown) => api(`/api/docs/${id}`, { method: "PATCH", body: JSON.stringify({ expires }) });
+    const expiresAt = async () => ((await (await api(`/api/docs/${id}`)).json()) as { expiresAt: number | null }).expiresAt;
+    expect(await expiresAt()).not.toBeNull();
+    for (const bad of ["31d", "721h", "5w", "5", "1.5d"]) expect((await patch(bad)).status).toBe(400);
+    expect((await patch("0d")).status).toBe(200);
+    expect(await expiresAt()).toBeNull();
+    expect((await patch("90m")).status).toBe(200);
+    expect(await expiresAt()).not.toBeNull();
+    expect((await patch("0")).status).toBe(200);
+    expect(await expiresAt()).toBeNull();
+  });
+
   it("deletes docs, and the sweep removes only blobs nothing references", async () => {
     const shared = await publish({ "keep.html": "shared bytes" });
     const gone = await publish({ "index.html": "shared bytes", "only.txt": "only here" });
