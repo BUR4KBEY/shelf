@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Clock, Lock, Monitor, Moon, PanelLeftClose, Rows3, Star, Sun } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { Tip, display, focusRing, groupName } from "@/components/bits";
+import { Logo, Tip, display, focusRing, groupName } from "@/components/bits";
 import { isExpired } from "@/components/DocBits";
 import { Button } from "@/components/ui/button";
 import { nameOf, type Activity, type Doc, type Key } from "@/lib/api";
@@ -49,7 +49,8 @@ export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; 
   return (
     <div className="flex min-h-full flex-col gap-7 px-4 py-6 lg:px-5">
       <div className="flex items-center justify-between max-lg:hidden">
-        <a href="#/" className={cn(display, focusRing, "text-3xl leading-none")}>
+        <a href="#/" className={cn(display, focusRing, "flex items-center gap-2.5 text-3xl leading-none")}>
+          <Logo className="h-7" />
           shelf
         </a>
         <Tip label="Hide sidebar">
