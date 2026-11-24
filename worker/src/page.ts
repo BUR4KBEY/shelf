@@ -1,3 +1,4 @@
+import faviconSvg from "./favicon.svg";
 import latinExt from "@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-ext-wdth-normal.woff2";
 import latin from "@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wdth-normal.woff2";
 import { escapeHtml } from "./util";
@@ -12,6 +13,9 @@ export function font(name: string): Response | undefined {
   const body = FONTS[name];
   return body && new Response(body, { headers: { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable", "access-control-allow-origin": "*" } });
 }
+
+/** GET /favicon.svg, for the dashboard and these pages. Follows the system theme: an icon can't read the theme cookie. */
+export const favicon = () => new Response(faviconSvg, { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } });
 
 const face = (name: string, range: string) =>
   `@font-face{font-family:"Bricolage Grotesque Variable";font-weight:200 800;font-stretch:75% 100%;font-display:swap;src:url(/font/${name}.woff2) format("woff2-variations");unicode-range:${range}}`;
@@ -75,7 +79,7 @@ export function setTheme(url: URL, value: string): Response | undefined {
  */
 export function cardPage(req: Request, status: number, title: string, card: string, { foot = "", formAction = "'none'", back = new URL(req.url).pathname } = {}): Response {
   const links = THEMES.map((t) => `<a href="/theme/${t}?next=${encodeURIComponent(back)}"${t === theme(req) ? ' aria-current="true"' : ""}>${t[0].toUpperCase()}${t.slice(1)}</a>`).join("");
-  const html = `<!doctype html><html lang="en"${themeAttr(req)}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · shelf</title>
+  const html = `<!doctype html><html lang="en"${themeAttr(req)}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><title>${escapeHtml(title)} · shelf</title>
 <style>${BASE_CSS}
 ${CARD_CSS}</style></head>
 <body><main><header><p class="mark">shelf</p><nav class="theme" aria-label="Theme">${links}</nav></header><div class="card">${card}</div>${foot && `<p class="foot">${foot}</p>`}</main></body></html>`;
@@ -83,7 +87,7 @@ ${CARD_CSS}</style></head>
     status,
     headers: {
       "content-type": "text/html; charset=utf-8",
-      "content-security-policy": `default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; form-action ${formAction}; frame-ancestors 'none'`,
+      "content-security-policy": `default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; form-action ${formAction}; frame-ancestors 'none'`,
       "cache-control": "private, no-store",
       "referrer-policy": "no-referrer",
       "x-robots-tag": "noindex",
