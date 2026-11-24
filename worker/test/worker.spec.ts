@@ -24,7 +24,7 @@ async function publish(files: Record<string, string>, extra: object = {}) {
   }
   const res = await pushManifest({ ...extra, files: manifest });
   expect(res.status).toBe(200);
-  return (await res.json()) as { id: string; slug: string | null; version: number; url: string; versionUrl: string; created: boolean };
+  return (await res.json()) as { id: string; slug: string | null; version: number; url: string; versionUrl: string; created: boolean; expiresAt: number | null };
 }
 
 describe("api auth", () => {
@@ -417,6 +417,26 @@ describe("dashboard", () => {
     const doc = (await (await dash("/dashboard/api/push", { method: "POST", headers: sameOrigin, body })).json()) as { id: string };
     const detail = (await (await dash(`/dashboard/api/docs/${doc.id}`)).json()) as { versions: { keyName: string | null }[] };
     expect(detail.versions[0].keyName).toBeNull();
+  });
+
+  it("gives new docs the default expiry unless the push names one", async () => {
+    const setDefault = (defaultExpires: string | null) => dash("/dashboard/api/settings", { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ defaultExpires }) });
+    expect(await (await dash("/dashboard/api/settings")).json()).toEqual({ defaultExpires: null });
+    expect((await setDefault("soon")).status).toBe(400);
+    expect((await api("/api/settings")).status).toBe(404); // an API key can't change it
+    try {
+      expect(await (await setDefault("7d")).json()).toEqual({ defaultExpires: "7d" });
+      const before = Date.now();
+      expect((await publish({ "d1.html": "default" })).expiresAt).toBeGreaterThanOrEqual(before + 7 * 86_400_000);
+      expect((await publish({ "d2.html": "forever" }, { expires: null })).expiresAt).toBeNull();
+      expect((await publish({ "d3.html": "short" }, { expires: "1h" })).expiresAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
+      // A new version of an existing doc keeps the doc's expiry.
+      const kept = await publish({ "d4.html": "v1" }, { expires: null });
+      expect((await publish({ "d4.html": "v2" }, { ref: kept.id })).expiresAt).toBeNull();
+    } finally {
+      await setDefault(null);
+    }
+    expect((await publish({ "d5.html": "after" })).expiresAt).toBeNull();
   });
 
   it("lets the signed-in owner open a locked doc without its password", async () => {
