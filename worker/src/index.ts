@@ -2,6 +2,8 @@ import { previewAccess } from "./access";
 import { deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, push, putBlob, sweep } from "./api";
 import { apiKey } from "./auth";
 import { createKey, dashboardPage, listKeys, revokeKey } from "./dashboard";
+import { llmsTxt } from "./llms";
+import { mcp } from "./mcp";
 import { favicon, font, notFound, notice, setTheme } from "./page";
 import { json } from "./util";
 import { ownerOpen, unlock, view } from "./view";
@@ -35,10 +37,12 @@ export default {
     if (req.method === "GET" && path === "/favicon.svg") return favicon();
     if (req.method === "GET" && (m = path.match(/^\/font\/([a-z-]+)\.woff2$/))) return font(m[1]) ?? notFound(req);
     if (req.method === "GET" && (m = path.match(/^\/theme\/([a-z]+)$/))) return setTheme(url, m[1]) ?? notFound(req);
+    if (req.method === "GET" && path === "/llms.txt") return new Response(llmsTxt(url.origin), { headers: { "content-type": "text/plain; charset=utf-8" } });
 
-    if (path.startsWith("/api/")) {
+    if (path.startsWith("/api/") || path === "/mcp") {
       const keyId = await apiKey(req, env, ctx);
       if (!keyId) return json({ error: "unauthorized" }, 401);
+      if (path === "/mcp") return mcp(req, env, keyId);
       return (await docRoutes(req, env, path, keyId)) ?? json({ error: "not found" }, 404);
     }
 

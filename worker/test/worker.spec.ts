@@ -485,3 +485,44 @@ describe("dashboard", () => {
     expect(await (await get(`/view/${id}`, { headers: { cookie } })).text()).toBe("mine");
   });
 });
+
+describe("agents", () => {
+  it("serves llms.txt with this server's own URLs", async () => {
+    const res = await exports.default.fetch(`${BASE}/llms.txt`);
+    expect(res.headers.get("content-type")).toContain("text/plain");
+    expect(await res.text()).toContain(`${BASE}/api/push`);
+  });
+
+  const rpc = async (method: string, params: object = {}, headers: Record<string, string> = AUTH) =>
+    exports.default.fetch(`${BASE}/mcp`, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
+  const tool = async (name: string, args: object) => ((await (await rpc("tools/call", { name, arguments: args })).json()) as { result: { content: { text: string }[]; isError: boolean } }).result;
+
+  it("requires an API key on /mcp", async () => {
+    expect((await rpc("tools/list", {}, {})).status).toBe(401);
+  });
+
+  it("publishes a folder over MCP, then reads it back without the password", async () => {
+    const init = (await (await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "1" } })).json()) as { result: { protocolVersion: string } };
+    expect(init.result.protocolVersion).toBe("2025-06-18");
+
+    const pub = await tool("publish", {
+      files: [
+        { path: "index.html", content: "<h1>hi</h1>" },
+        { path: "img/dot.png", content: btoa("\x89PNG"), encoding: "base64" },
+      ],
+      slug: "mcp-plan",
+      password: "correct horse",
+    });
+    expect(pub.isError).toBe(false);
+    const doc = JSON.parse(pub.content[0].text) as { id: string; url: string; version: number };
+    expect(doc).toMatchObject({ url: `${BASE}/view/mcp-plan`, version: 1 });
+
+    const read = await tool("read_doc", { ref: "mcp-plan" });
+    expect(read.content[0].text).toBe("<h1>hi</h1>");
+    const png = await exports.default.fetch(`${BASE}/view/mcp-plan/img/dot.png`, { headers: { "x-doc-password": "correct horse" } });
+    expect(new Uint8Array(await png.arrayBuffer())).toEqual(Uint8Array.from("\x89PNG", (c) => c.charCodeAt(0)));
+
+    const bad = await tool("update_doc", { ref: doc.id, expires: "banana" });
+    expect(bad.isError).toBe(true);
+  });
+});
