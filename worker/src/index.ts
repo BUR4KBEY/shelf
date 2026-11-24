@@ -2,6 +2,7 @@ import { previewAccess } from "./access";
 import { deleteDoc, getDoc, listDocs, listUploads, patchDoc, push, putBlob, sweep } from "./api";
 import { apiKey } from "./auth";
 import { createKey, dashboardPage, listKeys, revokeKey } from "./dashboard";
+import { font, notFound, notice, setTheme } from "./page";
 import { json } from "./util";
 import { ownerOpen, unlock, view } from "./view";
 
@@ -31,6 +32,9 @@ export default {
       if (req.method === "GET" || req.method === "HEAD") return view(req, env, ref, pin ? Number(pin) : undefined, rest);
     }
 
+    if (req.method === "GET" && (m = path.match(/^\/font\/([a-z-]+)\.woff2$/))) return font(m[1]) ?? notFound(req);
+    if (req.method === "GET" && (m = path.match(/^\/theme\/([a-z]+)$/))) return setTheme(url, m[1]) ?? notFound(req);
+
     if (path.startsWith("/api/")) {
       const keyId = await apiKey(req, env, ctx);
       if (!keyId) return json({ error: "unauthorized" }, 401);
@@ -42,8 +46,8 @@ export default {
     if (path === "/dashboard" || path.startsWith("/dashboard/")) {
       // ctx.access is set only when Cloudflare Access authenticated this request; previews check the Access JWT instead.
       const preview = ctx.access ? null : await previewAccess(req, env);
-      if (!ctx.access && !preview) return new Response("This page requires Cloudflare Access. See the README.", { status: 403 });
-      if (path === "/dashboard" && req.method === "GET") return dashboardPage();
+      if (!ctx.access && !preview) return notice(req, 403, "Sign-in required", "The dashboard is behind Cloudflare Access, and this request didn't come through it. See the README to set it up.");
+      if (path === "/dashboard" && req.method === "GET") return dashboardPage(req);
       if (req.method === "GET" && (m = path.match(/^\/dashboard\/open(\/([A-Za-z0-9-]{1,64})(?:@\d{1,9})?(?:\/.*)?)$/))) {
         return ownerOpen(req, env, m[2], `/view${m[1]}`);
       }
@@ -59,7 +63,7 @@ export default {
       }
     }
 
-    return json({ error: "not found" }, 404);
+    return req.headers.get("accept")?.includes("text/html") ? notFound(req) : json({ error: "not found" }, 404);
   },
 
   async scheduled(_event, env): Promise<void> {

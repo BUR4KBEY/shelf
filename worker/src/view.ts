@@ -1,6 +1,7 @@
 import { marked } from "marked";
 import { type Doc, findDoc } from "./api";
 import { sameString, unlockToken, verifyPassword } from "./auth";
+import { LOCK_ICON, MD_CSS, cardPage, notFound, notice, themeAttr } from "./page";
 import { escapeHtml } from "./util";
 
 // Server-side type policy by extension; client-sent types are ignored.
@@ -33,39 +34,22 @@ const INLINE: Record<string, string> = {
   webm: "video/webm",
 };
 
-const MD_CSS = `:root{color-scheme:light dark}body{margin:0;font:16px/1.6 system-ui,sans-serif}main{max-width:46rem;margin:0 auto;padding:2rem 1.25rem}
-img{max-width:100%}pre{overflow:auto;padding:1rem;border-radius:6px;background:#8881}code{font:.9em ui-monospace,monospace}
-table{border-collapse:collapse}th,td{border:1px solid #8884;padding:.3rem .6rem}blockquote{margin:0;padding-left:1rem;border-left:3px solid #8886}`;
-
 interface FileRow {
   path: string;
   sha256: string;
   size: number;
 }
 
-const text = (body: string, status: number) =>
-  new Response(body, { status, headers: { "content-type": "text/plain; charset=utf-8", "x-robots-tag": "noindex" } });
-
 const ip = (req: Request) => req.headers.get("cf-connecting-ip") ?? "local";
 
 /** Our own page, not user content: no sandbox, so the form can submit. */
-function lockedPage(status: number, ref: string, next: string, error = ""): Response {
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Locked</title>
-<style>:root{color-scheme:light dark}body{font:16px system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;margin:0}form{display:grid;gap:.6rem;width:16rem}input,button{font:inherit;padding:.5rem}p{margin:0;color:#c33}</style></head>
-<body><form method="post" action="/view/${escapeHtml(ref)}/unlock"><label for="pw">This document needs a password.</label>
-<input id="pw" name="password" type="password" autocomplete="current-password" autofocus required>
-<input type="hidden" name="next" value="${escapeHtml(next)}">${error ? `<p role="alert">${escapeHtml(error)}</p>` : ""}<button>Open</button>
-<a href="/dashboard/open${escapeHtml(next.slice("/view".length))}">Your doc? Open it from the dashboard</a></form></body></html>`;
-  return new Response(html, {
-    status,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
-      "cache-control": "private, no-store",
-      "referrer-policy": "no-referrer",
-      "x-robots-tag": "noindex",
-    },
-  });
+function lockedPage(req: Request, status: number, ref: string, next: string, error = ""): Response {
+  const card = `${LOCK_ICON}<div><h1>This doc is locked</h1><p>Enter its password to read it.</p></div>
+<form method="post" action="/view/${escapeHtml(ref)}/unlock"><label>Password
+<input name="password" type="password" autocomplete="current-password" autofocus required${error ? ' aria-invalid="true" aria-describedby="error"' : ""}></label>
+<input type="hidden" name="next" value="${escapeHtml(next)}">${error ? `<p id="error" class="error" role="alert">${escapeHtml(error)}</p>` : ""}<button>Open doc</button></form>`;
+  const foot = `Your doc? <a href="/dashboard/open${escapeHtml(next.slice("/view".length))}">Open it from the dashboard</a>`;
+  return cardPage(req, status, "Locked", card, { foot, formAction: "'self'", back: next });
 }
 
 /** True when the request carries a valid unlock cookie or `X-Doc-Password`; a Response when it must be refused. */
@@ -75,21 +59,21 @@ async function checkAccess(req: Request, env: Env, doc: Doc, ref: string): Promi
   const cookie = req.headers.get("cookie")?.match(new RegExp(`(?:^|;\\s*)u_${doc.id}=([0-9a-f]{64})`))?.[1];
   if (cookie && sameString(cookie, await unlockToken(doc.id, doc.password_hash))) return true;
   const password = req.headers.get("x-doc-password");
-  if (password === null) return lockedPage(401, ref, next);
-  if (!(await env.UNLOCK_LIMIT.limit({ key: `${ip(req)}:${doc.id}` })).success) return lockedPage(429, ref, next, "Too many attempts. Wait a minute.");
-  return (await verifyPassword(password, doc.password_hash)) || lockedPage(401, ref, next, "Wrong password.");
+  if (password === null) return lockedPage(req, 401, ref, next);
+  if (!(await env.UNLOCK_LIMIT.limit({ key: `${ip(req)}:${doc.id}` })).success) return lockedPage(req, 429, ref, next, "Too many attempts. Wait a minute.");
+  return (await verifyPassword(password, doc.password_hash)) || lockedPage(req, 401, ref, next, "Wrong password.");
 }
 
 export async function unlock(req: Request, env: Env, ref: string): Promise<Response> {
   const doc = await findDoc(env, ref);
-  if (!doc?.password_hash) return text("Not found", 404);
+  if (!doc?.password_hash) return notFound(req);
   const form = await req.formData().catch(() => null);
   const password = form?.get("password");
   const nextField = form?.get("next");
   // Only same-origin /view paths, so the form cannot be used as an open redirect.
   const next = typeof nextField === "string" && nextField.startsWith("/view/") ? nextField : `/view/${ref}`;
-  if (!(await env.UNLOCK_LIMIT.limit({ key: `${ip(req)}:${doc.id}` })).success) return lockedPage(429, ref, next, "Too many attempts. Wait a minute.");
-  if (typeof password !== "string" || !(await verifyPassword(password, doc.password_hash))) return lockedPage(401, ref, next, "Wrong password.");
+  if (!(await env.UNLOCK_LIMIT.limit({ key: `${ip(req)}:${doc.id}` })).success) return lockedPage(req, 429, ref, next, "Too many attempts. Wait a minute.");
+  if (typeof password !== "string" || !(await verifyPassword(password, doc.password_hash))) return lockedPage(req, 401, ref, next, "Wrong password.");
   return new Response(null, { status: 303, headers: { location: next, "set-cookie": await unlockCookie(doc), "cache-control": "no-store" } });
 }
 
@@ -116,8 +100,8 @@ export async function ownerOpen(req: Request, env: Env, ref: string, viewPath: s
  */
 export async function view(req: Request, env: Env, ref: string, pin: number | undefined, rest: string | undefined): Promise<Response> {
   const doc = await findDoc(env, ref);
-  if (!doc) return text("Not found", 404);
-  if (doc.expires_at !== null && doc.expires_at <= Date.now()) return text("This link has expired.", 410);
+  if (!doc) return notFound(req);
+  if (doc.expires_at !== null && doc.expires_at <= Date.now()) return notice(req, 410, "This link has expired", "The doc it led to is no longer available. Ask whoever sent it for a new one.");
   const access = await checkAccess(req, env, doc, ref);
   if (access !== true) return access;
 
@@ -140,7 +124,7 @@ export async function view(req: Request, env: Env, ref: string, pin: number | un
     try {
       p = decodeURIComponent(rest.slice(1));
     } catch {
-      return text("Not found", 404);
+      return notFound(req);
     }
     const candidates = p.endsWith("/") ? [`${p}index.html`] : [p, `${p}.html`, `${p}/index.html`];
     const { results } = await env.DB.prepare("SELECT path, sha256, size FROM files WHERE doc_id = ? AND n = ? AND path IN (SELECT value FROM json_each(?))")
@@ -150,7 +134,7 @@ export async function view(req: Request, env: Env, ref: string, pin: number | un
     if (match === `${p}/index.html`) return Response.redirect(`${url.origin}${url.pathname}/${url.search}`, 301);
     file = results.find((r) => r.path === match);
   }
-  if (!file) return text("Not found", 404);
+  if (!file) return notFound(req);
   return serveFile(req, env, doc, n, pin !== undefined, file);
 }
 
@@ -167,7 +151,7 @@ async function serveFile(req: Request, env: Env, doc: Doc, n: number, pinned: bo
   } catch {
     return new Response("Range not satisfiable", { status: 416, headers: { "content-range": `bytes */${file.size}` } });
   }
-  if (!obj) return text("Not found", 404);
+  if (!obj) return notFound(req);
 
   const type = markdown ? "text/html; charset=utf-8" : INLINE[ext];
   const headers = new Headers({
@@ -208,8 +192,9 @@ async function serveFile(req: Request, env: Env, doc: Doc, n: number, pinned: bo
   if (markdown) {
     const body = await marked.parse(await obj.text());
     headers.delete("accept-ranges");
+    headers.set("vary", "cookie"); // the page carries the reader's theme
     return new Response(
-      `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(doc.title ?? name)}</title><style>${MD_CSS}</style></head><body><main>${body}</main></body></html>`,
+      `<!doctype html><html lang="en"${themeAttr(req)}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(doc.title ?? name)}</title><style>${MD_CSS}</style></head><body><main>${body}</main></body></html>`,
       { headers },
     );
   }

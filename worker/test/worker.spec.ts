@@ -188,6 +188,34 @@ describe("slugs and passwords", () => {
     expect((await api("/api/docs/keep-pass", { method: "PATCH", body: JSON.stringify({ password: null }) })).status).toBe(400);
   });
 
+  it("answers a missing doc with a page for browsers and plain text for everything else", async () => {
+    const page = await get("/view/nope", { headers: { accept: "text/html,*/*" } });
+    expect(page.status).toBe(404);
+    expect(page.headers.get("content-type")).toContain("text/html");
+    const plain = await get("/view/nope");
+    expect(plain.status).toBe(404);
+    expect(plain.headers.get("content-type")).toContain("text/plain");
+    // The page's font, which a sandboxed doc (opaque origin) can only load with CORS.
+    const font = await get("/font/latin.woff2");
+    expect(font.headers.get("access-control-allow-origin")).toBe("*");
+    expect((await font.arrayBuffer()).byteLength).toBeGreaterThan(10_000);
+  });
+
+  it("remembers a theme picked on one of its own pages and renders them in it", async () => {
+    const set = await get("/theme/dark?next=/view/nope", { redirect: "manual" });
+    expect(set.status).toBe(303);
+    expect(set.headers.get("location")).toBe("/view/nope");
+    expect(set.headers.get("set-cookie")).toMatch(/^theme=dark;/);
+    const page = await get("/view/nope", { headers: { accept: "text/html", cookie: "theme=dark" } });
+    expect(await page.text()).toContain('<html lang="en" data-theme="dark">');
+    // Never a redirect off this origin, and never an attribute from a cookie it did not write.
+    for (const next of ["//evil.example", "/\\evil.example", "https://evil.example"]) {
+      expect((await get(`/theme/light?next=${encodeURIComponent(next)}`, { redirect: "manual" })).headers.get("location")).toBe("/");
+    }
+    const forged = await get("/view/nope", { headers: { accept: "text/html", cookie: 'theme=dark"><script>' } });
+    expect(await forged.text()).toContain('<html lang="en">');
+  });
+
   it("locks a doc until the password is given by header or form", async () => {
     const { id } = await publish({ "lock.html": "secret" }, { password: "hunter22" });
     const locked = await get(`/view/${id}`);

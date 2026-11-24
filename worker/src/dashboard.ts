@@ -1,10 +1,12 @@
 import page from "./dashboard.html";
+import { themeAttr } from "./page";
 import { json, randomId, sha256Hex } from "./util";
 
 /** The dashboard is one self-contained HTML file; a per-request nonce lets its inline script and style run under a strict CSP. */
-export function dashboardPage(): Response {
+export function dashboardPage(req: Request): Response {
   const nonce = randomId(22);
-  return new Response(page.replaceAll("__NONCE__", nonce), {
+  // The chosen theme goes on <html> here, so the page never paints in the wrong one first.
+  return new Response(page.replace("<html", `<html${themeAttr(req)}`).replaceAll("__NONCE__", nonce), {
     headers: {
       "content-type": "text/html; charset=utf-8",
       // Scripts need the nonce. Styles allow inline because shadcn/Radix inject <style> tags at runtime;
