@@ -7,7 +7,7 @@ import { Entry } from "@/components/Entry";
 import { Settings } from "@/components/Settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { nameOf, type DocDetail } from "@/lib/api";
+import { nameOf, openUrl, type DocDetail } from "@/lib/api";
 import { byDay } from "@/lib/feed";
 import { dayName, plural, size } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -56,7 +56,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
             </ul>
             {/* The link is what this page is for, so it comes before everything you can change. */}
             <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 sm:py-2 sm:pr-2 sm:pl-4">
-              <a href={d.url} target="_blank" rel="noopener noreferrer" className={cn(focusRing, "min-w-0 flex-[1_1_16rem] truncate text-[0.9375rem] font-semibold underline-offset-4 hover:underline")}>
+              <a href={openUrl(d)} target="_blank" rel="noopener noreferrer" className={cn(focusRing, "min-w-0 flex-[1_1_16rem] truncate text-[0.9375rem] font-semibold underline-offset-4 hover:underline")}>
                 <span className="font-normal text-muted-foreground">{new URL(d.url).host}/view/</span>
                 {d.slug ?? d.id}
               </a>
@@ -65,7 +65,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                   <Copy /> Copy link
                 </Button>
                 <Button variant="outline" className="max-sm:flex-1" asChild>
-                  <a href={d.url} target="_blank" rel="noopener noreferrer">
+                  <a href={openUrl(d)} target="_blank" rel="noopener noreferrer">
                     <ExternalLink /> Open
                   </a>
                 </Button>
@@ -127,7 +127,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                       }
                       actions={
                         <Button variant="outline" size="sm" className="max-sm:h-9 max-sm:px-3" asChild>
-                          <a href={`/view/${d.id}@${v.n}`} target="_blank" rel="noopener noreferrer" aria-label={`Open version ${v.n} in a new tab`}>
+                          <a href={openUrl(d, v.n)} target="_blank" rel="noopener noreferrer" aria-label={`Open version ${v.n} in a new tab`}>
                             <ExternalLink /> Open this version
                           </a>
                         </Button>

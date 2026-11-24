@@ -7,7 +7,7 @@ import { Entry } from "@/components/Entry";
 import { Settings } from "@/components/Settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { nameOf, type Activity, type Doc } from "@/lib/api";
+import { nameOf, openUrl, type Activity, type Doc } from "@/lib/api";
 import { byDay } from "@/lib/feed";
 import { clock, dayName, longDate, plural, size } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -105,7 +105,7 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                               <Copy /> Copy link
                             </Button>
                           </div>
-                          <a href={d.url} target="_blank" rel="noopener noreferrer" className={cn(focusRing, "max-w-56 truncate text-[0.8125rem] text-muted-foreground hover:underline")}>
+                          <a href={openUrl(d)} target="_blank" rel="noopener noreferrer" className={cn(focusRing, "max-w-56 truncate text-[0.8125rem] text-muted-foreground hover:underline")}>
                             /view/<span className="font-medium text-foreground">{d.slug ?? d.id}</span>
                           </a>
                         </div>

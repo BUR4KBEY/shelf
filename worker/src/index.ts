@@ -3,7 +3,7 @@ import { deleteDoc, getDoc, listDocs, listUploads, patchDoc, push, putBlob, swee
 import { apiKey } from "./auth";
 import { createKey, dashboardPage, listKeys, revokeKey } from "./dashboard";
 import { json } from "./util";
-import { unlock, view } from "./view";
+import { ownerOpen, unlock, view } from "./view";
 
 /** Doc routes shared by /api (API key) and /dashboard/api (Cloudflare Access). `keyId` is null for the dashboard. */
 async function docRoutes(req: Request, env: Env, path: string, keyId: string | null): Promise<Response | undefined> {
@@ -44,6 +44,9 @@ export default {
       const preview = ctx.access ? null : await previewAccess(req, env);
       if (!ctx.access && !preview) return new Response("This page requires Cloudflare Access. See the README.", { status: 403 });
       if (path === "/dashboard" && req.method === "GET") return dashboardPage();
+      if (req.method === "GET" && (m = path.match(/^\/dashboard\/open(\/([A-Za-z0-9-]{1,64})(?:@\d{1,9})?(?:\/.*)?)$/))) {
+        return ownerOpen(req, env, m[2], `/view${m[1]}`);
+      }
       if (path.startsWith("/dashboard/api/")) {
         // CSRF: browsers always send Origin on non-GET requests, and a sandboxed doc sends "null".
         if (req.method !== "GET" && req.headers.get("origin") !== url.origin) return json({ error: "cross-origin request refused" }, 403);
