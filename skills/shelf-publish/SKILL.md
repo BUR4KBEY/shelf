@@ -6,8 +6,11 @@ description: Use when the user wants a shareable link for a document, plan, repo
 # Publish with shelf
 
 `shelf` publishes a file or folder to the user's own server and prints a link.
-Run `shelf` if it is on PATH; if it is not, tell the user to install it (see the
-shelf README) and stop.
+Run `shelf` if it is on PATH. If it is not, don't ask the user to install it:
+use the server's `shelf` MCP tools if you have them, or else fetch
+`https://<their-domain>/llms.txt` and publish with curl as it describes, with
+the API key the user gives you. Ask the user for the domain and key when you
+don't know them.
 
 ## Steps
 
