@@ -39,6 +39,7 @@ Then, in the Cloudflare dashboard:
 - Expired docs are hidden until the daily sweep deletes them: the **Expired** filter and the sidebar's "Show expired" bring them back.
 - The sidebar lists every doc, favorites first, so one that has not changed in months is still one click away. It folds down to a narrow rail that keeps the logo and the theme switch. A doc's page has its link, settings, a place to upload a new version and its whole history.
 - Keys sit in the sidebar with their uploads over the last 14 days: mint a key for each machine or agent (shown once). A new key's dialog also copies *agent instructions*: your domain, the key, and where to find `llms.txt` and the MCP server, ready to paste into an agent. A key's page shows how much and how often it uploads: totals, uploads over the last 7 days, 30 days, 90 days or year (you pick), the time of day it is busiest in that period, and a GitHub-style heatmap of its last year. Below that, every doc it uploaded to and its uploads as a log; revoke it there. Revoked keys are archived: hidden from the sidebar until you click "Show revoked".
+- **Quotas.** On a key's page, set how much it may keep on the shelf (every version it uploaded that still exists counts in full) and what an upload that doesn't fit does: *Refuse it* (HTTP 413), or *Delete this key's oldest uploads*, oldest first until it fits. Deleting keeps favorites, and the current version of a doc that has older versions from another key or the dashboard; a doc left with no versions is deleted. An upload bigger than the whole quota is always refused. Dashboard uploads have no quota.
 - **Settings** (in the sidebar) holds app-wide settings. *New uploads expire after* gives every new doc uploaded without an expiry (from the dashboard, the CLI or the API) a default one, e.g. 7 days. An upload that sets its own expiry, or `never`, keeps it; existing docs and new versions of them don't change. *Longest expiry allowed* (30 days unless changed) caps any expiry set from then on; never is always allowed, and docs that already expire later keep their date.
 - Upload by dropping a file or folder anywhere on the page. On a doc's page, a drop adds a version to that doc.
 
@@ -114,7 +115,7 @@ Optional fields in the push body:
 | `expires` | A duration up to the longest expiry set in the dashboard's Settings (30 days unless changed): `30m`, `12h`, `7d`, `2w`, `30d`. `0` or `null` for never. Left out, a new doc gets the default from the dashboard's Settings (never unless set). Expired links return 410 and are deleted by a daily cron. |
 | `title`, `message` | Shown in listings and version history. |
 
-Pushing identical content creates no new version (`"created": false`).
+Pushing identical content creates no new version (`"created": false`). A push or blob upload over the key's quota fails with 413, unless the key deletes its oldest uploads to make room (set on the key's page).
 
 A folder is a manifest with many paths and an `index.html`. Pages link to each other with relative paths.
 
