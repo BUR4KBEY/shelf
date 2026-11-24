@@ -263,6 +263,19 @@ describe("docs api", () => {
     expect(detail.favorite).toBe(true);
     expect(detail.versions.map((v) => [v.n, v.message, v.keyName])).toEqual([[2, "second", "test"], [1, null, "test"]]);
   });
+
+  it("lists uploads across docs, newest first", async () => {
+    const a = await publish({ "a.html": "one" });
+    const b = await publish({ "index.html": "two", "b.css": "b{}" });
+    await publish({ "a.html": "one, edited" }, { ref: a.id, message: "edit" });
+
+    const uploads = (await (await api("/api/uploads")).json()) as { docId: string; n: number; message: string | null; keyName: string; files: number }[];
+    expect(uploads.slice(0, 3).map((u) => [u.docId, u.n, u.message, u.keyName, u.files])).toEqual([
+      [a.id, 2, "edit", "test", 1],
+      [b.id, 1, null, "test", 2],
+      [a.id, 1, null, "test", 1],
+    ]);
+  });
 });
 
 describe("dashboard", () => {
