@@ -140,7 +140,9 @@ devenv shell -- sh -c 'cd cli && go test ./...'
 
 Each pull request from a branch in this repo gets a [Worker Preview](https://developers.cloudflare.com/workers/previews/) at `https://pr-<number>-shelf.<subdomain>.workers.dev`, commented on the PR and deleted when it closes (`.github/workflows/preview.yml`). Previews use their own `shelf-preview` R2 bucket and D1 database, never production data.
 
-Pull requests from forks never deploy on their own: the preview runs the PR's code with the Cloudflare token. Review the code, then deploy the exact commit you reviewed by hand: Actions → preview → **Run workflow**, or `gh workflow run preview -f pr=<number> -f sha=<full commit sha>`. Push new commits and you have to run it again. The preview is deleted when the PR closes.
+Pull requests from forks never deploy on their own: the preview runs the PR's code with the Cloudflare token. Review the code, then comment `/deploy-preview <sha>` on the PR with the commit you reviewed (7+ characters; only the repo owner's comments count). It deploys only if that commit is still the PR's head, so a push after your review can't slip in. You can also run Actions → preview → **Run workflow** with the PR number and SHA. Push new commits and you have to deploy again. The preview is deleted when the PR closes.
+
+Every deploy sets a `preview` commit status: pending while it deploys, then success with the preview's URL, or failure. Make `preview` a required status check in the `main` ruleset, and fork PRs wait as *Expected* until you deploy them.
 
 To set it up on your own deployment:
 
