@@ -4,7 +4,11 @@ import { toast } from "sonner";
 import { Loading, Logo, Problem, display, focusRing, useLoad } from "@/components/bits";
 import { DurationInput, Field, Hint } from "@/components/Settings";
 import { Button } from "@/components/ui/button";
-import { api, errorText, type AppSettings } from "@/lib/api";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { api, errorText, type AppSettings, type Space } from "@/lib/api";
+import { plural } from "@/lib/format";
 import { PALETTES, setPref, usePref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { THEMES } from "@/views/Sidebar";
@@ -97,6 +101,101 @@ function ExpiryForm({ saved, onSaved }: { saved: AppSettings; onSaved: (s: AppSe
   );
 }
 
+/** One space: its name and what its keys may do. Switches save at once; the name saves with its button. */
+function SpaceRow({ space, onSaved }: { space: Space; onSaved: () => void }) {
+  const [name, setName] = useState(space.name);
+  const save = async (patch: Partial<Space>) => {
+    try {
+      await api(`/spaces/${space.id}`, { method: "PATCH", json: patch });
+      toast.success("Space saved");
+      onSaved();
+    } catch (err) {
+      toast.error(errorText(err));
+    }
+  };
+  const rename = (e: FormEvent) => {
+    e.preventDefault();
+    if (name.trim() !== space.name) save({ name: name.trim() });
+  };
+  return (
+    <li className="grid grid-cols-1 gap-3 rounded-xl border bg-card p-4">
+      <form onSubmit={rename} className="flex flex-wrap items-center gap-2">
+        <Input aria-label="Space name" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required className="max-w-60 font-semibold" />
+        {name.trim() !== space.name && (
+          <Button type="submit" variant="outline">
+            Rename
+          </Button>
+        )}
+        <span className="ml-auto text-xs text-muted-foreground">
+          {plural(space.docs, "doc")}, {plural(space.keys, "key")}
+        </span>
+      </form>
+      <Label className="font-normal">
+        <Switch checked={space.keysDelete} onCheckedChange={(v) => save({ keysDelete: v })} />
+        Its keys can delete docs
+      </Label>
+      <Label className="font-normal">
+        <Switch checked={space.keysReadLocked} onCheckedChange={(v) => save({ keysReadLocked: v })} />
+        Its keys can read its password-protected docs without the password (MCP read_doc)
+      </Label>
+    </li>
+  );
+}
+
+/** Isolation for the whole app, every space with its permissions, and a form to add one. */
+function Spaces({ settings, onSaved }: { settings: AppSettings; onSaved: (s: AppSettings) => void }) {
+  const { data: spaces, error, reload } = useLoad<Space[]>("/spaces");
+  const [name, setName] = useState("");
+  const isolate = async (isolateSpaces: boolean) => {
+    try {
+      onSaved(await api<AppSettings>("/settings", { method: "PATCH", json: { isolateSpaces } }));
+      toast.success("Settings saved");
+    } catch (err) {
+      toast.error(errorText(err));
+    }
+  };
+  const add = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      await api("/spaces", { method: "POST", json: { name: name.trim() } });
+      setName("");
+      reload();
+    } catch (err) {
+      toast.error(errorText(err));
+    }
+  };
+  return (
+    <div className="grid grid-cols-1 gap-3">
+      <div className="grid gap-1.5 rounded-xl border bg-card p-4">
+        <Label className="font-normal">
+          <Switch checked={settings.isolateSpaces} onCheckedChange={isolate} aria-describedby="f-isolate-hint" />
+          Keys see only their own space
+        </Label>
+        <Hint id="f-isolate-hint">
+          On: a key lists, reads, updates and deletes only the docs in its space. Off: every key reaches every doc, as before spaces existed. Either way a key's uploads land in its own space, and it never skips another space's password. The dashboard always sees everything.
+        </Hint>
+      </div>
+      {error ? (
+        <Problem error={error} />
+      ) : !spaces ? (
+        <Loading />
+      ) : (
+        <ul className="grid grid-cols-1 gap-3">
+          {spaces.map((s) => (
+            <SpaceRow key={[s.id, s.name, s.keysDelete, s.keysReadLocked].join("\n")} space={s} onSaved={reload} />
+          ))}
+        </ul>
+      )}
+      <form onSubmit={add} className="flex gap-2">
+        <Input aria-label="New space name" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} placeholder="New space, e.g. work" autoComplete="off" required className="max-w-60" />
+        <Button type="submit" variant="outline">
+          Add space
+        </Button>
+      </form>
+    </div>
+  );
+}
+
 /** Settings for the whole app, as opposed to one doc's. */
 export function AppSettingsView() {
   const { data, error } = useLoad<AppSettings>("/settings");
@@ -119,10 +218,16 @@ export function AppSettingsView() {
       ) : !s ? (
         <Loading />
       ) : (
-        <section className="grid grid-cols-1 gap-2.5">
-          <h2 className="text-base leading-none font-bold">Expiry</h2>
-          <ExpiryForm saved={s} onSaved={setSaved} />
-        </section>
+        <>
+          <section className="grid grid-cols-1 gap-2.5">
+            <h2 className="text-base leading-none font-bold">Expiry</h2>
+            <ExpiryForm saved={s} onSaved={setSaved} />
+          </section>
+          <section className="grid grid-cols-1 gap-2.5">
+            <h2 className="text-base leading-none font-bold">Spaces</h2>
+            <Spaces settings={s} onSaved={setSaved} />
+          </section>
+        </>
       )}
     </div>
   );

@@ -8,6 +8,8 @@ export type Doc = {
   latest: number;
   createdAt: number;
   updatedAt: number;
+  /** Id of the space it belongs to. */
+  space: string;
   url: string;
 };
 export type Version = { n: number; message: string | null; size: number; createdAt: number; keyId: string | null; keyName: string | null; files: number };
@@ -15,8 +17,10 @@ export type Version = { n: number; message: string | null; size: number; created
 export type Activity = Version & { docId: string };
 export type DocDetail = Doc & { versions: Version[] };
 export type PushResult = (Doc & { version: number; versionUrl: string; created: boolean; missing?: undefined }) | { missing: string[] };
-export type Key = { id: string; name: string; createdAt: number; lastUsedAt: number | null; revokedAt: number | null };
-export type NewKey = { id: string; name: string; key: string };
+export type Key = { id: string; name: string; space: string; createdAt: number; lastUsedAt: number | null; revokedAt: number | null };
+export type NewKey = { id: string; name: string; space: string; key: string };
+/** A space isolates its keys: they see only its docs. `keysDelete`, `keysReadLocked`: whether they may delete its docs and read its locked ones without the password. */
+export type Space = { id: string; name: string; keysDelete: boolean; keysReadLocked: boolean; createdAt: number; docs: number; keys: number };
 /** A doc a key uploaded to: how often, how much, and when. `created` is 1 when the key made the doc. */
 export type KeyDoc = { docId: string; uploads: number; created: number; size: number; firstAt: number; lastAt: number };
 /**
@@ -24,8 +28,8 @@ export type KeyDoc = { docId: string; uploads: number; created: number; size: nu
  * `quota`: bytes its uploads may keep on the shelf, null for no limit. `strategy`: what an upload over it does.
  */
 export type KeyDetail = Key & { docs: KeyDoc[]; uploads: Activity[]; times: number[]; quota: number | null; strategy: "reject" | "fifo" };
-/** `defaultExpires`: what a new doc gets when its upload names no expiry; null for never. `maxExpires`: the longest expiry any doc may get. */
-export type AppSettings = { defaultExpires: string | null; maxExpires: string };
+/** `defaultExpires`: what a new doc gets when its upload names no expiry; null for never. `maxExpires`: the longest expiry any doc may get. `isolateSpaces`: keys see only their own space. */
+export type AppSettings = { defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean };
 
 export async function api<T>(path: string, { method = "GET", json, body }: { method?: string; json?: unknown; body?: Blob } = {}): Promise<T> {
   let res: Response;

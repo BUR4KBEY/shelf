@@ -78,7 +78,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
             <h2 className={heading}>Settings</h2>
             <div className="rounded-xl border bg-card p-4">
               {/* Remounts when the saved settings change, but not when a new version arrives, so unsaved edits survive an upload. */}
-              <Settings key={[d.title, d.slug, d.locked, d.expiresAt].join("\n")} d={d} onChanged={changed} onDeleted={() => (location.hash = "#/")} />
+              <Settings key={[d.title, d.slug, d.locked, d.expiresAt, d.space].join("\n")} d={d} onChanged={changed} onDeleted={() => (location.hash = "#/")} />
             </div>
           </section>
 

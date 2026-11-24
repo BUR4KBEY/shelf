@@ -150,7 +150,7 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                             // Clipped only while it slides, so the inputs' focus rings show once it is open.
                             <motion.div initial={{ height: 0, opacity: 0, overflow: "hidden" }} animate={{ height: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }} exit={{ height: 0, opacity: 0, overflow: "hidden" }} transition={{ duration: 0.22, ease: "easeOut" }}>
                               <div data-settings className="mt-3 border-t border-(--k)/30 pt-3.5">
-                                <Settings key={[d.title, d.slug, d.locked, d.expiresAt].join("\n")} d={d} onChanged={onChanged} onDeleted={() => setOpen(null)} />
+                                <Settings key={[d.title, d.slug, d.locked, d.expiresAt, d.space].join("\n")} d={d} onChanged={onChanged} onDeleted={() => setOpen(null)} />
                               </div>
                             </motion.div>
                           )}
