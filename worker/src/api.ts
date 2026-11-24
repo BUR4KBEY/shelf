@@ -19,9 +19,12 @@ export interface Doc {
   updated_at: number;
 }
 
-/** Finds a doc by id or slug. Expired docs are still returned so the owner can revive them. */
+/**
+ * Finds a doc by id or slug; slugs match case-insensitively, ids exactly, and an id wins a tie.
+ * Expired docs are still returned so the owner can revive them.
+ */
 export const findDoc = (env: Env, ref: string) =>
-  env.DB.prepare("SELECT * FROM docs WHERE id = ?1 OR slug = ?1").bind(ref).first<Doc>();
+  env.DB.prepare("SELECT * FROM docs WHERE id = ?1 OR slug = lower(?1) ORDER BY id = ?1 DESC LIMIT 1").bind(ref).first<Doc>();
 
 const validPath = (p: string) =>
   p.length > 0 &&
@@ -43,6 +46,7 @@ interface Settings {
  * or an error response. `null` clears a setting; `undefined` leaves it alone.
  */
 async function settingsColumns(env: Env, s: Settings, doc: Doc | null): Promise<Record<string, unknown> | Response> {
+  if (typeof s.slug === "string") s.slug = s.slug.toLowerCase();
   if (!isOpt(s.title, (v) => typeof v === "string" && v.length <= 200)) return json({ error: "title: up to 200 chars" }, 400);
   if (!isOpt(s.slug, (v) => typeof v === "string" && SLUG.test(v))) {
     return json({ error: "slug: 3 to 48 chars of a-z, 0-9 and -, not starting or ending with -" }, 400);
@@ -124,7 +128,7 @@ export async function push(req: Request, env: Env, keyId: string | null): Promis
     doc = await findDoc(env, body.ref);
     if (!doc) return json({ error: "doc not found" }, 404);
   } else if (body.slug) {
-    doc = await env.DB.prepare("SELECT * FROM docs WHERE slug = ?").bind(body.slug).first<Doc>();
+    doc = await env.DB.prepare("SELECT * FROM docs WHERE slug = lower(?)").bind(body.slug).first<Doc>();
   }
   const cols = await settingsColumns(env, body, doc);
   if (cols instanceof Response) return cols;
