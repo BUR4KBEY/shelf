@@ -1,3 +1,4 @@
+import { previewAccess } from "./access";
 import { deleteDoc, getDoc, listDocs, patchDoc, push, putBlob, sweep } from "./api";
 import { apiKey } from "./auth";
 import { createKey, dashboardPage, listKeys, revokeKey } from "./dashboard";
@@ -38,14 +39,15 @@ export default {
     if (path === "/") return Response.redirect(`${url.origin}/dashboard`, 302);
 
     if (path === "/dashboard" || path.startsWith("/dashboard/")) {
-      // Set only when Cloudflare Access authenticated this request, so workers.dev and preview URLs that skip Access get nothing.
-      if (!ctx.access) return new Response("This page requires Cloudflare Access. See the README.", { status: 403 });
+      // ctx.access is set only when Cloudflare Access authenticated this request; previews check the Access JWT instead.
+      const preview = ctx.access ? null : await previewAccess(req, env);
+      if (!ctx.access && !preview) return new Response("This page requires Cloudflare Access. See the README.", { status: 403 });
       if (path === "/dashboard" && req.method === "GET") return dashboardPage();
       if (path.startsWith("/dashboard/api/")) {
         // CSRF: browsers always send Origin on non-GET requests, and a sandboxed doc sends "null".
         if (req.method !== "GET" && req.headers.get("origin") !== url.origin) return json({ error: "cross-origin request refused" }, 403);
         const sub = path.slice("/dashboard".length);
-        if (req.method === "GET" && sub === "/api/me") return json({ email: (await ctx.access.getIdentity())?.email ?? null });
+        if (req.method === "GET" && sub === "/api/me") return json({ email: ctx.access ? ((await ctx.access.getIdentity())?.email ?? null) : preview!.email });
         if (req.method === "GET" && sub === "/api/keys") return listKeys(env);
         if (req.method === "POST" && sub === "/api/keys") return createKey(req, env);
         if (req.method === "POST" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})\/revoke$/))) return revokeKey(env, m[1]);

@@ -142,7 +142,7 @@ Each pull request from this repo gets a [Worker Preview](https://developers.clou
 
 1. Create the bucket and database (`npx wrangler r2 bucket create shelf-preview`, `npx wrangler d1 create shelf-preview`) and put the database ID in `previews.d1_databases` in `wrangler.jsonc` and in `wrangler.preview-migrations.jsonc`.
 2. Add repository secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (*Workers Scripts: Edit*, *D1: Edit*, *Workers R2 Storage: Edit*).
-3. For the dashboard to work in previews, protect the Worker's previews with Access: Workers & Pages → shelf → Access → **Protect this Worker behind Access** → *Previews only*.
+3. For the dashboard to work in previews, protect the Worker's previews with Access: Workers & Pages → shelf → Access → **Protect this Worker behind Access** → *Previews only*. Then set `previews.vars` in `wrangler.jsonc`: `ACCESS_TEAM_DOMAIN` (`<team>.cloudflareaccess.com`) and `ACCESS_AUD` (the Access app's audience tag). Cloudflare doesn't set `ctx.access` on preview URLs, so the Worker checks the Access token itself.
 
 ## License
 

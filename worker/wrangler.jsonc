@@ -19,6 +19,9 @@
   // so they get their own bucket and database: preview code never touches production docs or keys.
   "preview_urls": true,
   "previews": {
+    // ctx.access is unset on Preview URLs, so the Worker verifies the Access JWT against these (see src/access.ts).
+    // From the Access app that "Protect this Worker behind Access → Previews only" created.
+    "vars": { "ACCESS_TEAM_DOMAIN": "burakbey.cloudflareaccess.com", "ACCESS_AUD": "89b8483308e308b90dd03baae956a3e448f62d658ec87b095ac38ee8f7946cbe" },
     "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "shelf-preview" }],
     // Same database as wrangler.preview-migrations.jsonc, which applies migrations to it.
     "d1_databases": [{ "binding": "DB", "database_name": "shelf-preview", "database_id": "7e32ae96-174c-4c79-bd91-fb5317eb1df6" }],
