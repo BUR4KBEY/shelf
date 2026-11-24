@@ -32,24 +32,46 @@ const validPath = (p: string) =>
   p.split("/").every((s) => s !== "" && s !== "." && s !== ".." && !/[\\\x00-\x1f]/.test(s));
 
 const isOpt = (v: unknown, ok: (v: unknown) => boolean) => v === undefined || v === null || ok(v);
-const DURATION = /^\d{1,4}[mhdw]$/;
-const defaultExpires = (env: Env) => env.DB.prepare("SELECT value FROM settings WHERE key = 'default_expires'").first<string>("value");
+/** Milliseconds in a duration like 30m, 12h, 7d or 2w; 0 for "0" or any zero duration; NaN when it isn't one. */
+const durationMs = (v: unknown) => {
+  const m = typeof v === "string" ? /^(\d{1,5})([mhdw])$/.exec(v) : null;
+  return v === "0" ? 0 : m ? Number(m[1]) * UNIT[m[2]] : NaN;
+};
 
-/** App-wide settings, set from the dashboard. `defaultExpires` is the expiry a new doc gets when its push doesn't name one. */
+/**
+ * App-wide settings, set from the dashboard. `defaultExpires` is the expiry a new doc gets when its push doesn't name one
+ * (null: never); `maxExpires` is the longest expiry any doc may be given.
+ */
+async function appSettings(env: Env): Promise<{ defaultExpires: string | null; maxExpires: string }> {
+  const { results } = await env.DB.prepare("SELECT key, value FROM settings").all<{ key: string; value: string }>();
+  const s = Object.fromEntries(results.map((r) => [r.key, r.value]));
+  return { defaultExpires: s.default_expires ?? null, maxExpires: s.max_expires ?? "30d" };
+}
+
 export async function getAppSettings(env: Env): Promise<Response> {
-  return json({ defaultExpires: await defaultExpires(env) });
+  return json(await appSettings(env));
 }
 
 export async function patchAppSettings(req: Request, env: Env): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { defaultExpires?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { defaultExpires?: unknown; maxExpires?: unknown } | null;
   if (!body || typeof body !== "object") return json({ error: "JSON object required" }, 400);
-  const d = body.defaultExpires;
-  if (d !== undefined && !isOpt(d, (v) => typeof v === "string" && DURATION.test(v))) {
-    return json({ error: "defaultExpires: a duration like 30m, 12h, 7d or 2w, or null for never" }, 400);
+  const { defaultExpires: d, maxExpires: max } = body;
+  if (d !== undefined && !isOpt(d, (v) => durationMs(v) >= 0)) {
+    return json({ error: "defaultExpires: a duration like 30m, 12h, 7d or 2w; 0 or null for never" }, 400);
   }
-  if (d === null) await env.DB.prepare("DELETE FROM settings WHERE key = 'default_expires'").run();
-  else if (d !== undefined) await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('default_expires', ?1) ON CONFLICT (key) DO UPDATE SET value = ?1").bind(d).run();
-  return getAppSettings(env);
+  if (max !== undefined && !(durationMs(max) > 0)) return json({ error: "maxExpires: a duration like 30m, 12h, 7d or 2w" }, 400);
+  const next = await appSettings(env);
+  if (d !== undefined) next.defaultExpires = durationMs(d) ? (d as string) : null; // null or a zero duration: never
+  if (max !== undefined) next.maxExpires = max as string;
+  if (next.defaultExpires !== null && durationMs(next.defaultExpires) > durationMs(next.maxExpires)) {
+    return json({ error: `the default expiry (${next.defaultExpires}) can't be longer than the longest allowed (${next.maxExpires})` }, 400);
+  }
+  const upsert = env.DB.prepare("INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = ?2");
+  await env.DB.batch([
+    next.defaultExpires === null ? env.DB.prepare("DELETE FROM settings WHERE key = 'default_expires'") : upsert.bind("default_expires", next.defaultExpires),
+    upsert.bind("max_expires", next.maxExpires),
+  ]);
+  return json(next);
 }
 
 interface Settings {
@@ -73,10 +95,10 @@ async function settingsColumns(env: Env, s: Settings, doc: Doc | null): Promise<
   if (!isOpt(s.password, (v) => typeof v === "string" && v.length >= 8 && v.length <= 256)) {
     return json({ error: "password: 8 to 256 chars" }, 400);
   }
-  const m = typeof s.expires === "string" ? /^(\d{1,5})([mhdw])$/.exec(s.expires) : null;
-  const expiresMs = s.expires === "0" ? 0 : m ? Number(m[1]) * UNIT[m[2]] : NaN;
-  if (!isOpt(s.expires, () => expiresMs <= 30 * DAY)) {
-    return json({ error: "expires: a duration up to 30d like 30m, 12h, 7d or 2w; 0 or null for never" }, 400);
+  const expiresMs = durationMs(s.expires);
+  const maxExpires = typeof s.expires === "string" ? (await appSettings(env)).maxExpires : "";
+  if (!isOpt(s.expires, () => expiresMs <= durationMs(maxExpires))) {
+    return json({ error: `expires: a duration up to ${maxExpires || "the owner's limit"} like 30m, 12h, 7d or 2w; 0 or null for never` }, 400);
   }
   if (s.favorite !== undefined && typeof s.favorite !== "boolean") return json({ error: "favorite: boolean" }, 400);
 
@@ -151,7 +173,7 @@ export async function push(req: Request, env: Env, keyId: string | null): Promis
     doc = await env.DB.prepare("SELECT * FROM docs WHERE slug = lower(?)").bind(body.slug).first<Doc>();
   }
   // A new doc that doesn't name an expiry gets the owner's default; `expires: null` still means never.
-  if (!doc && body.expires === undefined) body.expires = await defaultExpires(env);
+  if (!doc && body.expires === undefined) body.expires = (await appSettings(env)).defaultExpires;
   const cols = await settingsColumns(env, body, doc);
   if (cols instanceof Response) return cols;
 
