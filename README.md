@@ -35,7 +35,7 @@ Then, in the Cloudflare dashboard:
 `https://your-domain/dashboard` (light and dark, following your system until you pick one in the sidebar; React + shadcn/ui, animated with Motion, which moves nothing when your system asks for reduced motion):
 
 - The home screen is a log of uploads, newest first and grouped by day: who uploaded which version of which doc, with its message. Each key has its own colour, so you can tell your agents, CI and machines apart at a glance.
-- Every upload has a copy-link button, a star for favorites and the doc's settings (title, slug, password, expiry, delete). Filter by favorites, password protected or expiring, and search titles, slugs, ids and messages.
+- Every upload has a copy-link button, a star for favorites and the doc's settings (title, slug, password, expiry, delete); click anywhere on the upload to open them. Filter by favorites, password protected or expiring, and search titles, slugs, ids and messages.
 - Expired docs are hidden until the daily sweep deletes them: the **Expired** filter and the sidebar's "Show expired" bring them back.
 - The sidebar lists every doc, favorites first, so one that has not changed in months is still one click away. It folds down to a narrow rail. A doc's page has its link, settings, a place to upload a new version and its whole history.
 - Keys sit in the sidebar with their uploads over the last 14 days: mint a key for each machine or agent (shown once), and revoke it from its menu.
