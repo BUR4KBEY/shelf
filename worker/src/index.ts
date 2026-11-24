@@ -1,5 +1,5 @@
 import { previewAccess } from "./access";
-import { deleteDoc, getDoc, listDocs, listUploads, patchDoc, push, putBlob, sweep } from "./api";
+import { deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, push, putBlob, sweep } from "./api";
 import { apiKey } from "./auth";
 import { createKey, dashboardPage, listKeys, revokeKey } from "./dashboard";
 import { font, notFound, notice, setTheme } from "./page";
@@ -59,6 +59,9 @@ export default {
         if (req.method === "GET" && sub === "/api/keys") return listKeys(env);
         if (req.method === "POST" && sub === "/api/keys") return createKey(req, env);
         if (req.method === "POST" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})\/revoke$/))) return revokeKey(env, m[1]);
+        // Dashboard only: an API key publishes docs, it doesn't change how the app treats everyone's uploads.
+        if (req.method === "GET" && sub === "/api/settings") return getAppSettings(env);
+        if (req.method === "PATCH" && sub === "/api/settings") return patchAppSettings(req, env);
         return (await docRoutes(req, env, sub, null)) ?? json({ error: "not found" }, 404);
       }
     }
