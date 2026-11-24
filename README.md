@@ -138,10 +138,14 @@ devenv shell -- sh -c 'cd cli && go test ./...'
 
 ### PR previews
 
-Each pull request from this repo gets a [Worker Preview](https://developers.cloudflare.com/workers/previews/) at `https://pr-<number>-shelf.<subdomain>.workers.dev`, commented on the PR and deleted when it closes (`.github/workflows/preview.yml`). Previews use their own `shelf-preview` R2 bucket and D1 database, never production data. To set it up on your own deployment:
+Each pull request from a branch in this repo gets a [Worker Preview](https://developers.cloudflare.com/workers/previews/) at `https://pr-<number>-shelf.<subdomain>.workers.dev`, commented on the PR and deleted when it closes (`.github/workflows/preview.yml`). Previews use their own `shelf-preview` R2 bucket and D1 database, never production data.
+
+Pull requests from forks never deploy on their own: the preview runs the PR's code with the Cloudflare token. Review the code, then deploy the exact commit you reviewed by hand: Actions → preview → **Run workflow**, or `gh workflow run preview -f pr=<number> -f sha=<full commit sha>`. Push new commits and you have to run it again. The preview is deleted when the PR closes.
+
+To set it up on your own deployment:
 
 1. Create the bucket and database (`npx wrangler r2 bucket create shelf-preview`, `npx wrangler d1 create shelf-preview`) and put the database ID in `previews.d1_databases` in `wrangler.jsonc` and in `wrangler.preview-migrations.jsonc`.
-2. Add repository secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (*Workers Scripts: Edit*, *D1: Edit*, *Workers R2 Storage: Edit*).
+2. Create an account API token limited to this account with *Workers* → **Editor** scoped to the `shelf` Worker only, and *D1* → **Edit**. It needs no R2 permission: deploying a binding doesn't need access to the bucket. D1 can't be scoped to one database yet, so the token can still edit every D1 database in the account; that is why fork PRs only deploy by hand. Add it and the account ID as repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 3. For the dashboard to work in previews, protect the Worker's previews with Access: Workers & Pages → shelf → Access → **Protect this Worker behind Access** → *Previews only*. Then set `previews.vars` in `wrangler.jsonc`: `ACCESS_TEAM_DOMAIN` (`<team>.cloudflareaccess.com`) and `ACCESS_AUD` (the Access app's audience tag). Cloudflare doesn't set `ctx.access` on preview URLs, so the Worker checks the Access token itself.
 
 ## License
