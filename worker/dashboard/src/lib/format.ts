@@ -7,8 +7,21 @@ function span(ms: number): string | null {
   return m < 525_600 ? `${Math.round(m / 43_200)}mo` : `${Math.round(m / 525_600)}y`;
 }
 export const ago = (t: number) => (span(Date.now() - t) ? `${span(Date.now() - t)} ago` : "just now");
-export const expiry = (t: number) => (t <= Date.now() ? "expired" : `expires in ${span(t - Date.now()) ?? "<1m"}`);
+/** "7d", or null once it has passed. */
+export const timeLeft = (t: number) => (t <= Date.now() ? null : (span(t - Date.now()) ?? "<1m"));
 export const fullDate = (t: number) => new Date(t).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+/** Always 24-hour, so the times in the log line up in one narrow column. */
+export const clock = (t: number) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+/** "Today", "Yesterday", then the date; `day` is a local midnight. */
+export function dayName(day: number): string {
+  const today = new Date().setHours(0, 0, 0, 0);
+  const yesterday = new Date(today).setDate(new Date(today).getDate() - 1);
+  return day === today ? "Today" : day === yesterday ? "Yesterday" : longDate(day);
+}
+export function longDate(day: number): string {
+  const sameYear = new Date(day).getFullYear() === new Date().getFullYear();
+  return new Date(day).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", ...(!sameYear && { year: "numeric" }) });
+}
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 export function size(b: number): string {
   if (b < 1000) return `${b} B`;

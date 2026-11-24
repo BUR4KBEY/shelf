@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { fullDate } from "@/lib/format";
@@ -53,27 +51,13 @@ export function Time({ t, children }: { t: number; children: ReactNode }) {
   );
 }
 
-/** Icon buttons are 32px, and 36px on phones where they are tapped. */
-export const iconButton = "text-muted-foreground hover:text-foreground max-sm:size-9";
-
-export function LinkButtons({ url, what, className }: { url: string; what: string; className?: string }) {
-  return (
-    <div className={cn("flex shrink-0 items-center", className)}>
-      <Tip label="Copy link">
-        <Button variant="ghost" size="icon" className={iconButton} aria-label={`Copy link to ${what}`} onClick={() => copy(url)}>
-          <Copy />
-        </Button>
-      </Tip>
-      <Tip label="Open in a new tab">
-        <Button variant="ghost" size="icon" className={iconButton} asChild>
-          <a href={url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${what} in a new tab`}>
-            <ExternalLink />
-          </a>
-        </Button>
-      </Tip>
-    </div>
-  );
-}
+export const focusRing = "rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
+/** The quiet heading over a group: "On the shelf", "Keys", "Settings". */
+export const groupName = "text-[0.8125rem] leading-none font-semibold text-muted-foreground";
+/** The narrow, heavy cut for the wordmark and the names of days and docs. */
+export const display = "font-bold tracking-tight font-stretch-[78%]";
+/** A dashed box: somewhere a file can be dropped, or something that isn't there yet. */
+export const dashed = "rounded-xl border-[1.5px] border-dashed border-input";
 
 export function Confirm(props: { open: boolean; onOpenChange: (open: boolean) => void; title: string; body: string; action: string; onConfirm: () => void }) {
   // Callers clear their subject on close; keep the last open text so it doesn't blank during the fade-out.
@@ -98,40 +82,18 @@ export function Confirm(props: { open: boolean; onOpenChange: (open: boolean) =>
   );
 }
 
-export function Section({ title, hint, children }: { title: ReactNode; hint?: ReactNode; children: ReactNode }) {
+export function Problem({ error, className }: { error: Error; className?: string }) {
   return (
-    <section className="grid min-w-0 grid-cols-1 gap-2.5">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-        <h2 className="text-sm font-medium">{title}</h2>
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-export const card = "rounded-xl border bg-card/60";
-
-export function Empty({ title, children, alert }: { title: string; children: ReactNode; alert?: boolean }) {
-  return (
-    <div role={alert ? "alert" : undefined} className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
-      <p className="mb-1 text-base font-medium text-foreground">{title}</p>
-      {children}
+    <div role="alert" className={cn("grid gap-1.5 text-sm", className)}>
+      <p className={cn(display, "text-3xl leading-none")}>Something went wrong</p>
+      <p className="text-muted-foreground">{error.message}</p>
+      <p>
+        <a href="#/" className={cn(focusRing, "font-semibold underline underline-offset-4")}>
+          Back to all uploads
+        </a>
+      </p>
     </div>
   );
 }
 
-export function Problem({ error }: { error: Error }) {
-  return (
-    <Empty title="Something went wrong" alert>
-      <p>{error.message}</p>
-      <p className="mt-3">
-        <a href="#/" className="text-foreground underline underline-offset-4">
-          Back to docs
-        </a>
-      </p>
-    </Empty>
-  );
-}
-
-export const Loading = () => <p className="text-sm text-muted-foreground">Loading…</p>;
+export const Loading = ({ className }: { className?: string }) => <p className={cn("text-sm text-muted-foreground", className)}>Loading…</p>;
