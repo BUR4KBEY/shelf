@@ -532,11 +532,11 @@ describe("dashboard", () => {
 
   it("gives new docs the default expiry unless the push names one", async () => {
     const setDefault = (defaultExpires: string | null) => dash("/dashboard/api/settings", { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ defaultExpires }) });
-    expect(await (await dash("/dashboard/api/settings")).json()).toEqual({ defaultExpires: null, maxExpires: "30d" });
+    expect(await (await dash("/dashboard/api/settings")).json()).toEqual({ defaultExpires: null, maxExpires: "30d", isolateSpaces: true });
     expect((await setDefault("soon")).status).toBe(400);
     expect((await api("/api/settings")).status).toBe(404); // an API key can't change it
     try {
-      expect(await (await setDefault("7d")).json()).toEqual({ defaultExpires: "7d", maxExpires: "30d" });
+      expect(await (await setDefault("7d")).json()).toEqual({ defaultExpires: "7d", maxExpires: "30d", isolateSpaces: true });
       const before = Date.now();
       expect((await publish({ "d1.html": "default" })).expiresAt).toBeGreaterThanOrEqual(before + 7 * 86_400_000);
       expect((await publish({ "d2.html": "forever" }, { expires: null })).expiresAt).toBeNull();
@@ -555,14 +555,14 @@ describe("dashboard", () => {
     try {
       expect((await publish({ "m1.html": "30d" }, { expires: "30d" })).expiresAt).not.toBeNull();
       for (const bad of [null, "0", "0d", "soon"]) expect((await patchApp({ maxExpires: bad })).status).toBe(400);
-      expect(await (await patchApp({ maxExpires: "90d" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d" });
+      expect(await (await patchApp({ maxExpires: "90d" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d", isolateSpaces: true });
       expect((await publish({ "m2.html": "60d" }, { expires: "60d" })).expiresAt).toBeGreaterThan(Date.now() + 59 * 86_400_000);
       expect((await pushManifest({ files: [{ path: "m3.html", sha256: await sha256Hex("91d") }], expires: "91d" })).status).toBe(400);
       // The default can't outgrow the max, from either side.
       expect((await patchApp({ defaultExpires: "14d", maxExpires: "7d" })).status).toBe(400);
-      expect(await (await patchApp({ defaultExpires: "14d" })).json()).toEqual({ defaultExpires: "14d", maxExpires: "90d" });
+      expect(await (await patchApp({ defaultExpires: "14d" })).json()).toEqual({ defaultExpires: "14d", maxExpires: "90d", isolateSpaces: true });
       expect((await patchApp({ maxExpires: "7d" })).status).toBe(400);
-      expect(await (await patchApp({ defaultExpires: "0" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d" });
+      expect(await (await patchApp({ defaultExpires: "0" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d", isolateSpaces: true });
       const { id } = await publish({ "m4.html": "patch" });
       await patchApp({ maxExpires: "1d" });
       expect((await api(`/api/docs/${id}`, { method: "PATCH", body: JSON.stringify({ expires: "2d" }) })).status).toBe(400);
@@ -580,6 +580,65 @@ describe("dashboard", () => {
     expect(res.headers.get("location")).toBe(`/view/${id}@1?raw`);
     const cookie = res.headers.get("set-cookie")!.split(";")[0];
     expect(await (await get(`/view/${id}`, { headers: { cookie } })).text()).toBe("mine");
+  });
+
+  it("keeps each key to its own space, with the permissions the owner set", async () => {
+    const space = (await (await dash("/dashboard/api/spaces", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "work" }) })).json()) as { id: string };
+    expect((await dash("/dashboard/api/spaces", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "work" }) })).status).toBe(409);
+    const { key } = (await (await dash("/dashboard/api/keys", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "work-ci", space: space.id }) })).json()) as { key: string };
+    const work = (path: string, init: RequestInit = {}) =>
+      exports.default.fetch(`${BASE}${path}`, { ...init, headers: { authorization: `Bearer ${key}`, "content-type": "application/json", ...init.headers } });
+    const mcpCall = async (auth: string, name: string, args: object) =>
+      ((await (await exports.default.fetch(`${BASE}/mcp`, { method: "POST", headers: { authorization: auth }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }) })).json()) as { result: { content: { text: string }[]; isError: boolean } }).result;
+    const patchSpace = (body: object) => dash(`/dashboard/api/spaces/${space.id}`, { method: "PATCH", headers: sameOrigin, body: JSON.stringify(body) });
+    const patchApp = (body: object) => dash("/dashboard/api/settings", { method: "PATCH", headers: sameOrigin, body: JSON.stringify(body) });
+
+    // The work key publishes; its doc lands in its space.
+    const sha = await sha256Hex("work secret");
+    await work(`/api/blobs/${sha}`, { method: "PUT", headers: { "content-length": "11" }, body: "work secret" });
+    const pushWork = (extra: object) => work("/api/push", { method: "POST", body: JSON.stringify({ files: [{ path: "w.html", sha256: sha }], ...extra }) });
+    const mine = (await (await pushWork({ slug: "work-plan", password: "hunter22" })).json()) as { id: string; space: string };
+    expect(mine.space).toBe(space.id);
+    const theirs = await publish({ "t.html": "default space" }, { message: "theirs" });
+
+    // Each side sees only its own docs and uploads; the other's are not found.
+    const ids = async (res: Response) => ((await res.json()) as { id?: string; docId?: string }[]).map((d) => d.id ?? d.docId);
+    expect(await ids(await work("/api/docs"))).toEqual([mine.id]);
+    expect(await ids(await work("/api/uploads"))).toEqual([mine.id]);
+    expect(await ids(await api("/api/docs"))).not.toContain(mine.id);
+    expect((await work(`/api/docs/${theirs.id}`)).status).toBe(404);
+    expect((await work(`/api/docs/${theirs.id}`, { method: "PATCH", body: JSON.stringify({ title: "x" }) })).status).toBe(404);
+    expect((await work(`/api/docs/${theirs.id}`, { method: "DELETE" })).status).toBe(404);
+    expect((await pushWork({ ref: theirs.id })).status).toBe(404);
+    expect((await api("/api/docs/work-plan")).status).toBe(404);
+    // Another space's slug is taken, never updated.
+    expect((await pushManifest({ slug: "work-plan", password: "hunter22", files: [{ path: "w.html", sha256: sha }] })).status).toBe(409);
+    expect((await mcpCall(AUTH.authorization, "read_doc", { ref: mine.id })).content[0].text).toBe("doc not found");
+    // A key can't move docs; readers with the link and password still can read.
+    expect((await work(`/api/docs/${mine.id}`, { method: "PATCH", body: JSON.stringify({ space: "default" }) })).status).toBe(403);
+    expect(await (await exports.default.fetch(`${BASE}/view/work-plan`, { headers: { "x-doc-password": "hunter22" } })).text()).toBe("work secret");
+
+    // The space's permissions: no deletes, no reading locked docs without the password.
+    expect((await mcpCall(`Bearer ${key}`, "read_doc", { ref: mine.id })).content[0].text).toBe("work secret");
+    expect(await (await patchSpace({ keysDelete: false, keysReadLocked: false })).json()).toMatchObject({ keysDelete: false, keysReadLocked: false, docs: 1, keys: 1 });
+    expect((await work(`/api/docs/${mine.id}`, { method: "DELETE" })).status).toBe(403);
+    expect((await mcpCall(`Bearer ${key}`, "read_doc", { ref: mine.id })).isError).toBe(true);
+    await patchSpace({ keysReadLocked: true });
+
+    try {
+      // Isolation off: every key reaches every doc, but never skips another space's password.
+      await patchApp({ isolateSpaces: false });
+      expect(await ids(await api("/api/docs"))).toContain(mine.id);
+      expect((await mcpCall(AUTH.authorization, "read_doc", { ref: mine.id })).isError).toBe(true);
+    } finally {
+      await patchApp({ isolateSpaces: true });
+    }
+
+    // The dashboard sees both and moves a doc into the space.
+    expect(await ids(await dash("/dashboard/api/docs"))).toEqual(expect.arrayContaining([mine.id, theirs.id]));
+    expect((await dash(`/dashboard/api/docs/${theirs.id}`, { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ space: space.id }) })).status).toBe(200);
+    expect((await work(`/api/docs/${theirs.id}`)).status).toBe(200);
+    expect((await api(`/api/docs/${theirs.id}`)).status).toBe(404);
   });
 });
 

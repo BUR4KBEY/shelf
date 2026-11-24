@@ -1,4 +1,4 @@
-import { hashPassword } from "./auth";
+import { type Caller, hashPassword } from "./auth";
 import { docId, json, sha256Hex } from "./util";
 
 const SHA = /^[0-9a-f]{64}$/;
@@ -17,14 +17,17 @@ export interface Doc {
   latest: number;
   created_at: number;
   updated_at: number;
+  space_id: string;
 }
 
 /**
  * Finds a doc by id or slug, ignoring case: both are stored lowercase. An id wins a tie.
- * Expired docs are still returned so the owner can revive them.
+ * `scope` limits it to one space's docs (null: every space). Expired docs are still returned so the owner can revive them.
  */
-export const findDoc = (env: Env, ref: string) =>
-  env.DB.prepare("SELECT * FROM docs WHERE id = ?1 OR slug = ?1 ORDER BY id = ?1 DESC LIMIT 1").bind(ref.toLowerCase()).first<Doc>();
+export const findDoc = (env: Env, ref: string, scope: string | null = null) =>
+  env.DB.prepare("SELECT * FROM docs WHERE (id = ?1 OR slug = ?1) AND (?2 IS NULL OR space_id = ?2) ORDER BY id = ?1 DESC LIMIT 1")
+    .bind(ref.toLowerCase(), scope)
+    .first<Doc>();
 
 const validPath = (p: string) =>
   p.length > 0 &&
@@ -40,12 +43,12 @@ const durationMs = (v: unknown) => {
 
 /**
  * App-wide settings, set from the dashboard. `defaultExpires` is the expiry a new doc gets when its push doesn't name one
- * (null: never); `maxExpires` is the longest expiry any doc may be given.
+ * (null: never); `maxExpires` is the longest expiry any doc may be given; `isolateSpaces` keeps each API key to its own space's docs.
  */
-async function appSettings(env: Env): Promise<{ defaultExpires: string | null; maxExpires: string }> {
+async function appSettings(env: Env): Promise<{ defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean }> {
   const { results } = await env.DB.prepare("SELECT key, value FROM settings").all<{ key: string; value: string }>();
   const s = Object.fromEntries(results.map((r) => [r.key, r.value]));
-  return { defaultExpires: s.default_expires ?? null, maxExpires: s.max_expires ?? "30d" };
+  return { defaultExpires: s.default_expires ?? null, maxExpires: s.max_expires ?? "30d", isolateSpaces: s.isolate_spaces !== "0" };
 }
 
 export async function getAppSettings(env: Env): Promise<Response> {
@@ -53,16 +56,18 @@ export async function getAppSettings(env: Env): Promise<Response> {
 }
 
 export async function patchAppSettings(req: Request, env: Env): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { defaultExpires?: unknown; maxExpires?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { defaultExpires?: unknown; maxExpires?: unknown; isolateSpaces?: unknown } | null;
   if (!body || typeof body !== "object") return json({ error: "JSON object required" }, 400);
-  const { defaultExpires: d, maxExpires: max } = body;
+  const { defaultExpires: d, maxExpires: max, isolateSpaces: iso } = body;
   if (d !== undefined && !isOpt(d, (v) => durationMs(v) >= 0)) {
     return json({ error: "defaultExpires: a duration like 30m, 12h, 7d or 2w; 0 or null for never" }, 400);
   }
   if (max !== undefined && !(durationMs(max) > 0)) return json({ error: "maxExpires: a duration like 30m, 12h, 7d or 2w" }, 400);
+  if (iso !== undefined && typeof iso !== "boolean") return json({ error: "isolateSpaces: boolean" }, 400);
   const next = await appSettings(env);
   if (d !== undefined) next.defaultExpires = durationMs(d) ? (d as string) : null; // null or a zero duration: never
   if (max !== undefined) next.maxExpires = max as string;
+  if (iso !== undefined) next.isolateSpaces = iso;
   if (next.defaultExpires !== null && durationMs(next.defaultExpires) > durationMs(next.maxExpires)) {
     return json({ error: `the default expiry (${next.defaultExpires}) can't be longer than the longest allowed (${next.maxExpires})` }, 400);
   }
@@ -70,6 +75,7 @@ export async function patchAppSettings(req: Request, env: Env): Promise<Response
   await env.DB.batch([
     next.defaultExpires === null ? env.DB.prepare("DELETE FROM settings WHERE key = 'default_expires'") : upsert.bind("default_expires", next.defaultExpires),
     upsert.bind("max_expires", next.maxExpires),
+    upsert.bind("isolate_spaces", next.isolateSpaces ? "1" : "0"),
   ]);
   return json(next);
 }
@@ -80,13 +86,15 @@ interface Settings {
   password?: string | null;
   expires?: string | null;
   favorite?: boolean;
+  /** Dashboard only: the space the doc belongs to. */
+  space?: string;
 }
 
 /**
  * Validates settings against the doc's current state and returns the columns to update,
- * or an error response. `null` clears a setting; `undefined` leaves it alone.
+ * or an error response. `null` clears a setting; `undefined` leaves it alone. `caller` is null for the dashboard.
  */
-async function settingsColumns(env: Env, s: Settings, doc: Doc | null): Promise<Record<string, unknown> | Response> {
+async function settingsColumns(env: Env, s: Settings, doc: Doc | null, caller: Caller | null): Promise<Record<string, unknown> | Response> {
   if (typeof s.slug === "string") s.slug = s.slug.toLowerCase();
   if (!isOpt(s.title, (v) => typeof v === "string" && v.length <= 200)) return json({ error: "title: up to 200 chars" }, 400);
   if (!isOpt(s.slug, (v) => typeof v === "string" && SLUG.test(v))) {
@@ -101,6 +109,13 @@ async function settingsColumns(env: Env, s: Settings, doc: Doc | null): Promise<
     return json({ error: `expires: a duration up to ${maxExpires || "the owner's limit"} like 30m, 12h, 7d or 2w; 0 or null for never` }, 400);
   }
   if (s.favorite !== undefined && typeof s.favorite !== "boolean") return json({ error: "favorite: boolean" }, 400);
+  if (s.space !== undefined) {
+    // A key stays in its own space: only the dashboard moves docs between spaces.
+    if (caller) return json({ error: "space: only the dashboard can move a doc to another space" }, 403);
+    if (typeof s.space !== "string" || !(await env.DB.prepare("SELECT 1 FROM spaces WHERE id = ?").bind(s.space).first())) {
+      return json({ error: "space not found" }, 400);
+    }
+  }
 
   const cols: Record<string, unknown> = {};
   if (s.title !== undefined) cols.title = s.title;
@@ -109,6 +124,7 @@ async function settingsColumns(env: Env, s: Settings, doc: Doc | null): Promise<
   // A zero duration means never.
   if (s.expires !== undefined) cols.expires_at = s.expires === null || expiresMs === 0 ? null : Date.now() + expiresMs;
   if (s.favorite !== undefined) cols.favorite = s.favorite ? 1 : 0;
+  if (s.space !== undefined) cols.space_id = s.space;
 
   const slug = "slug" in cols ? cols.slug : (doc?.slug ?? null);
   const hash = "password_hash" in cols ? cols.password_hash : (doc?.password_hash ?? null);
@@ -132,6 +148,7 @@ const docJson = (req: Request, d: Doc) => ({
   latest: d.latest,
   createdAt: d.created_at,
   updatedAt: d.updated_at,
+  space: d.space_id,
   url: `${new URL(req.url).origin}/view/${d.slug ?? d.id}`,
 });
 
@@ -188,9 +205,10 @@ async function evictions(env: Env, keyId: string, target: string, need: number):
 /**
  * Commits a new version from a manifest. Blobs must already be in R2:
  * if any are missing, nothing is written and `{missing}` lists them.
- * Target doc: `ref` (id or slug), else the doc that owns `slug`, else a new doc.
+ * Target doc: `ref` (id or slug), else the doc that owns `slug`, else a new doc in the key's space.
+ * `caller` is null for the dashboard, which reaches every space.
  */
-export async function push(req: Request, env: Env, keyId: string | null): Promise<Response> {
+export async function push(req: Request, env: Env, caller: Caller | null): Promise<Response> {
   const body = (await req.json().catch(() => null)) as PushBody | null;
   if (!body || !Array.isArray(body.files) || body.files.length === 0 || body.files.length > MAX_FILES) {
     return json({ error: `files: 1 to ${MAX_FILES} entries required` }, 400);
@@ -211,14 +229,16 @@ export async function push(req: Request, env: Env, keyId: string | null): Promis
   // Checked before blobs so a client never uploads for a push that cannot succeed.
   let doc: Doc | null = null;
   if (body.ref) {
-    doc = await findDoc(env, body.ref);
+    doc = await findDoc(env, body.ref, caller?.scope);
     if (!doc) return json({ error: "doc not found" }, 404);
   } else if (body.slug) {
     doc = await env.DB.prepare("SELECT * FROM docs WHERE slug = lower(?)").bind(body.slug).first<Doc>();
+    // Slugs are one namespace for every reader, so another space's slug is taken, not reachable.
+    if (doc && caller?.scope && doc.space_id !== caller.scope) return json({ error: "slug is taken" }, 409);
   }
   // A new doc that doesn't name an expiry gets the owner's default; `expires: null` still means never.
   if (!doc && body.expires === undefined) body.expires = (await appSettings(env)).defaultExpires;
-  const cols = await settingsColumns(env, body, doc);
+  const cols = await settingsColumns(env, body, doc, caller);
   if (cols instanceof Response) return cols;
 
   const shas = [...new Set(body.files.map((f) => f.sha256))];
@@ -238,18 +258,21 @@ export async function push(req: Request, env: Env, keyId: string | null): Promis
   const created = latest?.manifest_hash !== manifest;
   const stmts: D1PreparedStatement[] = [];
   // shortcut: the quota is read before the batch, so concurrent pushes from one key can overshoot it; fine for one owner's agents.
-  if (created && keyId) {
-    const q = (await keyQuota(env, keyId))!;
+  if (created && caller) {
+    const q = (await keyQuota(env, caller.id))!;
     const over = q.quota_bytes === null ? 0 : q.used + size - q.quota_bytes;
     if (over > 0) {
-      const freed = q.quota_strategy === "fifo" && size <= q.quota_bytes! ? await evictions(env, keyId, id, over) : null;
+      const freed = q.quota_strategy === "fifo" && size <= q.quota_bytes! ? await evictions(env, caller.id, id, over) : null;
       if (!freed) return overQuota(q, size);
       stmts.push(...freed);
     }
   }
   if (!doc) {
     const title = body.title ?? (files.length === 1 ? files[0].path : null);
-    stmts.push(env.DB.prepare("INSERT INTO docs (id, title, latest, created_at, updated_at) VALUES (?, ?, 0, ?, ?)").bind(id, title, now, now));
+    // The dashboard's `space` setting, if any, moves it right after.
+    stmts.push(
+      env.DB.prepare("INSERT INTO docs (id, title, latest, created_at, updated_at, space_id) VALUES (?, ?, 0, ?, ?, ?)").bind(id, title, now, now, caller?.space ?? "default"),
+    );
   }
   if (Object.keys(cols).length) stmts.push(updateStmt(env, id, cols));
   if (created) {
@@ -258,7 +281,7 @@ export async function push(req: Request, env: Env, keyId: string | null): Promis
       env.DB.prepare("UPDATE docs SET latest = latest + 1, updated_at = ? WHERE id = ?").bind(now, id),
       env.DB.prepare(
         "INSERT INTO versions (doc_id, n, manifest_hash, message, size, key_id, created_at) SELECT id, latest, ?, ?, ?, ?, ? FROM docs WHERE id = ?",
-      ).bind(manifest, body.message ?? null, size, keyId, now, id),
+      ).bind(manifest, body.message ?? null, size, caller?.id ?? null, now, id),
       env.DB.prepare(
         "INSERT INTO files (doc_id, n, path, sha256, size) SELECT ?1, (SELECT latest FROM docs WHERE id = ?1), value->>'path', value->>'sha256', value->>'size' FROM json_each(?2)",
       ).bind(id, JSON.stringify(files)),
@@ -296,13 +319,13 @@ export async function putBlob(req: Request, env: Env, sha: string, keyId: string
   return new Response(null, { status: 204 });
 }
 
-export async function listDocs(req: Request, env: Env): Promise<Response> {
-  const { results } = await env.DB.prepare("SELECT * FROM docs ORDER BY favorite DESC, updated_at DESC").all<Doc>();
+export async function listDocs(req: Request, env: Env, scope: string | null): Promise<Response> {
+  const { results } = await env.DB.prepare("SELECT * FROM docs WHERE ?1 IS NULL OR space_id = ?1 ORDER BY favorite DESC, updated_at DESC").bind(scope).all<Doc>();
   return json(results.map((d) => docJson(req, d)));
 }
 
-export async function getDoc(req: Request, env: Env, ref: string): Promise<Response> {
-  const doc = await findDoc(env, ref);
+export async function getDoc(req: Request, env: Env, ref: string, scope: string | null): Promise<Response> {
+  const doc = await findDoc(env, ref, scope);
   if (!doc) return json({ error: "doc not found" }, 404);
   const { results } = await env.DB.prepare(
     "SELECT v.n, v.message, v.size, v.created_at AS createdAt, v.key_id AS keyId, k.name AS keyName, (SELECT COUNT(*) FROM files f WHERE f.doc_id = v.doc_id AND f.n = v.n) AS files FROM versions v LEFT JOIN api_keys k ON k.id = v.key_id WHERE v.doc_id = ? ORDER BY v.n DESC",
@@ -316,19 +339,23 @@ export async function getDoc(req: Request, env: Env, ref: string): Promise<Respo
 export const UPLOAD_SELECT =
   "SELECT v.doc_id AS docId, v.n, v.message, v.size, v.created_at AS createdAt, v.key_id AS keyId, k.name AS keyName, (SELECT COUNT(*) FROM files f WHERE f.doc_id = v.doc_id AND f.n = v.n) AS files FROM versions v LEFT JOIN api_keys k ON k.id = v.key_id";
 
-/** The newest uploads across all docs, newest first. A doc's own versions are complete in `getDoc`; this is capped. */
-export async function listUploads(env: Env): Promise<Response> {
+/** The newest uploads across all docs in `scope` (null: every space), newest first. A doc's own versions are complete in `getDoc`; this is capped. */
+export async function listUploads(env: Env, scope: string | null): Promise<Response> {
   // rowid breaks ties between versions committed in the same millisecond.
-  const { results } = await env.DB.prepare(`${UPLOAD_SELECT} ORDER BY v.created_at DESC, v.rowid DESC LIMIT 200`).all();
+  const { results } = await env.DB.prepare(
+    `${UPLOAD_SELECT} WHERE ?1 IS NULL OR v.doc_id IN (SELECT id FROM docs WHERE space_id = ?1) ORDER BY v.created_at DESC, v.rowid DESC LIMIT 200`,
+  )
+    .bind(scope)
+    .all();
   return json(results);
 }
 
-export async function patchDoc(req: Request, env: Env, ref: string): Promise<Response> {
-  const doc = await findDoc(env, ref);
+export async function patchDoc(req: Request, env: Env, ref: string, caller: Caller | null): Promise<Response> {
+  const doc = await findDoc(env, ref, caller?.scope);
   if (!doc) return json({ error: "doc not found" }, 404);
   const body = (await req.json().catch(() => null)) as Settings | null;
   if (!body || typeof body !== "object") return json({ error: "JSON object required" }, 400);
-  const cols = await settingsColumns(env, body, doc);
+  const cols = await settingsColumns(env, body, doc, caller);
   if (cols instanceof Response) return cols;
   if (!Object.keys(cols).length) return json(docJson(req, doc));
   cols.updated_at = Date.now();
@@ -342,9 +369,10 @@ export async function patchDoc(req: Request, env: Env, ref: string): Promise<Res
 }
 
 /** Deletes the rows only; the daily sweep removes blobs nothing references. */
-export async function deleteDoc(env: Env, ref: string): Promise<Response> {
-  const doc = await findDoc(env, ref);
+export async function deleteDoc(env: Env, ref: string, caller: Caller | null): Promise<Response> {
+  const doc = await findDoc(env, ref, caller?.scope);
   if (!doc) return json({ error: "doc not found" }, 404);
+  if (caller && !caller.canDelete) return json({ error: "keys in this space can't delete docs; the owner can, from the dashboard" }, 403);
   await env.DB.prepare("DELETE FROM docs WHERE id = ?").bind(doc.id).run();
   return new Response(null, { status: 204 });
 }

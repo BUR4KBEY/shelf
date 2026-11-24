@@ -1,15 +1,29 @@
 import { hex, sha256Hex } from "./util";
 
-/** Returns the API key id for a valid `Authorization: Bearer <key>`, else null. */
-export async function apiKey(req: Request, env: Env, ctx: ExecutionContext): Promise<string | null> {
+/**
+ * What an API key may do. `scope` is the space whose docs it sees: its own, or null (every space) when the owner
+ * turned isolation off in Settings. New docs always land in `space`.
+ */
+export interface Caller {
+  id: string;
+  space: string;
+  scope: string | null;
+  canDelete: boolean;
+  readLocked: boolean;
+}
+
+/** Returns the caller for a valid `Authorization: Bearer <key>`, else null. */
+export async function apiKey(req: Request, env: Env, ctx: ExecutionContext): Promise<Caller | null> {
   const m = req.headers.get("authorization")?.match(/^Bearer (\S+)$/);
   if (!m) return null;
-  const row = await env.DB.prepare("SELECT id FROM api_keys WHERE hash = ? AND revoked_at IS NULL")
+  const row = await env.DB.prepare(
+    "SELECT k.id, k.space_id AS space, s.keys_delete AS canDelete, s.keys_read_locked AS readLocked, (SELECT value FROM settings WHERE key = 'isolate_spaces') AS isolate FROM api_keys k JOIN spaces s ON s.id = k.space_id WHERE k.hash = ? AND k.revoked_at IS NULL",
+  )
     .bind(await sha256Hex(m[1]))
-    .first<{ id: string }>();
+    .first<{ id: string; space: string; canDelete: number; readLocked: number; isolate: string | null }>();
   if (!row) return null;
   ctx.waitUntil(env.DB.prepare("UPDATE api_keys SET last_used_at = ? WHERE id = ?").bind(Date.now(), row.id).run());
-  return row.id;
+  return { id: row.id, space: row.space, scope: row.isolate === "0" ? null : row.space, canDelete: row.canDelete === 1, readLocked: row.readLocked === 1 };
 }
 
 const enc = new TextEncoder();

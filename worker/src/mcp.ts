@@ -1,4 +1,5 @@
 import { deleteDoc, findDoc, getDoc, listDocs, patchDoc, push } from "./api";
+import type { Caller } from "./auth";
 import { hex, json } from "./util";
 
 /**
@@ -49,7 +50,7 @@ const TOOLS = [
   },
   {
     name: "read_doc",
-    description: "Read a file of a doc, without its password. Text comes back as text, images as images.",
+    description: "Read a file of a doc in your space. Password-protected docs too, unless the owner turned that off for your space. Text comes back as text, images as images.",
     inputSchema: {
       type: "object",
       properties: {
@@ -60,7 +61,7 @@ const TOOLS = [
       required: ["ref"],
     },
   },
-  { name: "list_docs", description: "List every doc, favorites first.", inputSchema: { type: "object", properties: {} } },
+  { name: "list_docs", description: "List the docs in your space, favorites first.", inputSchema: { type: "object", properties: {} } },
   { name: "get_doc", description: "A doc's settings and version history.", inputSchema: { type: "object", properties: { ref }, required: ["ref"] } },
   {
     name: "update_doc",
@@ -89,7 +90,7 @@ function encodeBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
-async function publish(req: Request, env: Env, keyId: string, args: Args) {
+async function publish(req: Request, env: Env, caller: Caller, args: Args) {
   const { files, ...rest } = args;
   if (!Array.isArray(files) || files.length === 0) return text("files: at least one {path, content} required", true);
   const blobs = new Map<string, Uint8Array>();
@@ -108,18 +109,22 @@ async function publish(req: Request, env: Env, keyId: string, args: Args) {
   }
   const body = { ...rest, files: manifest };
   // Same flow as a client: the first push validates and names the blobs the server lacks.
-  const first = await push(call(req, "POST", body), env, keyId);
+  const first = await push(call(req, "POST", body), env, caller);
   if (first.status !== 200) return fromApi(first);
   const { missing } = (await first.clone().json()) as { missing?: string[] };
   if (!missing) return fromApi(first);
   await Promise.all(missing.map((sha) => env.BUCKET.put(`docs/${sha}`, blobs.get(sha)!, { sha256: sha })));
-  return fromApi(await push(call(req, "POST", body), env, keyId));
+  return fromApi(await push(call(req, "POST", body), env, caller));
 }
 
-async function readDoc(env: Env, args: Args) {
+async function readDoc(env: Env, caller: Caller, args: Args) {
   if (typeof args.ref !== "string") return text("ref required", true);
-  const doc = await findDoc(env, args.ref);
+  const doc = await findDoc(env, args.ref, caller.scope);
   if (!doc) return text("doc not found", true);
+  // Even with isolation off, another space's password is never skipped.
+  if (doc.password_hash && (!caller.readLocked || doc.space_id !== caller.space)) {
+    return text("this doc has a password; read it at its /view URL with the X-Doc-Password header", true);
+  }
   const n = typeof args.version === "number" ? args.version : doc.latest;
   const { results } = await env.DB.prepare("SELECT path, sha256, size FROM files WHERE doc_id = ? AND n = ? ORDER BY path")
     .bind(doc.id, n)
@@ -145,30 +150,30 @@ async function readDoc(env: Env, args: Args) {
   return { content: [content], isError: false };
 }
 
-async function callTool(req: Request, env: Env, keyId: string, name: unknown, args: Args) {
+async function callTool(req: Request, env: Env, caller: Caller, name: unknown, args: Args) {
   const r = typeof args.ref === "string" ? args.ref : "";
   if (name !== "publish" && name !== "list_docs" && name !== "read_doc" && !/^[A-Za-z0-9-]{1,64}$/.test(r)) return text("ref required", true);
   switch (name) {
     case "publish":
-      return publish(req, env, keyId, args);
+      return publish(req, env, caller, args);
     case "read_doc":
-      return readDoc(env, args);
+      return readDoc(env, caller, args);
     case "list_docs":
-      return fromApi(await listDocs(req, env));
+      return fromApi(await listDocs(req, env, caller.scope));
     case "get_doc":
-      return fromApi(await getDoc(req, env, r));
+      return fromApi(await getDoc(req, env, r, caller.scope));
     case "update_doc": {
       const { ref: _, ...patch } = args;
-      return fromApi(await patchDoc(call(req, "PATCH", patch), env, r));
+      return fromApi(await patchDoc(call(req, "PATCH", patch), env, r, caller));
     }
     case "delete_doc":
-      return fromApi(await deleteDoc(env, r));
+      return fromApi(await deleteDoc(env, r, caller));
   }
 }
 
 const rpcError = (id: unknown, code: number, message: string) => json({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
 
-export async function mcp(req: Request, env: Env, keyId: string): Promise<Response> {
+export async function mcp(req: Request, env: Env, caller: Caller): Promise<Response> {
   // No server-initiated stream (GET) and no sessions (DELETE): every request is one JSON-RPC message and its JSON reply.
   if (req.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
   const msg = (await req.json().catch(() => undefined)) as { id?: unknown; method?: unknown; params?: Args } | undefined;
@@ -195,7 +200,7 @@ export async function mcp(req: Request, env: Env, keyId: string): Promise<Respon
     case "tools/call": {
       if (!TOOLS.some((t) => t.name === params.name)) return rpcError(msg.id, -32602, `unknown tool: ${String(params.name)}`);
       const args = params.arguments && typeof params.arguments === "object" ? (params.arguments as Args) : {};
-      return ok(await callTool(req, env, keyId, params.name, args));
+      return ok(await callTool(req, env, caller, params.name, args));
     }
     default:
       return rpcError(msg.id, -32601, `method not found: ${msg.method}`);
