@@ -54,7 +54,8 @@ function lockedPage(status: number, ref: string, next: string, error = ""): Resp
 <style>:root{color-scheme:light dark}body{font:16px system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;margin:0}form{display:grid;gap:.6rem;width:16rem}input,button{font:inherit;padding:.5rem}p{margin:0;color:#c33}</style></head>
 <body><form method="post" action="/view/${escapeHtml(ref)}/unlock"><label for="pw">This document needs a password.</label>
 <input id="pw" name="password" type="password" autocomplete="current-password" autofocus required>
-<input type="hidden" name="next" value="${escapeHtml(next)}">${error ? `<p role="alert">${escapeHtml(error)}</p>` : ""}<button>Open</button></form></body></html>`;
+<input type="hidden" name="next" value="${escapeHtml(next)}">${error ? `<p role="alert">${escapeHtml(error)}</p>` : ""}<button>Open</button>
+<a href="/dashboard/open${escapeHtml(next.slice("/view".length))}">Your doc? Open it from the dashboard</a></form></body></html>`;
   return new Response(html, {
     status,
     headers: {
@@ -89,17 +90,24 @@ export async function unlock(req: Request, env: Env, ref: string): Promise<Respo
   const next = typeof nextField === "string" && nextField.startsWith("/view/") ? nextField : `/view/${ref}`;
   if (!(await env.UNLOCK_LIMIT.limit({ key: `${ip(req)}:${doc.id}` })).success) return lockedPage(429, ref, next, "Too many attempts. Wait a minute.");
   if (typeof password !== "string" || !(await verifyPassword(password, doc.password_hash))) return lockedPage(401, ref, next, "Wrong password.");
-  return new Response(null, {
-    status: 303,
-    headers: {
-      location: next,
-      // Path=/view so pinned versions (/view/x@2) get it too. SameSite=None: the sandboxed doc has an
-      // opaque origin, so its own image and CSS requests are cross-site and would drop a Lax cookie.
-      // shortcut: one cookie per unlocked doc, all sent on every /view request; fine below a few hundred docs.
-      "set-cookie": `u_${doc.id}=${await unlockToken(doc.id, doc.password_hash)}; Path=/view; Max-Age=2592000; HttpOnly; Secure; SameSite=None`,
-      "cache-control": "no-store",
-    },
-  });
+  return new Response(null, { status: 303, headers: { location: next, "set-cookie": await unlockCookie(doc), "cache-control": "no-store" } });
+}
+
+// Path=/view so pinned versions (/view/x@2) get it too. SameSite=None: the sandboxed doc has an
+// opaque origin, so its own image and CSS requests are cross-site and would drop a Lax cookie.
+// shortcut: one cookie per unlocked doc, all sent on every /view request; fine below a few hundred docs.
+const unlockCookie = async (doc: Doc) =>
+  `u_${doc.id}=${await unlockToken(doc.id, doc.password_hash!)}; Path=/view; Max-Age=2592000; HttpOnly; Secure; SameSite=None`;
+
+/**
+ * GET /dashboard/open/<ref>[@n][/path], behind Cloudflare Access: the signed-in owner skips the password form.
+ * Gives a locked doc its unlock cookie, then redirects to the same path under /view.
+ */
+export async function ownerOpen(req: Request, env: Env, ref: string, viewPath: string): Promise<Response> {
+  const doc = await findDoc(env, ref);
+  const headers = new Headers({ location: `${viewPath}${new URL(req.url).search}`, "cache-control": "no-store" });
+  if (doc?.password_hash) headers.set("set-cookie", await unlockCookie(doc));
+  return new Response(null, { status: 302, headers });
 }
 
 /**

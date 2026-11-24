@@ -43,3 +43,5 @@ export const errorText = (e: unknown) => (e instanceof Error ? e.message : Strin
 export const nameOf = (d: Doc) => d.title || d.id;
 /** `url` from the API may be a path; links that get copied must be absolute. */
 export const absolute = (url: string) => new URL(url, location.origin).href;
+/** Opens a doc through the dashboard, so its owner skips the password form. `n` pins a version. */
+export const openUrl = (d: Doc, n?: number) => `/dashboard/open/${n === undefined ? (d.slug ?? d.id) : `${d.id}@${n}`}`;

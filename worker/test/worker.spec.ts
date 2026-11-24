@@ -369,4 +369,14 @@ describe("dashboard", () => {
     const detail = (await (await dash(`/dashboard/api/docs/${doc.id}`)).json()) as { versions: { keyName: string | null }[] };
     expect(detail.versions[0].keyName).toBeNull();
   });
+
+  it("lets the signed-in owner open a locked doc without its password", async () => {
+    const { id } = await publish({ "own.html": "mine" }, { password: "hunter22" });
+    expect((await get(`/dashboard/open/${id}@1`)).status).toBe(403);
+    const res = await dash(`/dashboard/open/${id}@1?raw`);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/view/${id}@1?raw`);
+    const cookie = res.headers.get("set-cookie")!.split(";")[0];
+    expect(await (await get(`/view/${id}`, { headers: { cookie } })).text()).toBe("mine");
+  });
 });
