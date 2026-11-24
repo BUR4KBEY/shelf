@@ -32,7 +32,7 @@ Then, in the Cloudflare dashboard:
 
 ## Dashboard
 
-`https://your-domain/dashboard` (light and dark, following your system until you pick one in the sidebar; React + shadcn/ui):
+`https://your-domain/dashboard` (light and dark, following your system until you pick one in the sidebar; React + shadcn/ui, animated with Motion, which moves nothing when your system asks for reduced motion):
 
 - The home screen is a log of uploads, newest first and grouped by day: who uploaded which version of which doc, with its message. Each key has its own colour, so you can tell your agents, CI and machines apart at a glance.
 - Every upload has a copy-link button, a star for favorites and the doc's settings (title, slug, password, expiry, delete). Filter by favorites, password protected or expiring, and search titles, slugs, ids and messages.

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Clock, Lock, Monitor, Moon, PanelLeftClose, Rows3, Star, Sun } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { Tip, display, focusRing, groupName } from "@/components/bits";
 import { isExpired } from "@/components/DocBits";
 import { Button } from "@/components/ui/button";
@@ -66,39 +67,41 @@ export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; 
         <h2 className={cn(groupName, "mb-2.5 flex justify-between")}>
           On the shelf <span>{props.docs.length - expired}</span>
         </h2>
-        <ul className="-mx-2.5 grid grid-cols-1 gap-px">
-          {/* Expired docs stay out of the list unless asked for; the one that is open is always in it. */}
-          {props.docs
-            .filter((d) => showExpired || !isExpired(d) || isOpen(d))
-            .map((d) => {
-              const left = d.expiresAt === null ? null : timeLeft(d.expiresAt);
-              return (
-                <li key={d.id}>
-                  <a href={`#/doc/${d.id}`} aria-current={isOpen(d) ? "page" : undefined} className={item}>
-                    {d.favorite && (
-                      <>
-                        <Star className="size-3.5 shrink-0 fill-current text-warning" aria-hidden />
-                        <span className="sr-only">favorite</span>
-                      </>
-                    )}
-                    <span className={cn("min-w-0 flex-1 truncate", isExpired(d) && "text-muted-foreground line-through")}>{nameOf(d)}</span>
-                    {d.locked && (
-                      <>
-                        <Lock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                        <span className="sr-only">password protected</span>
-                      </>
-                    )}
-                    {left && (
-                      <span className={cn("flex items-center gap-1 text-xs font-semibold", d.expiresAt! - Date.now() < DAY ? "text-warning" : "text-muted-foreground")}>
-                        <Clock className="size-3" aria-hidden />
-                        <span className="sr-only">expires in </span>
-                        {left}
-                      </span>
-                    )}
-                  </a>
-                </li>
-              );
-            })}
+        <ul className="relative -mx-2.5 grid grid-cols-1 gap-px">
+          <AnimatePresence initial={false} mode="popLayout">
+            {/* Expired docs stay out of the list unless asked for; the one that is open is always in it. */}
+            {props.docs
+              .filter((d) => showExpired || !isExpired(d) || isOpen(d))
+              .map((d) => {
+                const left = d.expiresAt === null ? null : timeLeft(d.expiresAt);
+                return (
+                  <motion.li key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+                    <a href={`#/doc/${d.id}`} aria-current={isOpen(d) ? "page" : undefined} className={item}>
+                      {d.favorite && (
+                        <>
+                          <Star className="size-3.5 shrink-0 fill-current text-warning" aria-hidden />
+                          <span className="sr-only">favorite</span>
+                        </>
+                      )}
+                      <span className={cn("min-w-0 flex-1 truncate", isExpired(d) && "text-muted-foreground line-through")}>{nameOf(d)}</span>
+                      {d.locked && (
+                        <>
+                          <Lock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                          <span className="sr-only">password protected</span>
+                        </>
+                      )}
+                      {left && (
+                        <span className={cn("flex items-center gap-1 text-xs font-semibold", d.expiresAt! - Date.now() < DAY ? "text-warning" : "text-muted-foreground")}>
+                          <Clock className="size-3" aria-hidden />
+                          <span className="sr-only">expires in </span>
+                          {left}
+                        </span>
+                      )}
+                    </a>
+                  </motion.li>
+                );
+              })}
+          </AnimatePresence>
         </ul>
         {expired > 0 && (
           // Not a link: it must not close the phone's menu the way picking a doc does.
