@@ -28,6 +28,27 @@ export const Hint = ({ id, children }: { id?: string; children: ReactNode }) => 
   </p>
 );
 
+/** A whole number and a unit (minutes to weeks); the caller joins them into a duration like `36h`. */
+export function DurationInput(props: { id: string; amount: string; unit: string; onAmount: (v: string) => void; onUnit: (v: string) => void; placeholder?: string; describedBy?: string }) {
+  return (
+    <div className="flex gap-2">
+      <Input id={props.id} type="number" inputMode="numeric" min={0} step={1} value={props.amount} onChange={(e) => props.onAmount(e.target.value)} placeholder={props.placeholder} aria-describedby={props.describedBy} className="min-w-0 flex-1" />
+      <Select value={props.unit} onValueChange={props.onUnit}>
+        <SelectTrigger aria-label="Unit" className="w-28">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="popper" align="start">
+          {UNITS.map(([value, text]) => (
+            <SelectItem key={value} value={value}>
+              {text}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 /**
  * A doc's title, slug, password and expiry, and its delete button. Favorite is the star next to the doc's name.
  * Mount it with a key made of the saved values, so it resets when they change but keeps unsaved edits through an upload.
@@ -109,21 +130,7 @@ export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () =>
         </Hint>
       </Field>
       <Field label="Expires" htmlFor={`${id}expires`}>
-        <div className="flex gap-2">
-          <Input id={`${id}expires`} type="number" inputMode="numeric" min={0} step={1} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={d.expiresAt === null ? "Never" : d.expiresAt <= Date.now() ? `Expired ${fullDate(d.expiresAt)}` : `Keep: ${fullDate(d.expiresAt)}`} aria-describedby={`${id}expires-hint`} className="min-w-0 flex-1" />
-          <Select value={unit} onValueChange={setUnit}>
-            <SelectTrigger aria-label="Unit" className="w-28">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent position="popper" align="start">
-              {UNITS.map(([value, text]) => (
-                <SelectItem key={value} value={value}>
-                  {text}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <DurationInput id={`${id}expires`} amount={amount} unit={unit} onAmount={setAmount} onUnit={setUnit} placeholder={d.expiresAt === null ? "Never" : d.expiresAt <= Date.now() ? `Expired ${fullDate(d.expiresAt)}` : `Keep: ${fullDate(d.expiresAt)}`} describedBy={`${id}expires-hint`} />
         <Hint id={`${id}expires-hint`}>From now, up to {maxExpires ?? "the longest allowed in Settings"}. 0 means never. After it expires the link stops working and the doc is deleted within a day.</Hint>
       </Field>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:col-span-2">
