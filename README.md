@@ -32,11 +32,12 @@ Then, in the Cloudflare dashboard:
 
 ## Dashboard
 
-`https://your-domain/dashboard` (light and dark, following your system; React + shadcn/ui):
+`https://your-domain/dashboard` (light and dark, following your system until you pick one in the sidebar; React + shadcn/ui):
 
 - The home screen is a log of uploads, newest first and grouped by day: who uploaded which version of which doc, with its message. Each key has its own colour, so you can tell your agents, CI and machines apart at a glance.
 - Every upload has a copy-link button, a star for favorites and the doc's settings (title, slug, password, expiry, delete). Filter by favorites, password protected or expiring, and search titles, slugs, ids and messages.
-- The sidebar lists every doc, favorites first, so one that has not changed in months is still one click away. A doc's page has its link, settings, a place to upload a new version and its whole history.
+- Expired docs are hidden until the daily sweep deletes them: the **Expired** filter and the sidebar's "Show expired" bring them back.
+- The sidebar lists every doc, favorites first, so one that has not changed in months is still one click away. It folds down to a narrow rail. A doc's page has its link, settings, a place to upload a new version and its whole history.
 - Keys sit in the sidebar with their uploads over the last 14 days: mint a key for each machine or agent (shown once), and revoke it from its menu.
 - Upload by dropping a file or folder anywhere on the page. On a doc's page, a drop adds a version to that doc.
 
@@ -128,6 +129,8 @@ curl -X DELETE -H "Authorization: Bearer $KEY" $U/api/docs/<ref>
 - PDFs, images, audio, video, text, CSS and JS are served inline. Any other type downloads.
 - Range requests work, so video seeking works.
 - Password docs show a password form. The unlock lasts 30 days, until the password changes. Agents send `X-Doc-Password: <password>` instead. Password attempts are limited to 10 per minute per IP and doc.
+- A missing or expired link shows a short page in a browser and one line of plain text to anything else (curl, an agent). These pages, the password form and rendered Markdown use the dashboard's colours and font, which the Worker serves at `/font/`.
+- The password form and those short pages have a theme switch (System, Light, Dark). It is a link to `/theme/<name>`, which sets a `theme` cookie; the dashboard's switch sets the same cookie, and rendered Markdown follows it.
 - You skip the form when you open a doc from the dashboard, or use the form's "Open it from the dashboard" link while signed in to Access (`/dashboard/open/<ref>` sets the unlock cookie, then redirects to `/view/<ref>`).
 
 ## Develop
