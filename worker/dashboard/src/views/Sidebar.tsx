@@ -48,7 +48,7 @@ function watchTheme(onChange: () => void) {
 }
 
 /** Every doc and every key, always in reach. The log shows what happened; this shows what there is. */
-export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; colorOf: (keyId: string | null) => string; openId?: string; settings: boolean; email: string; onNavigate: () => void; onKeysChanged: () => void; onCollapse: () => void }) {
+export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; colorOf: (keyId: string | null) => string; openId?: string; openKey?: string; settings: boolean; email: string; onNavigate: () => void; onKeysChanged: () => void; onCollapse: () => void }) {
   const [showExpired, setShowExpired] = useState(false);
   const isOpen = (d: Doc) => d.id === props.openId || (d.slug !== null && d.slug === props.openId);
   const expired = props.docs.filter(isExpired).length;
@@ -67,7 +67,7 @@ export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; 
       </div>
 
       <nav aria-label="Docs" onClick={props.onNavigate}>
-        <a href="#/" aria-current={props.openId || props.settings ? undefined : "page"} className={cn(item, "-mx-2.5")}>
+        <a href="#/" aria-current={props.openId || props.openKey || props.settings ? undefined : "page"} className={cn(item, "-mx-2.5")}>
           <Rows3 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           All uploads
         </a>
@@ -126,7 +126,7 @@ export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; 
         <h2 id="keys-name" className={cn(groupName, "mb-2.5")}>
           Keys
         </h2>
-        <KeyList keys={props.keys} uploads={props.uploads} colorOf={props.colorOf} onChanged={props.onKeysChanged} />
+        <KeyList keys={props.keys} uploads={props.uploads} colorOf={props.colorOf} openKey={props.openKey} onChanged={props.onKeysChanged} onNavigate={props.onNavigate} />
       </section>
 
       <div className="mt-auto flex items-center justify-between gap-3">

@@ -1,10 +1,9 @@
 import { useState, type CSSProperties, type FormEvent } from "react";
-import { Copy, Trash2 } from "lucide-react";
+import { Copy } from "lucide-react";
 import { toast } from "sonner";
-import { Confirm, Time, copy, dashed, focusRing } from "@/components/bits";
+import { Time, copy, dashed, focusRing } from "@/components/bits";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, errorText, type Activity, type Key, type NewKey } from "@/lib/api";
@@ -18,12 +17,11 @@ const agentInstructions = (key: string) =>
   `Publish files with shelf at ${location.origin}. Read ${location.origin}/llms.txt for how, and use this API key: ${key}\n` +
   `Or connect its MCP server: ${location.origin}/mcp (Streamable HTTP) with the header "Authorization: Bearer ${key}".`;
 
-/** The keys in the sidebar: each in its colour, with its last two weeks of uploads. A key's menu revokes it. */
-export function KeyList({ keys, uploads, colorOf, onChanged }: { keys: Key[]; uploads: Activity[]; colorOf: (keyId: string | null) => string; onChanged: () => void }) {
+/** The keys in the sidebar: each in its colour, with its last two weeks of uploads. A key opens its own page, where it can be revoked. */
+export function KeyList({ keys, uploads, colorOf, openKey, onChanged, onNavigate }: { keys: Key[]; uploads: Activity[]; colorOf: (keyId: string | null) => string; openKey?: string; onChanged: () => void; onNavigate: () => void }) {
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   const [fresh, setFresh] = useState<NewKey | null>(null);
-  const [doomed, setDoomed] = useState<Key | null>(null);
 
   const mint = async (e: FormEvent) => {
     e.preventDefault();
@@ -37,36 +35,24 @@ export function KeyList({ keys, uploads, colorOf, onChanged }: { keys: Key[]; up
       toast.error(errorText(err));
     }
   };
-  const revoke = (k: Key) =>
-    api(`/keys/${k.id}/revoke`, { method: "POST" }).then(
-      () => (toast.success(`Revoked ${k.name}`), onChanged()),
-      (e) => toast.error(errorText(e)),
-    );
 
   return (
     <>
-      <ul className="grid grid-cols-1 gap-2">
+      <ul className="grid grid-cols-1 gap-2" onClick={onNavigate}>
         {keys.map((k) => {
-          if (k.revokedAt) {
-            return (
-              <li key={k.id} className={cn(row, "py-1 text-muted-foreground")}>
-                <i className="size-2.5 rounded-full bg-input" aria-hidden />
-                <span className="truncate text-sm font-semibold line-through">{k.name}</span>
-                <span className="text-xs">
-                  revoked <Time t={k.revokedAt}>{ago(k.revokedAt)}</Time>
-                </span>
-              </li>
-            );
-          }
           const counts = perDay(uploads, k.id);
           const most = Math.max(1, ...counts);
           return (
             <li key={k.id} style={{ "--k": colorOf(k.id) } as CSSProperties}>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button type="button" className={cn(row, focusRing, "-mx-2 w-[calc(100%+1rem)] rounded-lg px-2 py-1 hover:bg-card/60 aria-expanded:bg-card")}>
-                    <i className="size-2.5 rounded-full bg-(--k)" aria-hidden />
-                    <span className="truncate text-sm font-semibold">{k.name}</span>
+              <a href={`#/key/${k.id}`} aria-current={k.id === openKey ? "page" : undefined} className={cn(row, focusRing, "-mx-2 w-[calc(100%+1rem)] rounded-lg px-2 py-1 hover:bg-card/60 aria-[current=page]:bg-card", k.revokedAt && "text-muted-foreground")}>
+                <i className={cn("size-2.5 rounded-full", k.revokedAt ? "bg-input" : "bg-(--k)")} aria-hidden />
+                <span className={cn("truncate text-sm font-semibold", k.revokedAt && "line-through")}>{k.name}</span>
+                {k.revokedAt ? (
+                  <span className="text-xs">
+                    revoked <Time t={k.revokedAt}>{ago(k.revokedAt)}</Time>
+                  </span>
+                ) : (
+                  <>
                     <span className="text-xs text-muted-foreground">{k.lastUsedAt ? ago(k.lastUsedAt) : "never used"}</span>
                     <span className="col-span-2 col-start-2 flex h-[18px] items-end gap-[3px]" aria-hidden>
                       {counts.map((n, i) => (
@@ -74,15 +60,9 @@ export function KeyList({ keys, uploads, colorOf, onChanged }: { keys: Key[]; up
                       ))}
                     </span>
                     <span className="sr-only">{plural(counts.reduce((a, b) => a + b, 0), "upload")} in the last 14 days</span>
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-48">
-                  <DropdownMenuLabel>Created {ago(k.createdAt)}</DropdownMenuLabel>
-                  <DropdownMenuItem variant="destructive" onSelect={() => setDoomed(k)}>
-                    <Trash2 /> Revoke…
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                  </>
+                )}
+              </a>
             </li>
           );
         })}
@@ -134,7 +114,6 @@ export function KeyList({ keys, uploads, colorOf, onChanged }: { keys: Key[]; up
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Confirm open={!!doomed} onOpenChange={(open) => !open && setDoomed(null)} title={`Revoke ${doomed?.name ?? ""}?`} body="Anything using this key stops working right away. This can't be undone." action="Revoke" onConfirm={() => doomed && revoke(doomed)} />
     </>
   );
 }
