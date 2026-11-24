@@ -19,8 +19,8 @@ export type Key = { id: string; name: string; createdAt: number; lastUsedAt: num
 export type NewKey = { id: string; name: string; key: string };
 /** A doc a key uploaded to: how often, how much, and when. `created` is 1 when the key made the doc. */
 export type KeyDoc = { docId: string; uploads: number; created: number; size: number; firstAt: number; lastAt: number };
-/** A key with every doc it touched and its newest uploads (capped). */
-export type KeyDetail = Key & { docs: KeyDoc[]; uploads: Activity[] };
+/** A key with every doc it touched, its newest uploads (capped), and the time of each upload in the last 53 weeks. */
+export type KeyDetail = Key & { docs: KeyDoc[]; uploads: Activity[]; times: number[] };
 /** `defaultExpires`: what a new doc gets when its upload names no expiry; null for never. `maxExpires`: the longest expiry any doc may get. */
 export type AppSettings = { defaultExpires: string | null; maxExpires: string };
 

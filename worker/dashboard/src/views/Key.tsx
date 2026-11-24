@@ -6,12 +6,19 @@ import { DocName, isExpired } from "@/components/DocBits";
 import { Entry } from "@/components/Entry";
 import { Button } from "@/components/ui/button";
 import { api, errorText, nameOf, type Doc, type KeyDetail } from "@/lib/api";
-import { byDay, perDay } from "@/lib/feed";
-import { ago, dayName, fullDate, plural, size } from "@/lib/format";
+import { byDay, daily } from "@/lib/feed";
+import { ago, dayName, fullDate, longDate, plural, size } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const heading = "text-base leading-none font-bold";
-const DAYS = 30;
+const DAY = 86_400_000;
+/** What the activity charts can cover. A year is 52 weeks, one bar each. */
+const PERIODS = [
+  { days: 7, step: 1, short: "7d", label: "7 days" },
+  { days: 30, step: 1, short: "30d", label: "30 days" },
+  { days: 90, step: 1, short: "90d", label: "90 days" },
+  { days: 364, step: 7, short: "1y", label: "year" },
+];
 /** The Worker lists this many of a key's uploads at most; the totals still count them all. */
 const CAP = 500;
 
@@ -46,6 +53,65 @@ function Stat({ label, value, note }: { label: string; value: string; note: Reac
   );
 }
 
+const SHADES = [0, 35, 60, 80, 100];
+
+/** The last 53 weeks a day per square, a week per column, like GitHub's contribution graph. Darker is more uploads. */
+function Heatmap({ times }: { times: number[] }) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  // Columns start on Sunday; the last one ends today.
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay() - 52 * 7);
+  const counts = daily(times, Math.round((today.getTime() - start.getTime()) / DAY) + 1);
+  const most = Math.max(1, ...counts);
+  const dayAt = (i: number) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+  const weeks = Math.ceil(counts.length / 7);
+  const total = counts.reduce((a, b) => a + b, 0);
+  const cols = "grid grid-flow-col auto-cols-[11px] gap-[3px]";
+  return (
+    <div className="grid gap-2 rounded-xl border bg-card p-4">
+      <div className="overflow-x-auto" aria-hidden>
+        <div className="grid w-max grid-cols-[auto_auto] gap-x-2 gap-y-1 text-[0.6875rem] leading-none text-muted-foreground">
+          <span />
+          <div className={cols}>
+            {Array.from({ length: weeks }, (_, w) => {
+              const d = dayAt(w * 7);
+              const month = w > 0 && d.getMonth() !== dayAt(w * 7 - 7).getMonth();
+              return (
+                <span key={w} className="h-3 overflow-visible whitespace-nowrap">
+                  {month && d.toLocaleDateString(undefined, { month: "short" })}
+                </span>
+              );
+            })}
+          </div>
+          <div className="grid grid-rows-7 gap-[3px]">
+            {Array.from({ length: 7 }, (_, r) => (
+              <span key={r} className="flex h-[11px] items-center">
+                {r % 2 === 1 && dayAt(r).toLocaleDateString(undefined, { weekday: "short" })}
+              </span>
+            ))}
+          </div>
+          <div className={cn(cols, "grid-rows-7")}>
+            {counts.map((n, i) => {
+              const shade = SHADES[n && Math.ceil((n / most) * 4)];
+              return <span key={i} title={`${plural(n, "upload")} on ${longDate(dayAt(i).getTime())}`} className={cn("size-[11px] rounded-[2px]", !shade && "bg-muted")} style={shade ? { background: `color-mix(in oklab, var(--k) ${shade}%, var(--card))` } : undefined} />;
+            })}
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span>{plural(total, "upload")} in the last year</span>
+        <span className="flex items-center gap-[3px]" aria-hidden>
+          Less
+          {SHADES.map((s) => (
+            <span key={s} className={cn("mx-px size-[11px] rounded-[2px]", !s && "bg-muted")} style={s ? { background: `color-mix(in oklab, var(--k) ${s}%, var(--card))` } : undefined} />
+          ))}
+          More
+        </span>
+      </div>
+    </div>
+  );
+}
+
 type Props = { docs: Doc[]; colorOf: (keyId: string | null) => string; onChanged: () => void; onKeysChanged: () => void };
 
 /** One key: how much and how often it uploads, the docs it touched, and its uploads as a log. Revoking lives here. */
@@ -74,14 +140,16 @@ function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props &
   const made = k.docs.reduce((a, d) => a + d.created, 0);
   const bytes = k.docs.reduce((a, d) => a + d.size, 0);
   const first = Math.min(...k.docs.map((d) => d.firstAt));
-  // shortcut: both charts count only the newest CAP uploads; move them to SQL if a key ever uploads more than CAP in DAYS days.
-  const days = perDay(k.uploads, k.id, DAYS);
+  const [period, setPeriod] = useState(PERIODS[1]);
+  const days = daily(k.times, period.days);
+  const buckets = Array.from({ length: period.days / period.step }, (_, i) => days.slice(i * period.step, (i + 1) * period.step).reduce((a, b) => a + b, 0));
   const recent = days.reduce((a, b) => a + b, 0);
   const active = days.filter(Boolean).length;
-  const hours = new Array<number>(24).fill(0);
-  for (const u of k.uploads) hours[new Date(u.createdAt).getHours()]++;
-  const peak = hours.indexOf(Math.max(...hours));
   const today = new Date();
+  const since = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (period.days - 1)).getTime();
+  const hours = new Array<number>(24).fill(0);
+  for (const t of k.times) if (t >= since) hours[new Date(t).getHours()]++;
+  const peak = hours.indexOf(Math.max(...hours));
 
   return (
     <>
@@ -119,7 +187,7 @@ function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props &
       </div>
 
       <section aria-label="Totals" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stat label="Uploads" value={String(total)} note={`${plural(recent, "upload")} in the last ${DAYS} days`} />
+        <Stat label="Uploads" value={String(total)} note={`${plural(recent, "upload")} in the last ${period.label}`} />
         <Stat label="Docs" value={String(k.docs.length)} note={`${made} made by this key`} />
         <Stat label="Data uploaded" value={size(bytes)} note="across every version" />
         <Stat
@@ -137,26 +205,48 @@ function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props &
         />
       </section>
 
-      <section className="grid grid-cols-1 gap-x-6 gap-y-7 sm:grid-cols-[2fr_1fr]">
-        <div className="grid content-start gap-2.5">
-          <h2 className={heading}>Last {DAYS} days</h2>
-          <p className="text-sm text-muted-foreground">
-            Active on {plural(active, "day")}
-            {active > 0 && `, ${plural(Number((recent / active).toFixed(1)), "upload")} a day when it is`}
-          </p>
-          <Bars
-            counts={days}
-            label={(i, n) => `${dayName(new Date(today.getFullYear(), today.getMonth(), today.getDate() - (DAYS - 1 - i)).getTime())}: ${plural(n, "upload")}`}
-            from={`${DAYS} days ago`}
-            to="Today"
-            summary={`${plural(recent, "upload")} on ${plural(active, "day")} in the last ${DAYS} days.`}
-          />
+      <section aria-labelledby="activity-name" className="grid grid-cols-1 gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="activity-name" className={heading}>
+            Activity
+          </h2>
+          <div role="group" aria-label="Period" className="flex rounded-lg border p-0.5">
+            {PERIODS.map((p) => (
+              <button key={p.days} type="button" aria-pressed={p === period} onClick={() => setPeriod(p)} className={cn(focusRing, "rounded-md px-2.5 py-1 text-[0.8125rem] font-semibold text-muted-foreground hover:text-foreground", p === period && "bg-card text-foreground shadow-[0_0_0_1px_var(--border)]")}>
+                {p.short}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="grid content-start gap-2.5">
-          <h2 className={heading}>Time of day</h2>
-          <p className="text-sm text-muted-foreground">{total ? `Busiest around ${hh(peak)}` : "No uploads yet"}</p>
-          <Bars counts={hours} label={(i, n) => `${hh(i)}: ${plural(n, "upload")}`} from="00:00" to="23:00" summary={total ? `Uploads most often around ${hh(peak)}.` : "No uploads yet."} />
+        <div className="grid grid-cols-1 gap-x-6 gap-y-7 sm:grid-cols-[2fr_1fr]">
+          <div className="grid content-start gap-2.5">
+            <h3 className="text-sm font-semibold">Uploads per {period.step === 1 ? "day" : "week"}</h3>
+            <p className="text-sm text-muted-foreground">
+              Active on {plural(active, "day")}
+              {active > 0 && `, ${plural(Number((recent / active).toFixed(1)), "upload")} a day when it is`}
+            </p>
+            <Bars
+              counts={buckets}
+              label={(i, n) => {
+                const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (period.days - 1) + i * period.step).getTime();
+                return `${period.step === 1 ? dayName(start) : `Week of ${longDate(start)}`}: ${plural(n, "upload")}`;
+              }}
+              from={period.step === 1 ? `${period.label} ago` : "A year ago"}
+              to="Today"
+              summary={`${plural(recent, "upload")} on ${plural(active, "day")} in the last ${period.label}.`}
+            />
+          </div>
+          <div className="grid content-start gap-2.5">
+            <h3 className="text-sm font-semibold">Time of day</h3>
+            <p className="text-sm text-muted-foreground">{recent ? `Busiest around ${hh(peak)}` : `No uploads in the last ${period.label}`}</p>
+            <Bars counts={hours} label={(i, n) => `${hh(i)}: ${plural(n, "upload")}`} from="00:00" to="23:00" summary={recent ? `Uploads most often around ${hh(peak)}.` : "No uploads."} />
+          </div>
         </div>
+      </section>
+
+      <section className="grid grid-cols-1 gap-2.5">
+        <h2 className={heading}>Last year</h2>
+        <Heatmap times={k.times} />
       </section>
 
       {total === 0 ? (

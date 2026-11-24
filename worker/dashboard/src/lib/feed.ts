@@ -37,14 +37,17 @@ export function byDay<T extends { createdAt: number }>(uploads: T[], groupOf: (u
   return days;
 }
 
-/** One key's uploads per day over the last `days` days, oldest first. */
-export function perDay(uploads: { keyId: string | null; createdAt: number }[], keyId: string, days = 14): number[] {
+/** Counts timestamps per local day over the last `days` days, oldest first. */
+export function daily(times: number[], days: number): number[] {
   const today = midnight(Date.now());
   const counts = new Array<number>(days).fill(0);
-  for (const u of uploads) {
-    if (u.keyId !== keyId) continue;
-    const age = Math.round((today - midnight(u.createdAt)) / 86_400_000); // rounded: a day is 23 or 25 hours when the clocks change
-    if (age < days) counts[days - 1 - age]++;
+  for (const t of times) {
+    const age = Math.round((today - midnight(t)) / 86_400_000); // rounded: a day is 23 or 25 hours when the clocks change
+    if (age >= 0 && age < days) counts[days - 1 - age]++;
   }
   return counts;
 }
+
+/** One key's uploads per day over the last `days` days, oldest first. */
+export const perDay = (uploads: { keyId: string | null; createdAt: number }[], keyId: string, days = 14) =>
+  daily(uploads.filter((u) => u.keyId === keyId).map((u) => u.createdAt), days);
