@@ -22,7 +22,8 @@ const TOOLS = [
   {
     name: "publish",
     description:
-      "Publish a file, or a folder of files with an index.html, and get a shareable link. Pass ref (or the same slug) to add a version to an existing doc. HTML runs in a sandbox: inline scripts and styles work; fetch, storage, cookies, forms and iframes don't.",
+      "Publish a file, or a folder of files with an index.html, and get a shareable link. Pass ref (or the same slug) to add a version to an existing doc. HTML runs in a sandbox: inline scripts and styles work; fetch, storage, cookies, forms and iframes don't. " +
+      "The owner may cap how many bytes this key keeps: an upload over it fails with a quota error (tell the user; don't retry), or deletes this key's oldest uploads to make room, if the owner chose that.",
     inputSchema: {
       type: "object",
       properties: {
@@ -184,7 +185,7 @@ export async function mcp(req: Request, env: Env, keyId: string): Promise<Respon
         protocolVersion: typeof asked === "string" && PROTOCOLS.includes(asked) ? asked : PROTOCOLS[0],
         capabilities: { tools: {} },
         serverInfo: { name: "shelf", version: "1.0.0" },
-        instructions: `Publish files to ${new URL(req.url).origin} and get shareable links. Full guide: ${new URL(req.url).origin}/llms.txt`,
+        instructions: `Publish files to ${new URL(req.url).origin} and get shareable links. This key may have a storage quota set by the owner; see publish. Full guide: ${new URL(req.url).origin}/llms.txt`,
       });
     }
     case "ping":
