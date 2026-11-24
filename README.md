@@ -20,7 +20,13 @@ npm run deploy      # deploys (creating the bucket and database on first run), t
 Then, in the Cloudflare dashboard:
 
 1. **Add a custom domain** to the `shelf` Worker (Workers & Pages → shelf → Settings → Domains & Routes).
-2. **Protect the dashboard with Cloudflare Access.** Zero Trust → Access → Applications → add a self-hosted app for `your-domain/dashboard`. Its policy should allow only your own email. The Worker refuses `/dashboard` unless Access signed the request in, so `workers.dev` URLs can't reach it.
+2. **Protect the dashboard with Cloudflare Access.** With an API token that has *Access: Apps and Policies → Edit*:
+
+   ```sh
+   CLOUDFLARE_API_TOKEN=... npm run setup:access -- --domain your-domain --email you@example.com
+   ```
+
+   It creates (or updates) an allow-policy for your email and an Access app for `your-domain/dashboard`. Rerun it to change the emails. The Worker refuses `/dashboard` unless Access signed the request in, so `workers.dev` URLs can't reach it.
 
 `/view/*` and `/api/*` stay public. Readers need the link (and the password if you set one), and the API needs a key.
 
