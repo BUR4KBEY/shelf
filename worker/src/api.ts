@@ -1,5 +1,5 @@
 import { hashPassword } from "./auth";
-import { json, randomId, sha256Hex } from "./util";
+import { docId, json, sha256Hex } from "./util";
 
 const SHA = /^[0-9a-f]{64}$/;
 const SLUG = /^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$/;
@@ -20,11 +20,11 @@ export interface Doc {
 }
 
 /**
- * Finds a doc by id or slug; slugs match case-insensitively, ids exactly, and an id wins a tie.
+ * Finds a doc by id or slug, ignoring case: both are stored lowercase. An id wins a tie.
  * Expired docs are still returned so the owner can revive them.
  */
 export const findDoc = (env: Env, ref: string) =>
-  env.DB.prepare("SELECT * FROM docs WHERE id = ?1 OR slug = lower(?1) ORDER BY id = ?1 DESC LIMIT 1").bind(ref).first<Doc>();
+  env.DB.prepare("SELECT * FROM docs WHERE id = ?1 OR slug = ?1 ORDER BY id = ?1 DESC LIMIT 1").bind(ref.toLowerCase()).first<Doc>();
 
 const validPath = (p: string) =>
   p.length > 0 &&
@@ -144,7 +144,7 @@ export async function push(req: Request, env: Env, keyId: string | null): Promis
   const size = files.reduce((sum, f) => sum + f.size, 0);
   const manifest = await sha256Hex(files.map((f) => `${f.path}\t${f.sha256}`).sort().join("\n"));
   const now = Date.now();
-  const id = doc?.id ?? randomId();
+  const id = doc?.id ?? docId();
 
   const latest = doc && (await env.DB.prepare("SELECT manifest_hash FROM versions WHERE doc_id = ? AND n = ?").bind(id, doc.latest).first<{ manifest_hash: string }>());
   const created = latest?.manifest_hash !== manifest;
