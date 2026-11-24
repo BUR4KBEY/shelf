@@ -2,7 +2,7 @@ import { previewAccess } from "./access";
 import { deleteDoc, getDoc, listDocs, listUploads, patchDoc, push, putBlob, sweep } from "./api";
 import { apiKey } from "./auth";
 import { createKey, dashboardPage, listKeys, revokeKey } from "./dashboard";
-import { font, notFound, notice, setTheme } from "./page";
+import { favicon, font, notFound, notice, setTheme } from "./page";
 import { json } from "./util";
 import { ownerOpen, unlock, view } from "./view";
 
@@ -32,6 +32,7 @@ export default {
       if (req.method === "GET" || req.method === "HEAD") return view(req, env, ref, pin ? Number(pin) : undefined, rest);
     }
 
+    if (req.method === "GET" && path === "/favicon.svg") return favicon();
     if (req.method === "GET" && (m = path.match(/^\/font\/([a-z-]+)\.woff2$/))) return font(m[1]) ?? notFound(req);
     if (req.method === "GET" && (m = path.match(/^\/theme\/([a-z]+)$/))) return setTheme(url, m[1]) ?? notFound(req);
 
