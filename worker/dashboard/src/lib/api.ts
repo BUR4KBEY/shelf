@@ -17,6 +17,8 @@ export type DocDetail = Doc & { versions: Version[] };
 export type PushResult = (Doc & { version: number; versionUrl: string; created: boolean; missing?: undefined }) | { missing: string[] };
 export type Key = { id: string; name: string; createdAt: number; lastUsedAt: number | null; revokedAt: number | null };
 export type NewKey = { id: string; name: string; key: string };
+/** `defaultExpires`: what a new doc gets when its upload names no expiry; null for never. */
+export type AppSettings = { defaultExpires: string | null };
 
 export async function api<T>(path: string, { method = "GET", json, body }: { method?: string; json?: unknown; body?: Blob } = {}): Promise<T> {
   let res: Response;
