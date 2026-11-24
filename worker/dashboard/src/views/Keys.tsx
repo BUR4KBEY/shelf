@@ -2,6 +2,7 @@ import { useState, type CSSProperties, type FormEvent } from "react";
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Time, copy, dashed, focusRing } from "@/components/bits";
+import { SpaceSelect } from "@/components/Settings";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,7 @@ const agentInstructions = (key: string) =>
 export function KeyList({ keys, uploads, colorOf, openKey, onChanged, onNavigate }: { keys: Key[]; uploads: Activity[]; colorOf: (keyId: string | null) => string; openKey?: string; onChanged: () => void; onNavigate: () => void }) {
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
+  const [space, setSpace] = useState("default");
   const [fresh, setFresh] = useState<NewKey | null>(null);
   const [showRevoked, setShowRevoked] = useState(false);
   const revoked = keys.filter((k) => k.revokedAt).length;
@@ -29,7 +31,7 @@ export function KeyList({ keys, uploads, colorOf, openKey, onChanged, onNavigate
     e.preventDefault();
     if (!name.trim()) return document.getElementById("f-key")?.focus();
     try {
-      setFresh(await api<NewKey>("/keys", { method: "POST", json: { name: name.trim() } }));
+      setFresh(await api<NewKey>("/keys", { method: "POST", json: { name: name.trim(), space } }));
       setNaming(false);
       setName("");
       onChanged();
@@ -89,6 +91,13 @@ export function KeyList({ keys, uploads, colorOf, openKey, onChanged, onNavigate
             <div className="grid gap-2">
               <Label htmlFor="f-key">Name</Label>
               <Input id="f-key" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} placeholder="e.g. laptop" autoComplete="off" required />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="f-key-space">Space</Label>
+              <SpaceSelect id="f-key-space" value={space} onChange={setSpace} describedBy="f-key-space-hint" />
+              <p id="f-key-space-hint" className="text-xs leading-relaxed text-muted-foreground">
+                Its uploads go to this space, and it sees only this space's docs. Make spaces in Settings.
+              </p>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setNaming(false)}>

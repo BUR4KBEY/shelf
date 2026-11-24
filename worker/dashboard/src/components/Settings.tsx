@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { api, errorText, nameOf, type AppSettings, type Doc } from "@/lib/api";
+import { api, errorText, nameOf, type AppSettings, type Doc, type Space } from "@/lib/api";
 import { fullDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -49,8 +49,27 @@ export function DurationInput(props: { id: string; amount: string; unit: string;
   );
 }
 
+/** Picks one of the spaces, which it loads itself. */
+export function SpaceSelect({ id, value, onChange, describedBy }: { id?: string; value: string; onChange: (v: string) => void; describedBy?: string }) {
+  const spaces = useLoad<Space[]>("/spaces").data ?? [];
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger id={id} aria-describedby={describedBy} className="w-full">
+        <SelectValue placeholder="Loading…" />
+      </SelectTrigger>
+      <SelectContent position="popper" align="start">
+        {spaces.map((s) => (
+          <SelectItem key={s.id} value={s.id}>
+            {s.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 /**
- * A doc's title, slug, password and expiry, and its delete button. Favorite is the star next to the doc's name.
+ * A doc's title, slug, password, expiry and space, and its delete button. Favorite is the star next to the doc's name.
  * Mount it with a key made of the saved values, so it resets when they change but keeps unsaved edits through an upload.
  */
 export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () => void; onDeleted?: () => void }) {
@@ -61,6 +80,7 @@ export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () =>
   const [unit, setUnit] = useState("d");
   const [title, setTitle] = useState(d.title ?? "");
   const [slug, setSlug] = useState(d.slug ?? "");
+  const [space, setSpace] = useState(d.space);
   const [password, setPassword] = useState("");
   const [unlock, setUnlock] = useState(false);
   const [status, setStatus] = useState<{ text: string; error?: boolean }>({ text: "" });
@@ -75,6 +95,7 @@ export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () =>
     if (password) body.password = password;
     else if (unlock) body.password = null;
     if (amount !== "") body.expires = Number(amount) === 0 ? null : `${amount}${unit}`;
+    if (space !== d.space) body.space = space;
     if (!Object.keys(body).length) return setStatus({ text: "Nothing to save." });
     setSaving(true);
     setStatus({ text: "Saving…" });
@@ -132,6 +153,10 @@ export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () =>
       <Field label="Expires" htmlFor={`${id}expires`}>
         <DurationInput id={`${id}expires`} amount={amount} unit={unit} onAmount={setAmount} onUnit={setUnit} placeholder={d.expiresAt === null ? "Never" : d.expiresAt <= Date.now() ? `Expired ${fullDate(d.expiresAt)}` : `Keep: ${fullDate(d.expiresAt)}`} describedBy={`${id}expires-hint`} />
         <Hint id={`${id}expires-hint`}>From now, up to {maxExpires ?? "the longest allowed in Settings"}. 0 means never. After it expires the link stops working and the doc is deleted within a day.</Hint>
+      </Field>
+      <Field label="Space" htmlFor={`${id}space`}>
+        <SpaceSelect id={`${id}space`} value={space} onChange={setSpace} describedBy={`${id}space-hint`} />
+        <Hint id={`${id}space-hint`}>While spaces are isolated (Settings), only keys in this space can see, update or delete it. Anyone with the link can still read it.</Hint>
       </Field>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:col-span-2">
         <Button type="submit" disabled={saving}>

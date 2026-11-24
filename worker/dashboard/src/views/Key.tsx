@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Confirm, Loading, Problem, Time, chip, display, focusRing, useLoad } from "@/components/bits";
 import { DocName, isExpired } from "@/components/DocBits";
 import { Entry } from "@/components/Entry";
-import { Field, Hint } from "@/components/Settings";
+import { Field, Hint, SpaceSelect } from "@/components/Settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -213,6 +213,11 @@ function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props &
       () => (toast.success(`Revoked ${k.name}`), reload(), onKeysChanged()),
       (e) => toast.error(errorText(e)),
     );
+  const move = (space: string) =>
+    api(`/keys/${k.id}`, { method: "PATCH", json: { space } }).then(
+      () => (toast.success(`Moved ${k.name}`), reload(), onKeysChanged()),
+      (e) => toast.error(errorText(e)),
+    );
   const byId = new Map(docs.map((d) => [d.id, d]));
   const total = k.docs.reduce((a, d) => a + d.uploads, 0);
   const made = k.docs.reduce((a, d) => a + d.created, 0);
@@ -262,6 +267,12 @@ function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props &
             )}
           </li>
         </ul>
+        <div className="max-w-xs">
+          <Field label="Space" htmlFor="key-space">
+            <SpaceSelect id="key-space" value={k.space} onChange={move} describedBy="key-space-hint" />
+            <Hint id="key-space-hint">New uploads go here, and it sees only this space's docs. Moving it leaves the docs it uploaded where they are.</Hint>
+          </Field>
+        </div>
       </div>
 
       <section aria-label="Totals" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
