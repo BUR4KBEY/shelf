@@ -38,7 +38,7 @@ Then, in the Cloudflare dashboard:
 - Every upload has a copy-link button, a star for favorites and the doc's settings (title, slug, password, expiry, delete); click anywhere on the upload to open or close them. Filter by favorites, password protected or expiring, and search titles, slugs, ids and messages.
 - Expired docs are hidden until the daily sweep deletes them: the **Expired** filter and the sidebar's "Show expired" bring them back.
 - The sidebar lists every doc, favorites first, so one that has not changed in months is still one click away. It folds down to a narrow rail that keeps the logo and the theme switch. A doc's page has its link, settings, a place to upload a new version and its whole history.
-- Keys sit in the sidebar with their uploads over the last 14 days: mint a key for each machine or agent (shown once), and revoke it from its menu.
+- Keys sit in the sidebar with their uploads over the last 14 days: mint a key for each machine or agent (shown once), and revoke it from its menu. A new key's dialog also copies *agent instructions*: your domain, the key, and where to find `llms.txt` and the MCP server, ready to paste into an agent.
 - **Settings** (in the sidebar) holds app-wide settings. *New uploads expire after* gives every new doc uploaded without an expiry (from the dashboard, the CLI or the API) a default one, e.g. 7 days. An upload that sets its own expiry, or `never`, keeps it; existing docs and new versions of them don't change. *Longest expiry allowed* (30 days unless changed) caps any expiry set from then on; never is always allowed, and docs that already expire later keep their date.
 - Upload by dropping a file or folder anywhere on the page. On a doc's page, a drop adds a version to that doc.
 
@@ -75,16 +75,18 @@ shelf rm q3-plan
 
 ## Agents
 
-Agents don't need the CLI. Every deployment describes itself to them in two ways:
+Agents don't need the CLI. Every deployment describes itself to them in two ways. The quickest start is **Copy agent instructions** when you mint a key in the dashboard.
+
+An API key acts as you, with the same power over docs as the dashboard: it can publish, read, change and delete any doc, password-protected ones included. Give each agent its own key so you can revoke it alone.
 
 - **`https://your-domain/llms.txt`**: a plain-text guide to reading and publishing with HTTP, with your domain filled in. Tell an agent "read https://your-domain/llms.txt and publish this; the key is in `$SHELF_KEY`".
-- **`https://your-domain/mcp`**: an MCP server (Streamable HTTP) with the tools `publish`, `read_doc`, `list_docs`, `get_doc`, `update_doc` and `delete_doc`. It takes the same API key as the HTTP API, as `Authorization: Bearer <key>`. `read_doc` reads any doc without its password, since the key's owner owns every doc. For Claude Code:
+- **`https://your-domain/mcp`**: an MCP server (Streamable HTTP) with the tools `publish`, `read_doc`, `list_docs`, `get_doc`, `update_doc` and `delete_doc`. It takes the same API key as the HTTP API, as `Authorization: Bearer <key>`. `read_doc` reads any doc without its password. For Claude Code:
 
   ```sh
   claude mcp add --transport http shelf https://your-domain/mcp --header "Authorization: Bearer $SHELF_KEY"
   ```
 
-  The server only takes a bearer key, not OAuth, so clients that can only connect with OAuth (claude.ai and ChatGPT connectors) can't use it yet. `publish` sends file contents through the model's context, so use the CLI or curl for large files.
+  **Only an API key, no OAuth.** Clients that can only sign in with OAuth, such as claude.ai and ChatGPT connectors, can't connect. Use a client that lets you set a header (Claude Code, Codex, Cursor, Claude Desktop through `mcp-remote`), or `llms.txt`. `publish` sends file contents through the model's context, so use the CLI or curl for large files.
 
 [`skills/shelf-publish`](skills/shelf-publish/SKILL.md) lets an agent write a page and publish it, with the CLI when it is installed and with MCP or `llms.txt` when it isn't. [`skills/shelf-read`](skills/shelf-read/SKILL.md) lets it read a shelf link someone gives it. Copy them into your agent's skills directory (for example `~/.claude/skills/`).
 
