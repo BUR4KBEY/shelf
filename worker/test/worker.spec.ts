@@ -1,6 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "../src/util";
 import { sweep } from "../src/api";
 import worker from "../src";
@@ -279,6 +279,39 @@ describe("dashboard", () => {
   it("refuses requests that did not pass Cloudflare Access", async () => {
     expect((await get("/dashboard")).status).toBe(403);
     expect((await get("/dashboard/api/docs")).status).toBe(403);
+  });
+
+  it("accepts a valid Access JWT on previews, where ctx.access is unset", async () => {
+    const team = "team.cloudflareaccess.com";
+    const aud = "preview-aud";
+    const alg = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]) };
+    const pair = (await crypto.subtle.generateKey(alg, true, ["sign", "verify"])) as CryptoKeyPair;
+    const jwk = { ...((await crypto.subtle.exportKey("jwk", pair.publicKey)) as JsonWebKey), kid: "k1" };
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ keys: [jwk] }));
+    const b64 = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const enc = (o: object) => b64(new TextEncoder().encode(JSON.stringify(o)));
+    const sign = async (claims: object) => {
+      const input = `${enc({ alg: "RS256", kid: "k1" })}.${enc(claims)}`;
+      return `${input}.${b64(new Uint8Array(await crypto.subtle.sign(alg, pair.privateKey, new TextEncoder().encode(input))))}`;
+    };
+    const valid = { iss: `https://${team}`, aud: [aud], email: "me@example.com", exp: Date.now() / 1000 + 60 };
+    const me = async (token: string) => {
+      const ctx = createExecutionContext();
+      const req = new Request(`${BASE}/dashboard/api/me`, { headers: { "cf-access-jwt-assertion": token } });
+      return worker.fetch(req as Parameters<typeof worker.fetch>[0], { ...env, ACCESS_TEAM_DOMAIN: team, ACCESS_AUD: aud } as Env, ctx);
+    };
+    try {
+      const ok = await me(await sign(valid));
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toEqual({ email: "me@example.com" });
+      for (const bad of [{ aud: ["other-app"] }, { exp: Date.now() / 1000 - 1 }, { iss: "https://evil.cloudflareaccess.com" }]) {
+        expect((await me(await sign({ ...valid, ...bad }))).status).toBe(403);
+      }
+      const [h, , s] = (await sign(valid)).split(".");
+      expect((await me(`${h}.${enc({ ...valid, email: "evil@example.com" })}.${s}`)).status).toBe(403);
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 
   it("serves the page with a per-request script nonce", async () => {
