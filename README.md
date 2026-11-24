@@ -128,6 +128,7 @@ curl -X DELETE -H "Authorization: Bearer $KEY" $U/api/docs/<ref>
 - PDFs, images, audio, video, text, CSS and JS are served inline. Any other type downloads.
 - Range requests work, so video seeking works.
 - Password docs show a password form. The unlock lasts 30 days, until the password changes. Agents send `X-Doc-Password: <password>` instead. Password attempts are limited to 10 per minute per IP and doc.
+- You skip the form when you open a doc from the dashboard, or use the form's "Open it from the dashboard" link while signed in to Access (`/dashboard/open/<ref>` sets the unlock cookie, then redirects to `/view/<ref>`).
 
 ## Develop
 
