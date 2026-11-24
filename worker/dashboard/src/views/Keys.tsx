@@ -14,6 +14,10 @@ import { cn } from "@/lib/utils";
 
 const row = "grid w-full grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1.5 text-left";
 
+const agentInstructions = (key: string) =>
+  `Publish files with shelf at ${location.origin}. Read ${location.origin}/llms.txt for how, and use this API key: ${key}\n` +
+  `Or connect its MCP server: ${location.origin}/mcp (Streamable HTTP) with the header "Authorization: Bearer ${key}".`;
+
 /** The keys in the sidebar: each in its colour, with its last two weeks of uploads. A key's menu revokes it. */
 export function KeyList({ keys, uploads, colorOf, onChanged }: { keys: Key[]; uploads: Activity[]; colorOf: (keyId: string | null) => string; onChanged: () => void }) {
   const [naming, setNaming] = useState(false);
@@ -112,7 +116,7 @@ export function KeyList({ keys, uploads, colorOf, onChanged }: { keys: Key[]; up
         <DialogContent showCloseButton={false} onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="[overflow-wrap:anywhere]">Key for {fresh?.name}</DialogTitle>
-            <DialogDescription>Copy it now. It won't be shown again.</DialogDescription>
+            <DialogDescription>Copy it now. It won't be shown again. Agent instructions hold the key too, so an agent can publish without the CLI.</DialogDescription>
           </DialogHeader>
           <code id="new-key" className="block rounded-lg border bg-background px-3 py-2.5 font-mono text-[13px] leading-relaxed select-all [overflow-wrap:anywhere]">
             {fresh?.key}
@@ -120,6 +124,9 @@ export function KeyList({ keys, uploads, colorOf, onChanged }: { keys: Key[]; up
           <DialogFooter>
             <Button variant="outline" onClick={() => setFresh(null)}>
               Done
+            </Button>
+            <Button variant="outline" onClick={() => fresh && copy(agentInstructions(fresh.key), "Agent instructions")}>
+              <Copy /> Copy agent instructions
             </Button>
             <Button autoFocus onClick={() => fresh && copy(fresh.key, "Key")}>
               <Copy /> Copy key
