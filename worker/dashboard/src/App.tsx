@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Menu, PanelLeftOpen, X } from "lucide-react";
 import { MotionConfig, animate, motion, useMotionValue, useReducedMotion, type MotionStyle } from "motion/react";
-import { Loading, Problem, Tip, display, focusRing, useLoad, useTitle } from "@/components/bits";
+import { Loading, Logo, Problem, Tip, display, focusRing, useLoad, useTitle } from "@/components/bits";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -81,7 +81,8 @@ export function App() {
         ) : (
           <motion.div style={{ "--side": sideWidth } as MotionStyle} className="min-h-dvh lg:grid lg:grid-cols-[var(--side)_minmax(0,1fr)]">
             <header className="sticky top-0 z-20 flex h-14 items-center border-b bg-sidebar px-4 lg:hidden">
-              <a href="#/" onClick={() => setMenu(false)} className={cn(display, focusRing, "text-[1.75rem] leading-none")}>
+              <a href="#/" onClick={() => setMenu(false)} className={cn(display, focusRing, "flex items-center gap-2 text-[1.75rem] leading-none")}>
+                <Logo className="h-6" />
                 shelf
               </a>
               <Button variant="outline" className="ml-auto" aria-pressed={menu} onClick={() => setMenu(!menu)}>

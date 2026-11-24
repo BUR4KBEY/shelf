@@ -56,6 +56,22 @@ export const focusRing = "rounded-sm outline-none focus-visible:ring-3 focus-vis
 export const groupName = "text-[0.8125rem] leading-none font-semibold text-muted-foreground";
 /** The narrow, heavy cut for the wordmark and the names of days and docs. */
 export const display = "font-bold tracking-tight font-stretch-[78%]";
+/** The logo, cropped to its shapes. Drawn inline so it follows the theme switch (the favicon, src/favicon.svg, can only follow the system); change both together. */
+export function Logo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="14 34 100 61" className={cn("shrink-0 fill-current", className)} aria-hidden>
+      <g transform="translate(0 -6)">
+        <rect x="27" y="40" width="14" height="52" rx="2" />
+        <path d="M31 40H37V60L34 56.5L31 60Z" className="fill-ring" />
+        <path d="M46 52H50L58 60V90Q58 92 56 92H46Q44 92 44 90V54Q44 52 46 52Z" className="fill-ring" />
+        <path d="M50 52V60H58Z" />
+        <rect x="68.4" y="42" width="14" height="50" rx="2" transform="rotate(-18 68.4 92)" />
+        <rect x="89" y="49.5" width="12" height="41" rx="2" fill="none" className="stroke-ring" strokeWidth="3" strokeDasharray="6 4" />
+        <rect x="14" y="92" width="100" height="9" rx="4.5" />
+      </g>
+    </svg>
+  );
+}
 /** A dashed box: somewhere a file can be dropped, or something that isn't there yet. */
 export const dashed = "rounded-xl border-[1.5px] border-dashed border-input";
 /** A small labelled pill for a doc's state: locked, expiring, current. Add a colour for anything that needs attention. */
