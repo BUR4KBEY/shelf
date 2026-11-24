@@ -32,11 +32,13 @@ Then, in the Cloudflare dashboard:
 
 ## Dashboard
 
-`https://your-domain/dashboard` (dark only, React + shadcn/ui):
+`https://your-domain/dashboard` (light and dark, following your system; React + shadcn/ui):
 
-- Docs list with search and favorites. Upload by dropping a file or folder anywhere on the page.
-- A page per doc for title, slug, password, expiry, new versions, version history and delete.
-- Keys: mint a key for each machine or agent (shown once), and revoke it.
+- The home screen is a log of uploads, newest first and grouped by day: who uploaded which version of which doc, with its message. Each key has its own colour, so you can tell your agents, CI and machines apart at a glance.
+- Every upload has a copy-link button, a star for favorites and the doc's settings (title, slug, password, expiry, delete). Filter by favorites, password protected or expiring, and search titles, slugs, ids and messages.
+- The sidebar lists every doc, favorites first, so one that has not changed in months is still one click away. A doc's page has its link, settings, a place to upload a new version and its whole history.
+- Keys sit in the sidebar with their uploads over the last 14 days: mint a key for each machine or agent (shown once), and revoke it from its menu.
+- Upload by dropping a file or folder anywhere on the page. On a doc's page, a drop adds a version to that doc.
 
 The page source is in `worker/dashboard/`. It is built into one HTML file (`worker/src/dashboard.html`, not committed) that the Worker serves. `wrangler dev`, `wrangler deploy` and `npm test` build it first.
 
@@ -106,6 +108,7 @@ A folder is a manifest with many paths and an `index.html`. Pages link to each o
 ```sh
 curl -H "Authorization: Bearer $KEY" $U/api/docs                          # list, favorites first
 curl -H "Authorization: Bearer $KEY" $U/api/docs/<ref>                    # detail + version history
+curl -H "Authorization: Bearer $KEY" $U/api/uploads                       # newest 200 uploads across all docs
 curl -X PATCH -H "Authorization: Bearer $KEY" -d '{"favorite":true,"expires":"7d"}' $U/api/docs/<ref>
 curl -X DELETE -H "Authorization: Bearer $KEY" $U/api/docs/<ref>
 ```
