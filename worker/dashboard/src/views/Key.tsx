@@ -118,47 +118,51 @@ function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props &
         </ul>
       </div>
 
+      <section aria-label="Totals" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Stat label="Uploads" value={String(total)} note={`${plural(recent, "upload")} in the last ${DAYS} days`} />
+        <Stat label="Docs" value={String(k.docs.length)} note={`${made} made by this key`} />
+        <Stat label="Data uploaded" value={size(bytes)} note="across every version" />
+        <Stat
+          label="Last upload"
+          value={total ? ago(k.docs[0].lastAt) : "Never"}
+          note={
+            total ? (
+              <>
+                first <Time t={first}>{fullDate(first)}</Time>
+              </>
+            ) : (
+              "nothing on the shelf yet"
+            )
+          }
+        />
+      </section>
+
+      <section className="grid grid-cols-1 gap-x-6 gap-y-7 sm:grid-cols-[2fr_1fr]">
+        <div className="grid content-start gap-2.5">
+          <h2 className={heading}>Last {DAYS} days</h2>
+          <p className="text-sm text-muted-foreground">
+            Active on {plural(active, "day")}
+            {active > 0 && `, ${plural(Number((recent / active).toFixed(1)), "upload")} a day when it is`}
+          </p>
+          <Bars
+            counts={days}
+            label={(i, n) => `${dayName(new Date(today.getFullYear(), today.getMonth(), today.getDate() - (DAYS - 1 - i)).getTime())}: ${plural(n, "upload")}`}
+            from={`${DAYS} days ago`}
+            to="Today"
+            summary={`${plural(recent, "upload")} on ${plural(active, "day")} in the last ${DAYS} days.`}
+          />
+        </div>
+        <div className="grid content-start gap-2.5">
+          <h2 className={heading}>Time of day</h2>
+          <p className="text-sm text-muted-foreground">{total ? `Busiest around ${hh(peak)}` : "No uploads yet"}</p>
+          <Bars counts={hours} label={(i, n) => `${hh(i)}: ${plural(n, "upload")}`} from="00:00" to="23:00" summary={total ? `Uploads most often around ${hh(peak)}.` : "No uploads yet."} />
+        </div>
+      </section>
+
       {total === 0 ? (
-        <p className="text-muted-foreground">Nothing this key uploaded is on the shelf.{!k.revokedAt && " Use it with shelf login or the API, and its uploads show up here."}</p>
+        <p className="text-muted-foreground">Nothing this key uploaded is on the shelf.{!k.revokedAt && " Use it with shelf login or the API, and its docs and uploads show up here."}</p>
       ) : (
         <>
-          <section aria-label="Totals" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Stat label="Uploads" value={String(total)} note={`${plural(recent, "upload")} in the last ${DAYS} days`} />
-            <Stat label="Docs" value={String(k.docs.length)} note={`${made} made by this key`} />
-            <Stat label="Data uploaded" value={size(bytes)} note="across every version" />
-            <Stat
-              label="Last upload"
-              value={ago(k.docs[0].lastAt)}
-              note={
-                <>
-                  first <Time t={first}>{fullDate(first)}</Time>
-                </>
-              }
-            />
-          </section>
-
-          <section className="grid grid-cols-1 gap-x-6 gap-y-7 sm:grid-cols-[2fr_1fr]">
-            <div className="grid content-start gap-2.5">
-              <h2 className={heading}>Last {DAYS} days</h2>
-              <p className="text-sm text-muted-foreground">
-                Active on {plural(active, "day")}
-                {active > 0 && `, ${plural(Number((recent / active).toFixed(1)), "upload")} a day when it is`}
-              </p>
-              <Bars
-                counts={days}
-                label={(i, n) => `${dayName(new Date(today.getFullYear(), today.getMonth(), today.getDate() - (DAYS - 1 - i)).getTime())}: ${plural(n, "upload")}`}
-                from={`${DAYS} days ago`}
-                to="Today"
-                summary={`${plural(recent, "upload")} on ${plural(active, "day")} in the last ${DAYS} days.`}
-              />
-            </div>
-            <div className="grid content-start gap-2.5">
-              <h2 className={heading}>Time of day</h2>
-              <p className="text-sm text-muted-foreground">Busiest around {hh(peak)}</p>
-              <Bars counts={hours} label={(i, n) => `${hh(i)}: ${plural(n, "upload")}`} from="00:00" to="23:00" summary={`Uploads most often around ${hh(peak)}.`} />
-            </div>
-          </section>
-
           <section className="grid grid-cols-1 gap-2.5">
             <h2 className={heading}>Docs</h2>
             <ul className="grid grid-cols-1 divide-y rounded-xl border bg-card">
