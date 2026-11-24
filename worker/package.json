@@ -9,7 +9,8 @@
     "types": "wrangler types",
     "test": "npm run build && vitest run",
     "typecheck": "tsc",
-    "typecheck:dashboard": "tsc -p dashboard"
+    "typecheck:dashboard": "tsc -p dashboard",
+    "setup:access": "node scripts/setup-access.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.9.1",
