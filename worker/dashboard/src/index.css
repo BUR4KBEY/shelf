@@ -1,30 +1,85 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
+/*
+ * One family, with its width axis: narrow for the wordmark and day headings, normal for everything else.
+ * Latin and Latin Extended only: the fonts are inlined into the page, so every subset is downloaded on every load.
+ */
+@font-face {
+  font-family: "Bricolage Grotesque Variable";
+  font-weight: 200 800;
+  font-stretch: 75% 100%;
+  font-display: swap;
+  src: url("@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wdth-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Bricolage Grotesque Variable";
+  font-weight: 200 800;
+  font-stretch: 75% 100%;
+  font-display: swap;
+  src: url("@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-ext-wdth-normal.woff2") format("woff2-variations");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
 
-/* Dark only: shadcn's zinc dark tokens, applied to :root. <html> also carries .dark so `dark:` variants match. */
+/*
+ * Light and dark follow the system. Tailwind's `dark:` is the same media query, so the shadcn components switch with it.
+ * Colour belongs to the keys: an upload is tinted with the colour of the key that made it, and little else is coloured.
+ */
 :root {
-  color-scheme: dark;
+  color-scheme: light dark;
   --radius: 0.5rem;
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.92 0.004 286.32);
-  --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.552 0.016 285.938);
+  --background: #f4f6fc;
+  --foreground: #131a3a;
+  --sidebar: #e7ebf7;
+  --card: #fff;
+  --card-foreground: var(--foreground);
+  --popover: #fff;
+  --popover-foreground: var(--foreground);
+  --primary: #131a3a;
+  --primary-foreground: #fff;
+  --secondary: #e7ebf7;
+  --secondary-foreground: var(--foreground);
+  --muted: #e7ebf7;
+  --muted-foreground: #58638c;
+  --accent: #e7ebf7;
+  --accent-foreground: var(--foreground);
+  --destructive: #c8341b;
+  --warning: #a55d00;
+  --border: #cdd5ea;
+  --input: #9aa6c9;
+  --ring: #3b55d9;
+  /* A key's colour is `oklch(var(--key-l) var(--key-c) <its hue>)`, so every key is equally loud in either theme. */
+  --key-l: 0.5;
+  --key-c: 0.17;
+  --tint: 7%;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #111a3a;
+    --foreground: #eef1ff;
+    --sidebar: #0b1230;
+    --card: #1a2550;
+    --popover: #1d2957;
+    --primary: #eef1ff;
+    --primary-foreground: #0b1230;
+    --secondary: #26326a;
+    --muted: #26326a;
+    --muted-foreground: #98a3cf;
+    --accent: #26326a;
+    --destructive: #ff7a6b;
+    --warning: #ffb64d;
+    --border: #2b3769;
+    --input: #4a5894;
+    --ring: #9db0ff;
+    --key-l: 0.82;
+    --key-c: 0.11;
+    --tint: 9%;
+  }
+}
+
+@theme {
+  --font-sans: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
 }
 
 @theme inline {
@@ -34,6 +89,7 @@
   --radius-xl: calc(var(--radius) + 4px);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-sidebar: var(--sidebar);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -47,6 +103,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -57,7 +114,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background text-sm text-foreground antialiased;
   }
 }
 

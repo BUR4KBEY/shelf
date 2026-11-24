@@ -1,12 +1,13 @@
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
-// Dark only, so the theme is fixed instead of read from next-themes.
+// Follows the system like the rest of the page, instead of reading next-themes.
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
-      theme="dark"
-      className="toaster group"
+      theme="system"
+      // Sonner's own stylesheet sets a system font on the toaster.
+      className="toaster group font-sans!"
       icons={{
         success: <CircleCheckIcon className="size-4" />,
         info: <InfoIcon className="size-4" />,

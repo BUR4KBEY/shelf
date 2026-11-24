@@ -10,7 +10,9 @@ export type Doc = {
   updatedAt: number;
   url: string;
 };
-export type Version = { n: number; message: string | null; size: number; createdAt: number; keyName: string | null; files: number };
+export type Version = { n: number; message: string | null; size: number; createdAt: number; keyId: string | null; keyName: string | null; files: number };
+/** One upload in the feed: a version, with the doc it belongs to. */
+export type Activity = Version & { docId: string };
 export type DocDetail = Doc & { versions: Version[] };
 export type PushResult = (Doc & { version: number; versionUrl: string; created: boolean; missing?: undefined }) | { missing: string[] };
 export type Key = { id: string; name: string; createdAt: number; lastUsedAt: number | null; revokedAt: number | null };

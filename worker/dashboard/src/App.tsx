@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
-import { LibraryBig } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Menu, X } from "lucide-react";
+import { Loading, Problem, display, focusRing, useLoad, useTitle } from "@/components/bits";
+import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { api } from "@/lib/api";
+import { api, nameOf, type Activity, type Doc, type Key } from "@/lib/api";
+import { NO_KEY, keyColors } from "@/lib/feed";
 import { cn } from "@/lib/utils";
 import { DocView } from "@/views/Doc";
-import { DocsView } from "@/views/Docs";
-import { KeysView } from "@/views/Keys";
+import { FeedView } from "@/views/Feed";
+import { Sidebar } from "@/views/Sidebar";
 
 function useHashPath() {
   const [hash, setHash] = useState(location.hash);
@@ -18,11 +21,16 @@ function useHashPath() {
   return hash.replace(/^#\/?/, "");
 }
 
+/** The sidebar (every doc, every key) beside the log of uploads, or one doc's page. On a narrow screen a button swaps the two. */
 export function App() {
-  const path = useHashPath();
-  const doc = path.match(/^doc\/([^/]+)$/);
+  const open = useHashPath().match(/^doc\/([^/]+)$/)?.[1];
+  const openId = open && decodeURIComponent(open);
+  const docs = useLoad<Doc[]>("/docs");
+  const uploads = useLoad<Activity[]>("/uploads");
+  const keys = useLoad<Key[]>("/keys");
+  const [menu, setMenu] = useState(false);
   const [email, setEmail] = useState("");
-  useEffect(() => void api<{ email: string }>("/me").then((me) => setEmail(me.email), () => {}), []);
+  useEffect(() => void api<{ email: string }>("/me").then((me) => setEmail(me.email), () => { }), []);
   useEffect(() => {
     // Without this a file dropped outside an upload view makes the browser open it.
     const stop = (e: DragEvent) => e.dataTransfer?.types.includes("Files") && e.preventDefault();
@@ -34,39 +42,41 @@ export function App() {
     };
   }, []);
 
-  const nav = (href: string, label: string, on: boolean) => (
-    <a
-      href={href}
-      aria-current={on ? "page" : undefined}
-      className={cn(
-        "rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
-        on && "bg-muted text-foreground",
-      )}
-    >
-      {label}
-    </a>
-  );
+  const openDoc = docs.data?.find((d) => d.id === openId || d.slug === openId);
+  useTitle(openDoc ? nameOf(openDoc) : "");
+  const colors = useMemo(() => keyColors(keys.data ?? []), [keys.data]);
+  const colorOf = (keyId: string | null) => (keyId && colors.get(keyId)) || NO_KEY;
+  const changed = () => {
+    docs.reload();
+    uploads.reload();
+  };
+  const error = docs.error ?? uploads.error ?? keys.error;
 
   return (
     <TooltipProvider delayDuration={300}>
-      <header className="sticky top-0 z-30 border-b bg-background/85 backdrop-blur">
-        <div className="mx-auto flex h-12 max-w-3xl items-center gap-4 px-4 sm:px-6">
-          <a href="#/" className="flex items-center gap-2 rounded-md font-semibold tracking-tight outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-            <LibraryBig className="size-4.5" aria-hidden />
-            shelf
-          </a>
-          <nav aria-label="Sections" className="flex gap-1">
-            {nav("#/", "Docs", path !== "keys")}
-            {nav("#/keys", "Keys", path === "keys")}
-          </nav>
-          <span className="ml-auto min-w-0 truncate text-xs text-muted-foreground" title={email}>
-            {email}
-          </span>
+      {error ? (
+        <Problem error={error} className="p-8" />
+      ) : !docs.data || !uploads.data || !keys.data ? (
+        <Loading className="p-8" />
+      ) : (
+        <div className="min-h-dvh lg:grid lg:grid-cols-[19rem_minmax(0,1fr)]">
+          <header className="sticky top-0 z-20 flex h-14 items-center border-b bg-sidebar px-4 lg:hidden">
+            <a href="#/" onClick={() => setMenu(false)} className={cn(display, focusRing, "text-[1.75rem] leading-none")}>
+              shelf
+            </a>
+            <Button variant="outline" className="ml-auto" aria-pressed={menu} onClick={() => setMenu(!menu)}>
+              {menu ? <X /> : <Menu />}
+              {menu ? "Back to the log" : "Docs and keys"}
+            </Button>
+          </header>
+          <aside className={cn("bg-sidebar max-lg:min-h-[calc(100dvh-3.5rem)] lg:sticky lg:top-0 lg:h-dvh lg:overflow-y-auto", !menu && "max-lg:hidden")}>
+            <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} email={email} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} />
+          </aside>
+          <main className={cn("min-w-0", menu && "max-lg:hidden")}>
+            {openId ? <DocView key={openId} id={openId} colorOf={colorOf} onChanged={changed} /> : <FeedView docs={docs.data} uploads={uploads.data} colorOf={colorOf} onChanged={changed} />}
+          </main>
         </div>
-      </header>
-      <main className="mx-auto grid max-w-3xl grid-cols-1 gap-6 px-4 pt-6 pb-24 sm:px-6 sm:pt-8">
-        {doc ? <DocView key={doc[1]} id={decodeURIComponent(doc[1])} /> : path === "keys" ? <KeysView /> : <DocsView />}
-      </main>
+      )}
       <Toaster position="bottom-center" />
     </TooltipProvider>
   );
