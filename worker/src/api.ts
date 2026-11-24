@@ -199,11 +199,20 @@ export async function getDoc(req: Request, env: Env, ref: string): Promise<Respo
   const doc = await findDoc(env, ref);
   if (!doc) return json({ error: "doc not found" }, 404);
   const { results } = await env.DB.prepare(
-    "SELECT v.n, v.message, v.size, v.created_at AS createdAt, k.name AS keyName, (SELECT COUNT(*) FROM files f WHERE f.doc_id = v.doc_id AND f.n = v.n) AS files FROM versions v LEFT JOIN api_keys k ON k.id = v.key_id WHERE v.doc_id = ? ORDER BY v.n DESC",
+    "SELECT v.n, v.message, v.size, v.created_at AS createdAt, v.key_id AS keyId, k.name AS keyName, (SELECT COUNT(*) FROM files f WHERE f.doc_id = v.doc_id AND f.n = v.n) AS files FROM versions v LEFT JOIN api_keys k ON k.id = v.key_id WHERE v.doc_id = ? ORDER BY v.n DESC",
   )
     .bind(doc.id)
     .all();
   return json({ ...docJson(req, doc), versions: results });
+}
+
+/** The newest uploads across all docs, newest first. A doc's own versions are complete in `getDoc`; this is capped. */
+export async function listUploads(env: Env): Promise<Response> {
+  // rowid breaks ties between versions committed in the same millisecond.
+  const { results } = await env.DB.prepare(
+    "SELECT v.doc_id AS docId, v.n, v.message, v.size, v.created_at AS createdAt, v.key_id AS keyId, k.name AS keyName, (SELECT COUNT(*) FROM files f WHERE f.doc_id = v.doc_id AND f.n = v.n) AS files FROM versions v LEFT JOIN api_keys k ON k.id = v.key_id ORDER BY v.created_at DESC, v.rowid DESC LIMIT 200",
+  ).all();
+  return json(results);
 }
 
 export async function patchDoc(req: Request, env: Env, ref: string): Promise<Response> {

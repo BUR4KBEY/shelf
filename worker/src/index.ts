@@ -1,5 +1,5 @@
 import { previewAccess } from "./access";
-import { deleteDoc, getDoc, listDocs, patchDoc, push, putBlob, sweep } from "./api";
+import { deleteDoc, getDoc, listDocs, listUploads, patchDoc, push, putBlob, sweep } from "./api";
 import { apiKey } from "./auth";
 import { createKey, dashboardPage, listKeys, revokeKey } from "./dashboard";
 import { json } from "./util";
@@ -11,6 +11,7 @@ async function docRoutes(req: Request, env: Env, path: string, keyId: string | n
   if (req.method === "POST" && path === "/api/push") return push(req, env, keyId);
   if (req.method === "PUT" && (m = path.match(/^\/api\/blobs\/([0-9a-f]{64})$/))) return putBlob(req, env, m[1]);
   if (req.method === "GET" && path === "/api/docs") return listDocs(req, env);
+  if (req.method === "GET" && path === "/api/uploads") return listUploads(env);
   if ((m = path.match(/^\/api\/docs\/([A-Za-z0-9-]{1,64})$/))) {
     if (req.method === "GET") return getDoc(req, env, m[1]);
     if (req.method === "PATCH") return patchDoc(req, env, m[1]);
