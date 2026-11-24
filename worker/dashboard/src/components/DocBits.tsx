@@ -1,6 +1,6 @@
-import { Lock, Star as StarIcon } from "lucide-react";
+import { Clock, Lock, Star as StarIcon } from "lucide-react";
 import { toast } from "sonner";
-import { Tip, focusRing } from "@/components/bits";
+import { Tip, chip, focusRing } from "@/components/bits";
 import { Button } from "@/components/ui/button";
 import { api, errorText, nameOf, type Doc } from "@/lib/api";
 import { fullDate, timeLeft } from "@/lib/format";
@@ -21,22 +21,26 @@ export function Star({ d, onChanged }: { d: Doc; onChanged: () => void }) {
   );
 }
 
-/** A doc's name as it appears on an upload: a link to the doc, a lock if it has a password, and its star. */
+/** A doc's name as it appears on an upload: a link to the doc, and its star. */
 export function DocName({ d, onChanged }: { d: Doc; onChanged: () => void }) {
   return (
     <h3 className="flex min-w-0 items-center gap-1.5 text-xl leading-tight font-bold">
       <a href={`#/doc/${d.id}`} className={cn(focusRing, "min-w-0 underline-offset-4 [overflow-wrap:anywhere] hover:underline", isExpired(d) && "text-muted-foreground line-through")}>
         {nameOf(d)}
       </a>
-      {d.locked && (
-        <>
-          <Lock className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <span className="sr-only">password protected</span>
-        </>
-      )}
       <Star d={d} onChanged={onChanged} />
     </h3>
   );
+}
+
+/** "Password" on a doc that has one. Nothing on an open doc. */
+export function Locked({ d }: { d: Doc }) {
+  return d.locked ? (
+    <span className={chip}>
+      <Lock aria-hidden />
+      Password
+    </span>
+  ) : null;
 }
 
 /** "Expires in 7d": amber in its last day, red once expired. Nothing when the doc never expires. */
@@ -44,7 +48,8 @@ export function Expiry({ d }: { d: Doc }) {
   if (d.expiresAt === null) return null;
   const left = timeLeft(d.expiresAt);
   return (
-    <span title={fullDate(d.expiresAt)} className={cn(!left ? "font-semibold text-destructive" : d.expiresAt - Date.now() < DAY && "font-semibold text-warning")}>
+    <span title={fullDate(d.expiresAt)} className={cn(chip, !left ? "bg-destructive/10 text-destructive" : d.expiresAt - Date.now() < DAY && "bg-warning/15 text-warning")}>
+      <Clock aria-hidden />
       {left ? `Expires in ${left}` : "Expired"}
     </span>
   );

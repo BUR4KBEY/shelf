@@ -8,7 +8,8 @@ export const NO_KEY = "var(--muted-foreground)";
 /** Keys keep their colour: the nth key ever created gets the nth hue. Keys are revoked, never deleted, so the order holds. */
 export function keyColors(keys: { id: string; createdAt: number }[]): Map<string, string> {
   const oldestFirst = [...keys].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-  return new Map(oldestFirst.map((k, i) => [k.id, `oklch(var(--key-l) var(--key-c) ${HUES[i % HUES.length]})`]));
+  // Darker on light, paler on dark, at a chroma that makes every key equally loud in either theme.
+  return new Map(oldestFirst.map((k, i) => [k.id, `light-dark(oklch(0.5 0.17 ${HUES[i % HUES.length]}), oklch(0.82 0.11 ${HUES[i % HUES.length]}))`]));
 }
 
 const midnight = (t: number) => new Date(t).setHours(0, 0, 0, 0);

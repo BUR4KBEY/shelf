@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { ChevronLeft, Copy, ExternalLink, Lock, LockOpen } from "lucide-react";
-import { Loading, Problem, copy, dashed, display, focusRing, groupName, useLoad } from "@/components/bits";
+import { Loading, Problem, chip, copy, dashed, display, focusRing, useLoad } from "@/components/bits";
 import { Expiry, Star } from "@/components/DocBits";
 import { DropZone } from "@/components/DropZone";
 import { Entry } from "@/components/Entry";
@@ -12,7 +12,8 @@ import { byDay } from "@/lib/feed";
 import { dayName, plural, size } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const status = "flex items-center gap-1.5 [&_svg]:size-3.5 [&_svg]:shrink-0";
+/** The name of a section of the page. */
+const heading = "text-base leading-none font-bold";
 
 /** One doc: its link, its settings, a place to add a version, and its whole history as a log. */
 export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyId: string | null) => string; onChanged: () => void }) {
@@ -42,17 +43,17 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                 <Star d={d} onChanged={changed} />
               </div>
             </div>
-            <ul aria-label="Status" className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
-              <li className={status}>
+            <ul aria-label="Status" className="flex flex-wrap gap-1.5">
+              <li className={chip}>
                 {d.locked ? <Lock aria-hidden /> : <LockOpen aria-hidden />}
                 {d.locked ? "Password protected" : "Anyone with the link can read it"}
               </li>
               {d.expiresAt !== null && (
-                <li className={status}>
+                <li className="flex">
                   <Expiry d={d} />
                 </li>
               )}
-              <li>{plural(d.versions.length, "version")}</li>
+              <li className={chip}>{plural(d.versions.length, "version")}</li>
             </ul>
             {/* The link is what this page is for, so it comes before everything you can change. */}
             <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 sm:py-2 sm:pr-2 sm:pl-4">
@@ -74,7 +75,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
           </div>
 
           <section className="grid grid-cols-1 gap-2.5">
-            <h2 className={groupName}>Settings</h2>
+            <h2 className={heading}>Settings</h2>
             <div className="rounded-xl border bg-card p-4">
               {/* Remounts when the saved settings change, but not when a new version arrives, so unsaved edits survive an upload. */}
               <Settings key={[d.title, d.slug, d.locked, d.expiresAt].join("\n")} d={d} onChanged={changed} onDeleted={() => (location.hash = "#/")} />
@@ -82,7 +83,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
           </section>
 
           <section className="grid grid-cols-1 gap-2.5">
-            <h2 className={groupName}>New version</h2>
+            <h2 className={heading}>New version</h2>
             <div className={cn(dashed, "grid grid-cols-1 gap-2.5 p-3")}>
               <div className="flex flex-wrap gap-2">
                 <Input ref={message} maxLength={1000} placeholder="What changed? (optional)" aria-label="Message for the new version" className="w-auto flex-[1_1_14rem]" />
@@ -101,7 +102,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
           </section>
 
           <section className="grid grid-cols-1 gap-5">
-            <h2 className={groupName}>History</h2>
+            <h2 className={heading}>History</h2>
             {byDay(d.versions, (v) => String(v.n)).map(({ day, entries }) => (
               <div key={day} className="grid grid-cols-1 gap-2.5">
                 <h3 className={cn(display, "text-2xl leading-none")}>{dayName(day)}</h3>
@@ -114,9 +115,9 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                       who={v.keyName ?? "You"}
                       did="uploaded"
                       title={
-                        <p className="flex items-baseline gap-2.5 text-xl leading-tight font-bold">
+                        <p className="flex items-center gap-2 text-xl leading-tight font-bold">
                           Version {v.n}
-                          {v.n === d.latest && <span className="text-xs font-semibold text-muted-foreground">what the link shows now</span>}
+                          {v.n === d.latest && <span className={cn(chip, "bg-primary text-primary-foreground")}>Current</span>}
                         </p>
                       }
                       message={v.message}

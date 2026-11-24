@@ -7,7 +7,7 @@ export function Entry(props: { color: string; at: number; who: string; did: stri
   return (
     <article
       style={{ "--k": props.color } as CSSProperties}
-      className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-x-3 rounded-xl border-l-[5px] border-(--k) bg-[color-mix(in_oklab,var(--k)_var(--tint),var(--card))] py-3 pr-3 sm:grid-cols-[3.25rem_minmax(0,1fr)_auto] sm:gap-x-4 sm:pr-4"
+      className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-x-3 rounded-xl border border-l-[5px] border-(--k)/25 border-l-(--k) bg-[light-dark(color-mix(in_oklab,var(--k)_7%,var(--card)),color-mix(in_oklab,var(--k)_9%,var(--card)))] py-3 pr-3 sm:grid-cols-[3.25rem_minmax(0,1fr)_auto] sm:gap-x-4 sm:pr-4"
     >
       <p className="text-right text-[0.9375rem] leading-[1.375rem] font-semibold text-muted-foreground tabular-nums">
         <Time t={props.at}>{clock(props.at)}</Time>
@@ -18,7 +18,7 @@ export function Entry(props: { color: string; at: number; who: string; did: stri
         </p>
         {props.title}
         {props.message && <p className="text-[0.9375rem] [overflow-wrap:anywhere]">{props.message}</p>}
-        <div className="mt-0.5 flex flex-wrap gap-x-3.5 text-[0.8125rem] text-muted-foreground">{props.meta}</div>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[0.8125rem] text-muted-foreground">{props.meta}</div>
       </div>
       {props.actions && <div className="flex items-start gap-1 max-sm:col-start-2 max-sm:mt-2 sm:justify-end">{props.actions}</div>}
       {props.children && <div className="col-start-2 -col-end-1 min-w-0">{props.children}</div>}
