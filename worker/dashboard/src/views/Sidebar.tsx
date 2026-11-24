@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Clock, Lock, Monitor, Moon, PanelLeftClose, Rows3, Star, Sun } from "lucide-react";
+import { Clock, Lock, Monitor, Moon, PanelLeftClose, Rows3, Settings, Star, Sun } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Logo, Tip, display, focusRing, groupName } from "@/components/bits";
 import { isExpired } from "@/components/DocBits";
@@ -42,7 +42,7 @@ function ThemeSwitch() {
 }
 
 /** Every doc and every key, always in reach. The log shows what happened; this shows what there is. */
-export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; colorOf: (keyId: string | null) => string; openId?: string; email: string; onNavigate: () => void; onKeysChanged: () => void; onCollapse: () => void }) {
+export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; colorOf: (keyId: string | null) => string; openId?: string; settings: boolean; email: string; onNavigate: () => void; onKeysChanged: () => void; onCollapse: () => void }) {
   const [showExpired, setShowExpired] = useState(false);
   const isOpen = (d: Doc) => d.id === props.openId || (d.slug !== null && d.slug === props.openId);
   const expired = props.docs.filter(isExpired).length;
@@ -61,9 +61,13 @@ export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; 
       </div>
 
       <nav aria-label="Docs" onClick={props.onNavigate}>
-        <a href="#/" aria-current={props.openId ? undefined : "page"} className={cn(item, "-mx-2.5 mb-5")}>
+        <a href="#/" aria-current={props.openId || props.settings ? undefined : "page"} className={cn(item, "-mx-2.5")}>
           <Rows3 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           All uploads
+        </a>
+        <a href="#/settings" aria-current={props.settings ? "page" : undefined} className={cn(item, "-mx-2.5 mt-px mb-5")}>
+          <Settings className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          Settings
         </a>
         <h2 className={cn(groupName, "mb-2.5 flex justify-between")}>
           On the shelf <span>{props.docs.length - expired}</span>

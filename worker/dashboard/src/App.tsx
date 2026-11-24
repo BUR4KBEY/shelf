@@ -8,6 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { api, nameOf, type Activity, type Doc, type Key } from "@/lib/api";
 import { NO_KEY, keyColors } from "@/lib/feed";
 import { cn } from "@/lib/utils";
+import { AppSettingsView } from "@/views/AppSettings";
 import { DocView } from "@/views/Doc";
 import { FeedView } from "@/views/Feed";
 import { Sidebar } from "@/views/Sidebar";
@@ -22,10 +23,12 @@ function useHashPath() {
   return hash.replace(/^#\/?/, "");
 }
 
-/** The sidebar (every doc, every key) beside the log of uploads, or one doc's page. On a narrow screen a button swaps the two. */
+/** The sidebar (every doc, every key) beside the log of uploads, one doc's page, or the app's settings. On a narrow screen a button swaps the two. */
 export function App() {
-  const open = useHashPath().match(/^doc\/([^/]+)$/)?.[1];
+  const route = useHashPath();
+  const open = route.match(/^doc\/([^/]+)$/)?.[1];
   const openId = open && decodeURIComponent(open);
+  const settings = route === "settings";
   const docs = useLoad<Doc[]>("/docs");
   const uploads = useLoad<Activity[]>("/uploads");
   const keys = useLoad<Key[]>("/keys");
@@ -62,7 +65,7 @@ export function App() {
   }, []);
 
   const openDoc = docs.data?.find((d) => d.id === openId || d.slug === openId);
-  useTitle(openDoc ? nameOf(openDoc) : "");
+  useTitle(openDoc ? nameOf(openDoc) : settings ? "Settings" : "");
   const colors = useMemo(() => keyColors(keys.data ?? []), [keys.data]);
   const colorOf = (keyId: string | null) => (keyId && colors.get(keyId)) || NO_KEY;
   const changed = () => {
@@ -93,7 +96,7 @@ export function App() {
             <aside ref={asideRef} className={cn("bg-sidebar max-lg:min-h-[calc(100dvh-3.5rem)] lg:sticky lg:top-0 lg:h-dvh lg:overflow-x-hidden lg:overflow-y-auto lg:border-r", !menu && "max-lg:hidden")}>
               {/* Full width while the column slides, so the column clips it instead of squeezing it. */}
               <div className={cn("max-lg:contents lg:h-full lg:w-[calc(19rem-1px)]", !side && "lg:hidden")}>
-                <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} email={email} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} onCollapse={toggleSide} />
+                <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} settings={settings} email={email} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} onCollapse={toggleSide} />
               </div>
               <div className={cn("hidden w-14 justify-center pt-5", !side && "lg:flex")}>
                 <Tip label="Show sidebar">
@@ -104,8 +107,8 @@ export function App() {
               </div>
             </aside>
             <main ref={mainRef} className={cn("min-w-0", menu && "max-lg:hidden")}>
-              <motion.div key={openId ?? ""} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: "easeOut" }}>
-                {openId ? <DocView key={openId} id={openId} colorOf={colorOf} onChanged={changed} /> : <FeedView docs={docs.data} uploads={uploads.data} colorOf={colorOf} onChanged={changed} />}
+              <motion.div key={openId ?? (settings ? "#settings" : "")} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: "easeOut" }}>
+                {openId ? <DocView key={openId} id={openId} colorOf={colorOf} onChanged={changed} /> : settings ? <AppSettingsView /> : <FeedView docs={docs.data} uploads={uploads.data} colorOf={colorOf} onChanged={changed} />}
               </motion.div>
             </main>
           </motion.div>
