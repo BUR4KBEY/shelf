@@ -33,7 +33,7 @@ curl -sS -X PUT -H "Authorization: Bearer $KEY" --data-binary @plan.html ${origi
 curl -sS -H "Authorization: Bearer $KEY" -d "$M" ${origin}/api/push                               # the receipt
 \`\`\`
 
-Errors come back as \`{"error": "..."}\` with a 4xx status. 413 means the upload is over this key's quota; tell the user rather than retrying.
+Errors come back as \`{"error": "..."}\` with a 4xx status.
 
 The receipt has \`id\`, \`url\`, \`versionUrl\`, \`version\` and \`created\`. Give the user \`url\`, or \`versionUrl\` for this exact version. \`"created": false\` means the content was identical and no new version was made.
 
@@ -44,6 +44,15 @@ A folder is a manifest with many paths and an \`index.html\`; pages link to each
 - \`password\`: readers must enter it (8+ characters). \`null\` removes it.
 - \`expires\`: \`30m\`, \`12h\`, \`7d\`, \`2w\`, up to the owner's limit (30 days unless changed); \`0\` or \`null\` for never. Left out, a new doc gets the owner's default.
 - \`title\`, \`message\`: shown in listings and version history.
+
+## Quota
+
+The owner may cap how many bytes your key keeps on the shelf. Every version it uploaded that still exists counts in full; expired and deleted docs free room. Over the cap, the owner picks what happens:
+
+- **Refuse:** the push or blob upload answers 413 with \`{"error": "quota: ..."}\`. Tell the user; retrying won't help until they raise the quota or delete docs.
+- **Delete oldest:** the server deletes this key's oldest uploads until the new one fits, so older links you shared may stop working. Favorites are kept. An upload bigger than the whole quota still gets 413.
+
+Identical content (\`"created": false\`) costs nothing.
 
 ## Page rules
 
