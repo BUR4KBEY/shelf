@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 const EXPIRIES = [["never", "Never"], ["1h", "In 1 hour"], ["1d", "In 1 day"], ["7d", "In 7 days"], ["30d", "In 30 days"]];
 
-function Field({ label, htmlFor, children }: { label: string; htmlFor: string; children: ReactNode }) {
+export function Field({ label, htmlFor, children }: { label: string; htmlFor: string; children: ReactNode }) {
   return (
     <div className="grid min-w-0 grid-cols-1 content-start gap-1.5">
       <Label htmlFor={htmlFor} className="text-xs font-semibold text-muted-foreground">
@@ -22,7 +22,7 @@ function Field({ label, htmlFor, children }: { label: string; htmlFor: string; c
     </div>
   );
 }
-const Hint = ({ id, children }: { id?: string; children: ReactNode }) => (
+export const Hint = ({ id, children }: { id?: string; children: ReactNode }) => (
   <p id={id} className="text-xs leading-relaxed text-muted-foreground">
     {children}
   </p>
