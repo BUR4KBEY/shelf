@@ -433,10 +433,11 @@ describe("dashboard", () => {
     await exports.default.fetch(`${BASE}/api/blobs/${sha2}`, { method: "PUT", headers: { ...auth, "content-length": "11" }, body: "by ci again" });
     await exports.default.fetch(`${BASE}/api/push`, { method: "POST", headers: auth, body: JSON.stringify({ ref: pushed.id, message: "again", files: [{ path: "ci.html", sha256: sha2 }] }) });
 
-    const k = (await (await dash(`/dashboard/api/keys/${id}`)).json()) as { name: string; docs: object[]; uploads: { n: number; message: string | null; keyName: string }[] };
+    const k = (await (await dash(`/dashboard/api/keys/${id}`)).json()) as { name: string; docs: object[]; uploads: { n: number; message: string | null; keyName: string; createdAt: number }[]; times: number[] };
     expect(k.name).toBe("ci");
     expect(k.docs).toEqual([{ docId: pushed.id, uploads: 2, created: 1, size: 16, firstAt: expect.any(Number), lastAt: expect.any(Number) }]);
     expect(k.uploads.map((u) => [u.n, u.message, u.keyName])).toEqual([[3, "again", "ci"], [1, null, "ci"]]);
+    expect(k.times.sort()).toEqual(k.uploads.map((u) => u.createdAt).sort());
     expect((await dash("/dashboard/api/keys/k_nope")).status).toBe(404);
     expect((await api(`/api/keys/${id}`)).status).toBe(404); // dashboard only
   });

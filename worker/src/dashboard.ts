@@ -47,16 +47,23 @@ export async function revokeKey(env: Env, id: string): Promise<Response> {
 
 /** The most uploads a key's page lists. Its per-doc totals always count every upload. */
 const KEY_UPLOADS = 500;
+/** How far back a key's upload times go: the 53 weeks its yearly heatmap shows. */
+const ACTIVITY_MS = 371 * 86_400_000;
 
-/** One key and what it uploaded: a row per doc it touched, with totals, and its newest uploads. */
+/**
+ * One key and what it uploaded: a row per doc it touched, with totals, its newest uploads, and the time of
+ * every upload in the last year for its charts.
+ * shortcut: `times` sends one number per upload; aggregate per day in SQL if a key ever uploads tens of thousands a year.
+ */
 export async function getKey(env: Env, id: string): Promise<Response> {
-  const [key, docs, uploads] = await env.DB.batch<Record<string, unknown>>([
+  const [key, docs, uploads, times] = await env.DB.batch<Record<string, unknown>>([
     env.DB.prepare("SELECT id, name, created_at AS createdAt, last_used_at AS lastUsedAt, revoked_at AS revokedAt FROM api_keys WHERE id = ?").bind(id),
     env.DB.prepare(
       "SELECT doc_id AS docId, COUNT(*) AS uploads, SUM(n = 1) AS created, SUM(size) AS size, MIN(created_at) AS firstAt, MAX(created_at) AS lastAt FROM versions WHERE key_id = ? GROUP BY doc_id ORDER BY lastAt DESC",
     ).bind(id),
     env.DB.prepare(`${UPLOAD_SELECT} WHERE v.key_id = ? ORDER BY v.created_at DESC, v.rowid DESC LIMIT ${KEY_UPLOADS}`).bind(id),
+    env.DB.prepare("SELECT created_at AS t FROM versions WHERE key_id = ? AND created_at >= ?").bind(id, Date.now() - ACTIVITY_MS),
   ]);
   if (!key.results.length) return json({ error: "key not found" }, 404);
-  return json({ ...key.results[0], docs: docs.results, uploads: uploads.results });
+  return json({ ...key.results[0], docs: docs.results, uploads: uploads.results, times: times.results.map((r) => r.t) });
 }
