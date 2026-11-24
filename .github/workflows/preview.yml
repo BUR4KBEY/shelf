@@ -1,0 +1,63 @@
+name: preview
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  PREVIEW: pr-${{ github.event.pull_request.number }}
+
+jobs:
+  deploy:
+    # Fork PRs get no secrets, and must not run with them.
+    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - run: npm ci
+      # Every preview shares the shelf-preview database, so this PR's migrations land there for all previews.
+      - run: npx wrangler d1 migrations apply DB --remote --config wrangler.preview-migrations.jsonc
+      - id: preview
+        # The custom build's log goes to stdout ahead of the JSON, so skip to the first line that opens it.
+        run: |
+          npx wrangler preview --name "$PREVIEW" --message "$TITLE" --json > preview.json
+          url=$(sed -n '/^{/,$p' preview.json | jq -er '.preview.urls[0]')
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+      - run: gh pr comment "${{ github.event.pull_request.number }}" --edit-last --create-if-none --body "Preview $URL (dashboard at $URL/dashboard)"
+        env:
+          URL: ${{ steps.preview.outputs.url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cleanup:
+    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - run: npm ci
+      - run: npx wrangler preview delete --name "$PREVIEW" --skip-confirmation
