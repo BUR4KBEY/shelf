@@ -442,6 +442,71 @@ describe("dashboard", () => {
     expect((await api(`/api/keys/${id}`)).status).toBe(404); // dashboard only
   });
 
+  /** A new key with a quota, and a push of one file through it: the client flow, stopping at the first refusal. */
+  async function quotaKey(quota: unknown, strategy: string) {
+    const { id, key } = (await (await dash("/dashboard/api/keys", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "q" }) })).json()) as { id: string; key: string };
+    const set = await dash(`/dashboard/api/keys/${id}`, { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ quota, strategy }) });
+    const auth = { authorization: `Bearer ${key}` };
+    const push = async (content: string, extra: object = {}) => {
+      const body = JSON.stringify({ ...extra, files: [{ path: "q.html", sha256: await sha256Hex(content) }] });
+      const send = () => exports.default.fetch(`${BASE}/api/push`, { method: "POST", headers: auth, body });
+      const first = await send();
+      const { missing } = (await first.clone().json()) as { missing?: string[] };
+      if (!missing) return first;
+      const put = await exports.default.fetch(`${BASE}/api/blobs/${missing[0]}`, { method: "PUT", headers: { ...auth, "content-length": String(content.length) }, body: content });
+      return put.status === 204 ? send() : put;
+    };
+    return { id, set, push };
+  }
+  const ok = async (res: Response) => {
+    expect(res.status).toBe(200);
+    return (await res.json()) as { id: string; version: number; created: boolean };
+  };
+
+  it("validates and shows a key's quota", async () => {
+    expect((await quotaKey(0, "reject")).set.status).toBe(400);
+    expect((await quotaKey(10, "lifo")).set.status).toBe(400);
+    const { id, set } = await quotaKey(10, "fifo");
+    expect(set.status).toBe(204);
+    expect(await (await dash(`/dashboard/api/keys/${id}`)).json()).toMatchObject({ quota: 10, strategy: "fifo" });
+    expect((await dash(`/dashboard/api/keys/${id}`, { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ quota: null }) })).status).toBe(204);
+    expect(await (await dash(`/dashboard/api/keys/${id}`)).json()).toMatchObject({ quota: null, strategy: "fifo" });
+  });
+
+  it("refuses uploads over a key's quota under reject", async () => {
+    const { push } = await quotaKey(10, "reject");
+    const a = await ok(await push("reject-1")); // 8 of 10 bytes
+    expect((await push("reject-2")).status).toBe(413); // its blob doesn't fit the 2 bytes left
+    expect((await push("reject-1")).status).toBe(413); // the blob is there, but a new doc with it doesn't fit
+    expect(await ok(await push("reject-1", { ref: a.id }))).toMatchObject({ created: false }); // identical content costs nothing
+  });
+
+  it("deletes a key's oldest uploads under fifo, keeping favorites and others' docs intact", async () => {
+    const { push } = await quotaKey(20, "fifo");
+    expect((await push("x".repeat(21))).status).toBe(413); // bigger than the whole quota
+    const a = await ok(await push("fifo-aaa")); // 8 bytes each
+    const b = await ok(await push("fifo-bbb"));
+    await api(`/api/docs/${b.id}`, { method: "PATCH", body: JSON.stringify({ favorite: true }) });
+    const c = await ok(await push("fifo-ccc"));
+    expect((await api(`/api/docs/${a.id}`)).status).toBe(404); // the oldest went with its only version
+    const d = await ok(await push("fifo-ddd"));
+    expect((await api(`/api/docs/${b.id}`)).status).toBe(200); // a favorite stays
+    expect((await api(`/api/docs/${c.id}`)).status).toBe(404);
+
+    // A new version of a full key's doc replaces the doc's older one.
+    expect(await ok(await push("fifo-eee", { ref: d.id }))).toMatchObject({ id: d.id, version: 2 });
+    const detail = (await (await api(`/api/docs/${d.id}`)).json()) as { versions: { n: number }[] };
+    expect(detail.versions.map((v) => v.n)).toEqual([2]);
+    expect(await (await exports.default.fetch(`${BASE}/view/${d.id}`)).text()).toBe("fifo-eee");
+
+    // On a doc another key started, this key's version is the current one; it stays rather than leave the doc pointing at nothing.
+    const other = await publish({ "o.html": "someone else's" });
+    await ok(await push("fifo-fff", { ref: other.id })); // deletes d to make room
+    expect((await api(`/api/docs/${d.id}`)).status).toBe(404);
+    expect((await push("fifo-ggg")).status).toBe(413); // only the favorite and other's current version are left
+    expect(await (await exports.default.fetch(other.url)).text()).toBe("fifo-fff");
+  });
+
   it("uploads through the dashboard api without an api key", async () => {
     const sha = await sha256Hex("from browser");
     const body = JSON.stringify({ files: [{ path: "b.html", sha256: sha }] });

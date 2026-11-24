@@ -141,6 +141,50 @@ interface PushBody extends Settings {
   files: { path: string; sha256: string }[];
 }
 
+/** A key's quota and the bytes its versions keep on the shelf. Every version counts in full, even files it shares. */
+interface Quota {
+  quota_bytes: number | null;
+  quota_strategy: "reject" | "fifo";
+  used: number;
+}
+
+export const keyQuota = (env: Env, keyId: string) =>
+  env.DB.prepare("SELECT quota_bytes, quota_strategy, (SELECT COALESCE(SUM(size), 0) FROM versions WHERE key_id = k.id) AS used FROM api_keys k WHERE id = ?")
+    .bind(keyId)
+    .first<Quota>();
+
+const overQuota = (q: Quota, size: number) =>
+  json({ error: `quota: this key may keep ${q.quota_bytes} bytes and keeps ${q.used}, so ${size} more don't fit${q.quota_strategy === "fifo" ? ", even after deleting its oldest uploads that may go" : ""}` }, 413);
+
+/**
+ * Statements that delete a key's oldest uploads until `need` bytes are free, or null when they can't free that much.
+ * Kept: favorites, and another doc's current version while older versions remain (an older one from another key
+ * or the dashboard would be left behind a latest that is gone). A doc left with no versions is deleted. The pushed-to
+ * doc `target` can lose all of them, since the push gives it a new one in the same transaction.
+ */
+async function evictions(env: Env, keyId: string, target: string, need: number): Promise<D1PreparedStatement[] | null> {
+  const { results } = await env.DB.prepare(
+    "SELECT v.doc_id AS doc, v.n, v.size, d.latest, (SELECT COUNT(*) FROM versions o WHERE o.doc_id = v.doc_id) AS count FROM versions v JOIN docs d ON d.id = v.doc_id WHERE v.key_id = ? AND d.favorite = 0 ORDER BY v.created_at, v.rowid",
+  )
+    .bind(keyId)
+    .all<{ doc: string; n: number; size: number; latest: number; count: number }>();
+  const left = new Map(results.map((r) => [r.doc, r.count]));
+  const stmts: D1PreparedStatement[] = [];
+  for (const r of results) {
+    if (need <= 0) break;
+    const count = left.get(r.doc)!;
+    if (r.doc !== target && r.n === r.latest && count > 1) continue;
+    stmts.push(
+      r.doc !== target && count === 1
+        ? env.DB.prepare("DELETE FROM docs WHERE id = ?").bind(r.doc)
+        : env.DB.prepare("DELETE FROM versions WHERE doc_id = ? AND n = ?").bind(r.doc, r.n),
+    );
+    left.set(r.doc, count - 1);
+    need -= r.size;
+  }
+  return need <= 0 ? stmts : null;
+}
+
 /**
  * Commits a new version from a manifest. Blobs must already be in R2:
  * if any are missing, nothing is written and `{missing}` lists them.
@@ -193,6 +237,16 @@ export async function push(req: Request, env: Env, keyId: string | null): Promis
   const latest = doc && (await env.DB.prepare("SELECT manifest_hash FROM versions WHERE doc_id = ? AND n = ?").bind(id, doc.latest).first<{ manifest_hash: string }>());
   const created = latest?.manifest_hash !== manifest;
   const stmts: D1PreparedStatement[] = [];
+  // shortcut: the quota is read before the batch, so concurrent pushes from one key can overshoot it; fine for one owner's agents.
+  if (created && keyId) {
+    const q = (await keyQuota(env, keyId))!;
+    const over = q.quota_bytes === null ? 0 : q.used + size - q.quota_bytes;
+    if (over > 0) {
+      const freed = q.quota_strategy === "fifo" && size <= q.quota_bytes! ? await evictions(env, keyId, id, over) : null;
+      if (!freed) return overQuota(q, size);
+      stmts.push(...freed);
+    }
+  }
   if (!doc) {
     const title = body.title ?? (files.length === 1 ? files[0].path : null);
     stmts.push(env.DB.prepare("INSERT INTO docs (id, title, latest, created_at, updated_at) VALUES (?, ?, 0, ?, ?)").bind(id, title, now, now));
@@ -223,9 +277,17 @@ export async function push(req: Request, env: Env, keyId: string | null): Promis
   return json({ ...out, version: saved.latest, versionUrl: `${new URL(req.url).origin}/view/${id}@${saved.latest}`, created });
 }
 
-/** Streams the body into R2. R2 rejects it if the bytes do not hash to `sha`. */
-export async function putBlob(req: Request, env: Env, sha: string): Promise<Response> {
+/**
+ * Streams the body into R2. R2 rejects it if the bytes do not hash to `sha`.
+ * A key's blob must fit its quota (or its room left, under reject), so a key can't fill R2 with blobs it never pushes.
+ */
+export async function putBlob(req: Request, env: Env, sha: string, keyId: string | null): Promise<Response> {
   if (!req.headers.has("content-length")) return json({ error: "content-length required" }, 411);
+  const q = keyId ? await keyQuota(env, keyId) : null;
+  if (q && q.quota_bytes !== null) {
+    const length = Number(req.headers.get("content-length"));
+    if (length > (q.quota_strategy === "fifo" ? q.quota_bytes : q.quota_bytes - q.used)) return overQuota(q, length);
+  }
   try {
     await env.BUCKET.put(`docs/${sha}`, req.body ?? "", { sha256: sha });
   } catch (e) {
