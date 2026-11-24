@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Copy, ExternalLink, Search, Settings2 } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { Tip, copy, dashed, display, focusRing } from "@/components/bits";
 import { DocName, Expiry, Locked, isExpired } from "@/components/DocBits";
 import { DropZone } from "@/components/DropZone";
@@ -60,7 +61,8 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
               // "Expired" only shows up when there is something expired to look at.
               if (value === "expired" && !count && filter !== value) return null;
               return (
-                <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)} className={cn(focusRing, "rounded-lg px-3 py-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground", filter === value && "bg-card text-foreground shadow-[0_0_0_1px_var(--border)]")}>
+                <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)} className={cn(focusRing, "relative isolate rounded-lg px-3 py-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground", filter === value && "text-foreground")}>
+                  {filter === value && <motion.span layoutId="filter-pill" transition={{ type: "spring", bounce: 0.15, duration: 0.35 }} className="absolute inset-0 -z-10 rounded-lg bg-card shadow-[0_0_0_1px_var(--border)]" aria-hidden />}
                   {label}
                   <span className="ml-1.5 text-xs tabular-nums opacity-70">
                     {count}
@@ -127,27 +129,30 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                         </div>
                       }
                     >
-                      {(older.length > 0 || open === key) && (
-                        <>
-                          {older.length > 0 && (
-                            <ul className="mt-2 grid gap-0.5 text-[0.8125rem] text-muted-foreground">
-                              {older.slice(0, FOLDED).map((o) => (
-                                <li key={o.n} className="[overflow-wrap:anywhere]">
-                                  <b className="mr-2 font-semibold text-foreground tabular-nums">{clock(o.createdAt)}</b>
-                                  Version {o.n}
-                                  {o.message && `: ${o.message}`}
-                                </li>
-                              ))}
-                              {older.length > FOLDED && <li>and {older.length - FOLDED} earlier that day</li>}
-                            </ul>
-                          )}
+                      <>
+                        {older.length > 0 && (
+                          <ul className="mt-2 grid gap-0.5 text-[0.8125rem] text-muted-foreground">
+                            {older.slice(0, FOLDED).map((o) => (
+                              <li key={o.n} className="[overflow-wrap:anywhere]">
+                                <b className="mr-2 font-semibold text-foreground tabular-nums">{clock(o.createdAt)}</b>
+                                Version {o.n}
+                                {o.message && `: ${o.message}`}
+                              </li>
+                            ))}
+                            {older.length > FOLDED && <li>and {older.length - FOLDED} earlier that day</li>}
+                          </ul>
+                        )}
+                        <AnimatePresence initial={false}>
                           {open === key && (
-                            <div className="mt-3 border-t border-(--k)/30 pt-3.5">
-                              <Settings key={[d.title, d.slug, d.locked, d.expiresAt].join("\n")} d={d} onChanged={onChanged} onDeleted={() => setOpen(null)} />
-                            </div>
+                            // Clipped only while it slides, so the inputs' focus rings show once it is open.
+                            <motion.div initial={{ height: 0, opacity: 0, overflow: "hidden" }} animate={{ height: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }} exit={{ height: 0, opacity: 0, overflow: "hidden" }} transition={{ duration: 0.22, ease: "easeOut" }}>
+                              <div className="mt-3 border-t border-(--k)/30 pt-3.5">
+                                <Settings key={[d.title, d.slug, d.locked, d.expiresAt].join("\n")} d={d} onChanged={onChanged} onDeleted={() => setOpen(null)} />
+                              </div>
+                            </motion.div>
                           )}
-                        </>
-                      )}
+                        </AnimatePresence>
+                      </>
                     </Entry>
                   );
                 })}

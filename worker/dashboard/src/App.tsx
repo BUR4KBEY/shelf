@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Menu, PanelLeftOpen, X } from "lucide-react";
+import { MotionConfig, motion } from "motion/react";
 import { Loading, Problem, Tip, display, focusRing, useLoad, useTitle } from "@/components/bits";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
@@ -59,40 +60,44 @@ export function App() {
   const error = docs.error ?? uploads.error ?? keys.error;
 
   return (
-    <TooltipProvider delayDuration={300}>
-      {error ? (
-        <Problem error={error} className="p-8" />
-      ) : !docs.data || !uploads.data || !keys.data ? (
-        <Loading className="p-8" />
-      ) : (
-        <div className={cn("min-h-dvh lg:grid", side ? "lg:grid-cols-[19rem_minmax(0,1fr)]" : "lg:grid-cols-[3.5rem_minmax(0,1fr)]")}>
-          <header className="sticky top-0 z-20 flex h-14 items-center border-b bg-sidebar px-4 lg:hidden">
-            <a href="#/" onClick={() => setMenu(false)} className={cn(display, focusRing, "text-[1.75rem] leading-none")}>
-              shelf
-            </a>
-            <Button variant="outline" className="ml-auto" aria-pressed={menu} onClick={() => setMenu(!menu)}>
-              {menu ? <X /> : <Menu />}
-              {menu ? "Back to the log" : "Docs and keys"}
-            </Button>
-          </header>
-          <aside className={cn("bg-sidebar max-lg:min-h-[calc(100dvh-3.5rem)] lg:sticky lg:top-0 lg:h-dvh lg:overflow-y-auto lg:border-r", !menu && "max-lg:hidden")}>
-            <div className={cn("contents", !side && "lg:hidden")}>
-              <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} email={email} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} onCollapse={toggleSide} />
-            </div>
-            <div className={cn("hidden justify-center pt-5", !side && "lg:flex")}>
-              <Tip label="Show sidebar">
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" aria-label="Show sidebar" onClick={toggleSide}>
-                  <PanelLeftOpen />
-                </Button>
-              </Tip>
-            </div>
-          </aside>
-          <main className={cn("min-w-0", menu && "max-lg:hidden")}>
-            {openId ? <DocView key={openId} id={openId} colorOf={colorOf} onChanged={changed} /> : <FeedView docs={docs.data} uploads={uploads.data} colorOf={colorOf} onChanged={changed} />}
-          </main>
-        </div>
-      )}
-      <Toaster position="bottom-center" />
-    </TooltipProvider>
+    <MotionConfig reducedMotion="user">
+      <TooltipProvider delayDuration={300}>
+        {error ? (
+          <Problem error={error} className="p-8" />
+        ) : !docs.data || !uploads.data || !keys.data ? (
+          <Loading className="p-8" />
+        ) : (
+          <div className={cn("min-h-dvh lg:grid", side ? "lg:grid-cols-[19rem_minmax(0,1fr)]" : "lg:grid-cols-[3.5rem_minmax(0,1fr)]")}>
+            <header className="sticky top-0 z-20 flex h-14 items-center border-b bg-sidebar px-4 lg:hidden">
+              <a href="#/" onClick={() => setMenu(false)} className={cn(display, focusRing, "text-[1.75rem] leading-none")}>
+                shelf
+              </a>
+              <Button variant="outline" className="ml-auto" aria-pressed={menu} onClick={() => setMenu(!menu)}>
+                {menu ? <X /> : <Menu />}
+                {menu ? "Back to the log" : "Docs and keys"}
+              </Button>
+            </header>
+            <aside className={cn("bg-sidebar max-lg:min-h-[calc(100dvh-3.5rem)] lg:sticky lg:top-0 lg:h-dvh lg:overflow-y-auto lg:border-r", !menu && "max-lg:hidden")}>
+              <div className={cn("contents", !side && "lg:hidden")}>
+                <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} email={email} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} onCollapse={toggleSide} />
+              </div>
+              <div className={cn("hidden justify-center pt-5", !side && "lg:flex")}>
+                <Tip label="Show sidebar">
+                  <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" aria-label="Show sidebar" onClick={toggleSide}>
+                    <PanelLeftOpen />
+                  </Button>
+                </Tip>
+              </div>
+            </aside>
+            <main className={cn("min-w-0", menu && "max-lg:hidden")}>
+              <motion.div key={openId ?? ""} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: "easeOut" }}>
+                {openId ? <DocView key={openId} id={openId} colorOf={colorOf} onChanged={changed} /> : <FeedView docs={docs.data} uploads={uploads.data} colorOf={colorOf} onChanged={changed} />}
+              </motion.div>
+            </main>
+          </div>
+        )}
+        <Toaster position="bottom-center" />
+      </TooltipProvider>
+    </MotionConfig>
   );
 }
