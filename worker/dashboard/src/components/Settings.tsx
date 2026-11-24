@@ -1,12 +1,12 @@
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Confirm } from "@/components/bits";
+import { Confirm, useLoad } from "@/components/bits";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { api, errorText, nameOf, type Doc } from "@/lib/api";
+import { api, errorText, nameOf, type AppSettings, type Doc } from "@/lib/api";
 import { fullDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +34,7 @@ export const Hint = ({ id, children }: { id?: string; children: ReactNode }) => 
  */
 export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () => void; onDeleted?: () => void }) {
   const id = useId();
+  const maxExpires = useLoad<AppSettings>("/settings").data?.maxExpires;
   // An empty amount keeps the current expiry; 0 means never.
   const [amount, setAmount] = useState("");
   const [unit, setUnit] = useState("d");
@@ -123,7 +124,7 @@ export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () =>
             </SelectContent>
           </Select>
         </div>
-        <Hint id={`${id}expires-hint`}>From now, up to 30 days. 0 means never. After it expires the link stops working and the doc is deleted within a day.</Hint>
+        <Hint id={`${id}expires-hint`}>From now, up to {maxExpires ?? "the longest allowed in Settings"}. 0 means never. After it expires the link stops working and the doc is deleted within a day.</Hint>
       </Field>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:col-span-2">
         <Button type="submit" disabled={saving}>
