@@ -95,6 +95,8 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                       color={colorOf(head.keyId)}
                       at={head.createdAt}
                       who={head.keyName ?? "You"}
+                      // A click anywhere on a closed card, off its controls, opens its settings; the gear button stays for keyboards.
+                      onClick={open === key ? undefined : (e) => !(e.target as Element).closest("a, button, input, label, select, textarea") && !getSelection()?.toString() && setOpen(key)}
                       did={head.n === 1 ? "uploaded a new doc" : `uploaded version ${head.n} of`}
                       title={<DocName d={d} onChanged={onChanged} />}
                       message={head.message}
