@@ -10,6 +10,7 @@ import { NO_KEY, keyColors } from "@/lib/feed";
 import { cn } from "@/lib/utils";
 import { AppSettingsView } from "@/views/AppSettings";
 import { DocView } from "@/views/Doc";
+import { KeyView } from "@/views/Key";
 import { FeedView } from "@/views/Feed";
 import { Sidebar, ThemeSwitch } from "@/views/Sidebar";
 
@@ -23,11 +24,12 @@ function useHashPath() {
   return hash.replace(/^#\/?/, "");
 }
 
-/** The sidebar (every doc, every key) beside the log of uploads, one doc's page, or the app's settings. On a narrow screen a button swaps the two. */
+/** The sidebar (every doc, every key) beside the log of uploads, one doc's or key's page, or the app's settings. On a narrow screen a button swaps the two. */
 export function App() {
   const route = useHashPath();
   const open = route.match(/^doc\/([^/]+)$/)?.[1];
   const openId = open && decodeURIComponent(open);
+  const openKey = route.match(/^key\/([^/]+)$/)?.[1];
   const settings = route === "settings";
   const docs = useLoad<Doc[]>("/docs");
   const uploads = useLoad<Activity[]>("/uploads");
@@ -65,7 +67,7 @@ export function App() {
   }, []);
 
   const openDoc = docs.data?.find((d) => d.id === openId || d.slug === openId);
-  useTitle(openDoc ? nameOf(openDoc) : settings ? "Settings" : "");
+  useTitle(openDoc ? nameOf(openDoc) : openKey ? (keys.data?.find((k) => k.id === openKey)?.name ?? "") : settings ? "Settings" : "");
   const colors = useMemo(() => keyColors(keys.data ?? []), [keys.data]);
   const colorOf = (keyId: string | null) => (keyId && colors.get(keyId)) || NO_KEY;
   const changed = () => {
@@ -96,7 +98,7 @@ export function App() {
             <aside ref={asideRef} className={cn("bg-sidebar max-lg:min-h-[calc(100dvh-3.5rem)] lg:sticky lg:top-0 lg:h-dvh lg:overflow-x-hidden lg:overflow-y-auto lg:border-r", !menu && "max-lg:hidden")}>
               {/* Full width while the column slides, so the column clips it instead of squeezing it. */}
               <div className={cn("max-lg:contents lg:h-full lg:w-[calc(19rem-1px)]", !side && "lg:hidden")}>
-                <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} settings={settings} email={email} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} onCollapse={toggleSide} />
+                <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} openKey={openKey} settings={settings} email={email} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} onCollapse={toggleSide} />
               </div>
               <div className={cn("hidden h-full w-14 flex-col items-center gap-3 pt-5 pb-6", !side && "lg:flex")}>
                 <a href="#/" aria-label="shelf" className={cn(focusRing, "rounded-md p-1")}>
@@ -111,8 +113,16 @@ export function App() {
               </div>
             </aside>
             <main ref={mainRef} className={cn("min-w-0", menu && "max-lg:hidden")}>
-              <motion.div key={openId ?? (settings ? "#settings" : "")} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: "easeOut" }}>
-                {openId ? <DocView key={openId} id={openId} colorOf={colorOf} onChanged={changed} /> : settings ? <AppSettingsView /> : <FeedView docs={docs.data} uploads={uploads.data} colorOf={colorOf} onChanged={changed} />}
+              <motion.div key={openId ?? (openKey ? `#key/${openKey}` : settings ? "#settings" : "")} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: "easeOut" }}>
+                {openId ? (
+                  <DocView key={openId} id={openId} colorOf={colorOf} onChanged={changed} />
+                ) : openKey ? (
+                  <KeyView key={openKey} id={openKey} docs={docs.data} colorOf={colorOf} onChanged={changed} onKeysChanged={keys.reload} />
+                ) : settings ? (
+                  <AppSettingsView />
+                ) : (
+                  <FeedView docs={docs.data} uploads={uploads.data} colorOf={colorOf} onChanged={changed} />
+                )}
               </motion.div>
             </main>
           </motion.div>

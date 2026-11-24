@@ -17,6 +17,10 @@ export type DocDetail = Doc & { versions: Version[] };
 export type PushResult = (Doc & { version: number; versionUrl: string; created: boolean; missing?: undefined }) | { missing: string[] };
 export type Key = { id: string; name: string; createdAt: number; lastUsedAt: number | null; revokedAt: number | null };
 export type NewKey = { id: string; name: string; key: string };
+/** A doc a key uploaded to: how often, how much, and when. `created` is 1 when the key made the doc. */
+export type KeyDoc = { docId: string; uploads: number; created: number; size: number; firstAt: number; lastAt: number };
+/** A key with every doc it touched and its newest uploads (capped). */
+export type KeyDetail = Key & { docs: KeyDoc[]; uploads: Activity[] };
 /** `defaultExpires`: what a new doc gets when its upload names no expiry; null for never. `maxExpires`: the longest expiry any doc may get. */
 export type AppSettings = { defaultExpires: string | null; maxExpires: string };
 
