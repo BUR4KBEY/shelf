@@ -136,6 +136,14 @@ devenv shell -- sh -c 'cd worker && npm test && npm run typecheck && npm run typ
 devenv shell -- sh -c 'cd cli && go test ./...'
 ```
 
+### PR previews
+
+Each pull request from this repo gets a [Worker Preview](https://developers.cloudflare.com/workers/previews/) at `https://pr-<number>-shelf.<subdomain>.workers.dev`, commented on the PR and deleted when it closes (`.github/workflows/preview.yml`). Previews use their own `shelf-preview` R2 bucket and D1 database, never production data. To set it up on your own deployment:
+
+1. Create the bucket and database (`npx wrangler r2 bucket create shelf-preview`, `npx wrangler d1 create shelf-preview`) and put the database ID in `previews.d1_databases` in `wrangler.jsonc` and in `wrangler.preview-migrations.jsonc`.
+2. Add repository secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (*Workers Scripts: Edit*, *D1: Edit*, *Workers R2 Storage: Edit*).
+3. For the dashboard to work in previews, protect the Worker's previews with Access: Workers & Pages → shelf → Access → **Protect this Worker behind Access** → *Previews only*.
+
 ## License
 
 MIT
