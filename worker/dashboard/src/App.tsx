@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Menu, PanelLeftOpen, X } from "lucide-react";
-import { MotionConfig, motion } from "motion/react";
+import { MotionConfig, animate, motion, useMotionValue, useReducedMotion, type MotionStyle } from "motion/react";
 import { Loading, Problem, Tip, display, focusRing, useLoad, useTitle } from "@/components/bits";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
@@ -30,10 +30,22 @@ export function App() {
   const uploads = useLoad<Activity[]>("/uploads");
   const keys = useLoad<Key[]>("/keys");
   const [menu, setMenu] = useState(false);
+  const reduce = useReducedMotion();
+  const asideRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const swapped = useRef(false);
+  // On a narrow screen the button swaps the sidebar and the log; whichever comes into view slides in. Skips the first render.
+  useEffect(() => {
+    if (!swapped.current) return void (swapped.current = true);
+    const el = (menu ? asideRef : mainRef).current;
+    if (el) animate(el, reduce ? { opacity: [0, 1] } : { opacity: [0, 1], x: [menu ? -16 : 16, 0] }, { duration: 0.22, ease: "easeOut" });
+  }, [menu]);
   // On a wide screen the sidebar folds down to a rail; the choice is remembered.
   const [side, setSide] = useState(() => localStorage.getItem("sidebar") !== "closed");
+  const sideWidth = useMotionValue(side ? "19rem" : "3.5rem"); // the sidebar column's width, slid between the full sidebar and the rail
   const toggleSide = () => {
     localStorage.setItem("sidebar", side ? "closed" : "open");
+    animate(sideWidth, side ? "3.5rem" : "19rem", { duration: reduce ? 0 : 0.25, ease: "easeOut" });
     setSide(!side);
   };
   const [email, setEmail] = useState("");
@@ -67,7 +79,7 @@ export function App() {
         ) : !docs.data || !uploads.data || !keys.data ? (
           <Loading className="p-8" />
         ) : (
-          <div className={cn("min-h-dvh lg:grid", side ? "lg:grid-cols-[19rem_minmax(0,1fr)]" : "lg:grid-cols-[3.5rem_minmax(0,1fr)]")}>
+          <motion.div style={{ "--side": sideWidth } as MotionStyle} className="min-h-dvh lg:grid lg:grid-cols-[var(--side)_minmax(0,1fr)]">
             <header className="sticky top-0 z-20 flex h-14 items-center border-b bg-sidebar px-4 lg:hidden">
               <a href="#/" onClick={() => setMenu(false)} className={cn(display, focusRing, "text-[1.75rem] leading-none")}>
                 shelf
@@ -77,11 +89,12 @@ export function App() {
                 {menu ? "Back to the log" : "Docs and keys"}
               </Button>
             </header>
-            <aside className={cn("bg-sidebar max-lg:min-h-[calc(100dvh-3.5rem)] lg:sticky lg:top-0 lg:h-dvh lg:overflow-y-auto lg:border-r", !menu && "max-lg:hidden")}>
-              <div className={cn("contents", !side && "lg:hidden")}>
+            <aside ref={asideRef} className={cn("bg-sidebar max-lg:min-h-[calc(100dvh-3.5rem)] lg:sticky lg:top-0 lg:h-dvh lg:overflow-x-hidden lg:overflow-y-auto lg:border-r", !menu && "max-lg:hidden")}>
+              {/* Full width while the column slides, so the column clips it instead of squeezing it. */}
+              <div className={cn("max-lg:contents lg:h-full lg:w-[calc(19rem-1px)]", !side && "lg:hidden")}>
                 <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} email={email} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} onCollapse={toggleSide} />
               </div>
-              <div className={cn("hidden justify-center pt-5", !side && "lg:flex")}>
+              <div className={cn("hidden w-14 justify-center pt-5", !side && "lg:flex")}>
                 <Tip label="Show sidebar">
                   <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" aria-label="Show sidebar" onClick={toggleSide}>
                     <PanelLeftOpen />
@@ -89,12 +102,12 @@ export function App() {
                 </Tip>
               </div>
             </aside>
-            <main className={cn("min-w-0", menu && "max-lg:hidden")}>
+            <main ref={mainRef} className={cn("min-w-0", menu && "max-lg:hidden")}>
               <motion.div key={openId ?? ""} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: "easeOut" }}>
                 {openId ? <DocView key={openId} id={openId} colorOf={colorOf} onChanged={changed} /> : <FeedView docs={docs.data} uploads={uploads.data} colorOf={colorOf} onChanged={changed} />}
               </motion.div>
             </main>
-          </div>
+          </motion.div>
         )}
         <Toaster position="bottom-center" />
       </TooltipProvider>
