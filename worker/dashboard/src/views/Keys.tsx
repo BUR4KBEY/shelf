@@ -17,11 +17,13 @@ const agentInstructions = (key: string) =>
   `Publish files with shelf at ${location.origin}. Read ${location.origin}/llms.txt for how, and use this API key: ${key}\n` +
   `Or connect its MCP server: ${location.origin}/mcp (Streamable HTTP) with the header "Authorization: Bearer ${key}".`;
 
-/** The keys in the sidebar: each in its colour, with its last two weeks of uploads. A key opens its own page, where it can be revoked. */
+/** The keys in the sidebar: each in its colour, with its last two weeks of uploads. A key opens its own page, where it can be revoked. Revoked keys are hidden until asked for. */
 export function KeyList({ keys, uploads, colorOf, openKey, onChanged, onNavigate }: { keys: Key[]; uploads: Activity[]; colorOf: (keyId: string | null) => string; openKey?: string; onChanged: () => void; onNavigate: () => void }) {
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   const [fresh, setFresh] = useState<NewKey | null>(null);
+  const [showRevoked, setShowRevoked] = useState(false);
+  const revoked = keys.filter((k) => k.revokedAt).length;
 
   const mint = async (e: FormEvent) => {
     e.preventDefault();
@@ -39,7 +41,8 @@ export function KeyList({ keys, uploads, colorOf, openKey, onChanged, onNavigate
   return (
     <>
       <ul className="grid grid-cols-1 gap-2" onClick={onNavigate}>
-        {keys.map((k) => {
+        {/* Revoked keys are archived: out of the list unless asked for; the one that is open is always in it. */}
+        {keys.filter((k) => showRevoked || !k.revokedAt || k.id === openKey).map((k) => {
           const counts = perDay(uploads, k.id);
           const most = Math.max(1, ...counts);
           return (
@@ -67,6 +70,11 @@ export function KeyList({ keys, uploads, colorOf, openKey, onChanged, onNavigate
           );
         })}
       </ul>
+      {revoked > 0 && (
+        <button type="button" aria-pressed={showRevoked} onClick={() => setShowRevoked(!showRevoked)} className={cn(focusRing, "-mx-2 mt-1 w-[calc(100%+1rem)] rounded-lg px-2 py-1 text-left text-sm text-muted-foreground hover:bg-card/60 hover:text-foreground")}>
+          {showRevoked ? "Hide revoked" : `Show ${revoked} revoked`}
+        </button>
+      )}
       <button type="button" onClick={() => setNaming(true)} className={cn(dashed, focusRing, "mt-3 w-full rounded-lg px-2.5 py-2 text-left text-sm text-muted-foreground hover:border-foreground hover:text-foreground")}>
         + New key for a machine or agent
       </button>
