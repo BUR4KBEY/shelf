@@ -120,7 +120,7 @@ curl -X DELETE -H "Authorization: Bearer $KEY" $U/api/docs/<ref>
 
 | URL | Serves |
 |---|---|
-| `/view/<id-or-slug>` | The latest version. A folder redirects to `/view/<ref>/` so relative links work. |
+| `/view/<id-or-slug>` | The latest version. Ids and slugs ignore case. A folder redirects to `/view/<ref>/` so relative links work. |
 | `/view/<ref>@3` | Version 3, pinned. |
 | `/view/<ref>/guide` | `guide.html` in a folder; `/docs/` serves `docs/index.html`. |
 | `?raw` | Markdown source instead of the rendered page. |
