@@ -73,8 +73,10 @@ async function settingsColumns(env: Env, s: Settings, doc: Doc | null): Promise<
   if (!isOpt(s.password, (v) => typeof v === "string" && v.length >= 8 && v.length <= 256)) {
     return json({ error: "password: 8 to 256 chars" }, 400);
   }
-  if (!isOpt(s.expires, (v) => typeof v === "string" && DURATION.test(v))) {
-    return json({ error: "expires: a duration like 30m, 12h, 7d or 2w, or null for never" }, 400);
+  const m = typeof s.expires === "string" ? /^(\d{1,5})([mhdw])$/.exec(s.expires) : null;
+  const expiresMs = s.expires === "0" ? 0 : m ? Number(m[1]) * UNIT[m[2]] : NaN;
+  if (!isOpt(s.expires, () => expiresMs <= 30 * DAY)) {
+    return json({ error: "expires: a duration up to 30d like 30m, 12h, 7d or 2w; 0 or null for never" }, 400);
   }
   if (s.favorite !== undefined && typeof s.favorite !== "boolean") return json({ error: "favorite: boolean" }, 400);
 
@@ -82,9 +84,8 @@ async function settingsColumns(env: Env, s: Settings, doc: Doc | null): Promise<
   if (s.title !== undefined) cols.title = s.title;
   if (s.slug !== undefined) cols.slug = s.slug;
   if (s.password !== undefined) cols.password_hash = s.password === null ? null : await hashPassword(s.password);
-  if (s.expires !== undefined) {
-    cols.expires_at = s.expires === null ? null : Date.now() + Number(s.expires.slice(0, -1)) * UNIT[s.expires.at(-1)!];
-  }
+  // A zero duration means never.
+  if (s.expires !== undefined) cols.expires_at = s.expires === null || expiresMs === 0 ? null : Date.now() + expiresMs;
   if (s.favorite !== undefined) cols.favorite = s.favorite ? 1 : 0;
 
   const slug = "slug" in cols ? cols.slug : (doc?.slug ?? null);
