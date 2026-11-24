@@ -17,7 +17,8 @@ shelf README) and stop.
    published only when you have a JSON receipt with a `url`.
    - Lock it for other people: `--password-stdin`, with the password on stdin.
      A custom name (`--slug q3-plan`) always needs a password.
-   - Make the link expire: `--expires 7d` (`m`, `h`, `d`, `w`).
+   - Make the link expire: `--expires 7d` (`m`, `h`, `d`, `w`, up to 30d;
+     `0` or `never` for never).
    - Describe the change: `-m "what changed"`.
 3. **Report** the `url`, plus the `versionUrl` when the reader should see
    exactly this version. With `"created": false` the content was identical and

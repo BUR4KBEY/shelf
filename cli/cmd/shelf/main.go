@@ -41,7 +41,8 @@ Usage:
   shelf version
   shelf help
 
-A ref is a doc id or slug. SHELF_URL and SHELF_KEY override the saved login.
+A ref is a doc id or slug. --expires takes a duration up to 30d in m, h, d or w;
+0 or never means the link never expires. SHELF_URL and SHELF_KEY override the saved login.
 `
 
 func main() {

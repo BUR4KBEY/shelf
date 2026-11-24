@@ -10,7 +10,7 @@ import { api, errorText, nameOf, type Doc } from "@/lib/api";
 import { fullDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const EXPIRIES = [["never", "Never"], ["1h", "In 1 hour"], ["1d", "In 1 day"], ["7d", "In 7 days"], ["30d", "In 30 days"]];
+const UNITS = [["m", "Minutes"], ["h", "Hours"], ["d", "Days"], ["w", "Weeks"]];
 
 function Field({ label, htmlFor, children }: { label: string; htmlFor: string; children: ReactNode }) {
   return (
@@ -34,12 +34,13 @@ const Hint = ({ id, children }: { id?: string; children: ReactNode }) => (
  */
 export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () => void; onDeleted?: () => void }) {
   const id = useId();
-  const initialExpiry = d.expiresAt === null ? "never" : "keep";
+  // An empty amount keeps the current expiry; 0 means never.
+  const [amount, setAmount] = useState("");
+  const [unit, setUnit] = useState("d");
   const [title, setTitle] = useState(d.title ?? "");
   const [slug, setSlug] = useState(d.slug ?? "");
   const [password, setPassword] = useState("");
   const [unlock, setUnlock] = useState(false);
-  const [expires, setExpires] = useState(initialExpiry);
   const [status, setStatus] = useState<{ text: string; error?: boolean }>({ text: "" });
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -51,7 +52,7 @@ export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () =>
     if (slug.trim() !== (d.slug ?? "")) body.slug = slug.trim() || null;
     if (password) body.password = password;
     else if (unlock) body.password = null;
-    if (expires !== initialExpiry) body.expires = expires === "never" ? null : expires;
+    if (amount !== "") body.expires = Number(amount) === 0 ? null : `${amount}${unit}`;
     if (!Object.keys(body).length) return setStatus({ text: "Nothing to save." });
     setSaving(true);
     setStatus({ text: "Saving…" });
@@ -107,20 +108,22 @@ export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () =>
         </Hint>
       </Field>
       <Field label="Expires" htmlFor={`${id}expires`}>
-        <Select value={expires} onValueChange={setExpires}>
-          <SelectTrigger id={`${id}expires`} className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent position="popper" align="start" className="w-(--radix-select-trigger-width)">
-            {d.expiresAt !== null && <SelectItem value="keep">{d.expiresAt <= Date.now() ? `Expired ${fullDate(d.expiresAt)}` : `Keep: ${fullDate(d.expiresAt)}`}</SelectItem>}
-            {EXPIRIES.map(([value, text]) => (
-              <SelectItem key={value} value={value}>
-                {text}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Hint>After it expires the link stops working and the doc is deleted within a day.</Hint>
+        <div className="flex gap-2">
+          <Input id={`${id}expires`} type="number" inputMode="numeric" min={0} step={1} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={d.expiresAt === null ? "Never" : d.expiresAt <= Date.now() ? `Expired ${fullDate(d.expiresAt)}` : `Keep: ${fullDate(d.expiresAt)}`} aria-describedby={`${id}expires-hint`} className="min-w-0 flex-1" />
+          <Select value={unit} onValueChange={setUnit}>
+            <SelectTrigger aria-label="Unit" className="w-28">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              {UNITS.map(([value, text]) => (
+                <SelectItem key={value} value={value}>
+                  {text}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Hint id={`${id}expires-hint`}>From now, up to 30 days. 0 means never. After it expires the link stops working and the doc is deleted within a day.</Hint>
       </Field>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:col-span-2">
         <Button type="submit" disabled={saving}>

@@ -97,7 +97,7 @@ Optional fields in the push body:
 | `ref` | Id or slug of an existing doc; the push becomes its next version. |
 | `slug` | Publish at `/view/<slug>`. A slug is guessable, so it requires a password. Slugs ignore case and are stored lowercase, so `/view/Q3-Plan` opens `q3-plan`. Pushing with a slug that exists updates that doc. |
 | `password` | Readers must enter it (8+ chars). `null` removes it. |
-| `expires` | `30m`, `12h`, `7d`, `2w`; `null` for never. Expired links return 410 and are deleted by a daily cron. |
+| `expires` | A duration up to 30 days: `30m`, `12h`, `7d`, `2w`, `30d`. `0` or `null` for never. Expired links return 410 and are deleted by a daily cron. |
 | `title`, `message` | Shown in listings and version history. |
 
 Pushing identical content creates no new version (`"created": false`).
