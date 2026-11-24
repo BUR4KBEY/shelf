@@ -3,7 +3,9 @@ on:
   # Branches in this repo deploy on their own. Fork PRs get no secrets here and are skipped.
   pull_request:
     types: [opened, synchronize, reopened]
-  # Fork PRs deploy only when you run this by hand, after reviewing the commit.
+  # Fork PRs deploy only after you review them: the owner comments `/deploy-preview <sha>` on the PR, or runs this by hand.
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       pr:
@@ -11,7 +13,7 @@ on:
         type: number
         required: true
       sha:
-        description: Full SHA of the commit you reviewed; exactly this commit is deployed
+        description: The commit you reviewed (at least 7 characters); it must still be the PR's head
         type: string
         required: true
   # Runs the base branch's workflow with secrets so fork previews get deleted too. Never checks out PR code.
@@ -22,20 +24,55 @@ permissions:
   contents: read
   pull-requests: read
 
-concurrency:
-  group: preview-${{ github.event.pull_request.number || inputs.pr }}
-
 env:
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
   CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-  PR: ${{ github.event.pull_request.number || inputs.pr }}
-  PREVIEW: pr-${{ github.event.pull_request.number || inputs.pr }}
   GH_REPO: ${{ github.repository }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 jobs:
-  deploy:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+  # Picks the PR and the exact commit to deploy, and marks the `preview` status pending. Runs no PR code.
+  target:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.author_association == 'OWNER' && startsWith(github.event.comment.body, '/deploy-preview'))
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      statuses: write
+    outputs:
+      pr: ${{ steps.target.outputs.pr }}
+      sha: ${{ steps.target.outputs.sha }}
+      title: ${{ steps.target.outputs.title }}
+    steps:
+      - id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number || inputs.pr || github.event.issue.number }}
+          SHA: ${{ github.event.pull_request.head.sha || inputs.sha }}
+          COMMENT: ${{ github.event.comment.body }}
+        run: |
+          [ -z "$COMMENT" ] || read -r _ SHA _ <<< "$COMMENT"
+          pr=$(gh pr view "$PR" --json headRefOid,title)
+          head=$(jq -r .headRefOid <<< "$pr")
+          # Only the commit you reviewed: if the author pushed since, the head no longer matches.
+          if [[ ! "$SHA" =~ ^[0-9a-f]{7,40}$ || "$head" != "$SHA"* ]]; then
+            msg="Not deploying \`${SHA:-no commit}\`: give the commit you reviewed. This PR's head is now ${head:0:7}."
+            [ -z "$COMMENT" ] || gh pr comment "$PR" --body "$msg"
+            echo "::error::$msg"
+            exit 1
+          fi
+          gh api "repos/$GH_REPO/statuses/$head" -f state=pending -f context=preview -f description=Deploying -f target_url="$RUN_URL" > /dev/null
+          { echo "pr=$PR"; echo "sha=$head"; echo "title=$(jq -r .title <<< "$pr")"; } >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: target
+    runs-on: ubuntu-latest
+    concurrency:
+      group: preview-${{ needs.target.outputs.pr }}
+    env:
+      PREVIEW: pr-${{ needs.target.outputs.pr }}
     defaults:
       run:
         working-directory: worker
@@ -44,15 +81,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Empty on pull_request, which checks out the PR as before.
-          ref: ${{ inputs.sha }}
+          ref: ${{ needs.target.outputs.sha }}
           # PR code runs with the Cloudflare token; don't hand it a GitHub one in .git/config too.
           persist-credentials: false
-      # Before any PR code runs, so the GitHub token stays out of its reach.
-      - id: pr
-        run: echo "title=$(gh pr view "$PR" --json title --jq .title)" >> "$GITHUB_OUTPUT"
-        env:
-          GH_TOKEN: ${{ github.token }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -68,23 +99,40 @@ jobs:
           url=$(sed -n '/^{/,$p' preview.json | jq -er '.preview.urls[0]')
           echo "url=$url" >> "$GITHUB_OUTPUT"
         env:
-          TITLE: ${{ steps.pr.outputs.title }}
+          TITLE: ${{ needs.target.outputs.title }}
 
   # A separate job: PR code ran with sudo on the deploy runner, so that runner never gets a write token.
-  comment:
-    needs: deploy
+  report:
+    needs: [target, deploy]
+    if: always() && needs.target.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
+      statuses: write
     steps:
-      - run: gh pr comment "$PR" --edit-last --create-if-none --body "Preview $URL (dashboard at $URL/dashboard)"
-        env:
-          URL: ${{ needs.deploy.outputs.url }}
+      - env:
           GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.deploy.result }}
+          PR: ${{ needs.target.outputs.pr }}
+          SHA: ${{ needs.target.outputs.sha }}
+          URL: ${{ needs.deploy.outputs.url }}
+        # A cancelled deploy was superseded by a newer one, which reports instead.
+        run: |
+          if [ "$RESULT" = success ]; then
+            gh api "repos/$GH_REPO/statuses/$SHA" -f state=success -f context=preview -f description=Deployed -f target_url="$URL" > /dev/null
+            gh pr comment "$PR" --edit-last --create-if-none --body "Preview $URL (dashboard at $URL/dashboard)"
+          elif [ "$RESULT" = failure ]; then
+            gh api "repos/$GH_REPO/statuses/$SHA" -f state=failure -f context=preview -f description="Deploy failed" -f target_url="$RUN_URL" > /dev/null
+          fi
 
   cleanup:
     if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
+    concurrency:
+      group: preview-${{ github.event.pull_request.number }}
+    env:
+      PR: ${{ github.event.pull_request.number }}
+      PREVIEW: pr-${{ github.event.pull_request.number }}
     defaults:
       run:
         working-directory: worker
