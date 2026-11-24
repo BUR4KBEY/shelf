@@ -23,58 +23,49 @@
 }
 
 /*
- * Light and dark follow the system. Tailwind's `dark:` is the same media query, so the shadcn components switch with it.
+ * Light and dark follow the system unless the theme switcher put `data-theme` on <html> (the `theme` cookie; the Worker
+ * writes the attribute into the page, see src/page.ts). Every colour is a `light-dark()` pair, so `color-scheme` alone picks the theme.
  * Colour belongs to the keys: an upload is tinted with the colour of the key that made it, and little else is coloured.
  */
 :root {
   color-scheme: light dark;
   --radius: 0.5rem;
-  --background: #f4f6fc;
-  --foreground: #131a3a;
-  --sidebar: #e7ebf7;
-  --card: #fff;
+  --background: light-dark(#f4f6fc, #111a3a);
+  --foreground: light-dark(#131a3a, #eef1ff);
+  --sidebar: light-dark(#e7ebf7, #0b1230);
+  --card: light-dark(#fff, #1a2550);
   --card-foreground: var(--foreground);
-  --popover: #fff;
+  --popover: light-dark(#fff, #1d2957);
   --popover-foreground: var(--foreground);
-  --primary: #131a3a;
-  --primary-foreground: #fff;
-  --secondary: #e7ebf7;
+  --primary: light-dark(#131a3a, #eef1ff);
+  --primary-foreground: light-dark(#fff, #0b1230);
+  --secondary: light-dark(#e7ebf7, #26326a);
   --secondary-foreground: var(--foreground);
-  --muted: #e7ebf7;
-  --muted-foreground: #58638c;
-  --accent: #e7ebf7;
+  --muted: light-dark(#e7ebf7, #26326a);
+  --muted-foreground: light-dark(#58638c, #98a3cf);
+  --accent: light-dark(#e7ebf7, #26326a);
   --accent-foreground: var(--foreground);
-  --destructive: #c8341b;
-  --warning: #a55d00;
-  --border: #cdd5ea;
-  --input: #9aa6c9;
-  --ring: #3b55d9;
-  /* A key's colour is `oklch(var(--key-l) var(--key-c) <its hue>)`, so every key is equally loud in either theme. */
-  --key-l: 0.5;
-  --key-c: 0.17;
-  --tint: 7%;
+  --destructive: light-dark(#c8341b, #ff7a6b);
+  --warning: light-dark(#a55d00, #ffb64d);
+  --border: light-dark(#cdd5ea, #2b3769);
+  --input: light-dark(#9aa6c9, #4a5894);
+  --ring: light-dark(#3b55d9, #9db0ff);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #111a3a;
-    --foreground: #eef1ff;
-    --sidebar: #0b1230;
-    --card: #1a2550;
-    --popover: #1d2957;
-    --primary: #eef1ff;
-    --primary-foreground: #0b1230;
-    --secondary: #26326a;
-    --muted: #26326a;
-    --muted-foreground: #98a3cf;
-    --accent: #26326a;
-    --destructive: #ff7a6b;
-    --warning: #ffb64d;
-    --border: #2b3769;
-    --input: #4a5894;
-    --ring: #9db0ff;
-    --key-l: 0.82;
-    --key-c: 0.11;
-    --tint: 9%;
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+/* Tailwind's `dark:` follows the same rule: the chosen theme, else the system. */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:not([data-theme="light"], [data-theme="light"] *)) {
+      @slot;
+    }
   }
 }
 

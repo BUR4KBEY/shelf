@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Copy, Search, Settings2 } from "lucide-react";
+import { Copy, ExternalLink, Search, Settings2 } from "lucide-react";
 import { Tip, copy, dashed, display, focusRing } from "@/components/bits";
-import { DocName, Expiry } from "@/components/DocBits";
+import { DocName, Expiry, Locked, isExpired } from "@/components/DocBits";
 import { DropZone } from "@/components/DropZone";
 import { Entry } from "@/components/Entry";
 import { Settings } from "@/components/Settings";
@@ -12,11 +12,13 @@ import { byDay } from "@/lib/feed";
 import { clock, dayName, longDate, plural, size } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+/** Expired docs are left out of every filter but their own: they are gone for readers and deleted within a day. */
 const FILTERS: [string, string, (d: Doc) => boolean][] = [
-  ["all", "Everything", () => true],
-  ["favorites", "Favorites", (d) => d.favorite],
-  ["locked", "Password protected", (d) => d.locked],
-  ["expiring", "Expiring", (d) => d.expiresAt !== null],
+  ["all", "Everything", (d) => !isExpired(d)],
+  ["favorites", "Favorites", (d) => d.favorite && !isExpired(d)],
+  ["locked", "Password protected", (d) => d.locked && !isExpired(d)],
+  ["expiring", "Expiring", (d) => d.expiresAt !== null && !isExpired(d)],
+  ["expired", "Expired", isExpired],
 ];
 /** How many of a doc's earlier uploads from the same day are listed under its newest. */
 const FOLDED = 3;
@@ -53,11 +55,20 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-x-1 gap-y-2">
-            {FILTERS.map(([value, label]) => (
-              <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)} className={cn(focusRing, "rounded-lg px-3 py-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground", filter === value && "bg-card text-foreground shadow-[0_0_0_1px_var(--border)]")}>
-                {label}
-              </button>
-            ))}
+            {FILTERS.map(([value, label, test]) => {
+              const count = docs.filter(test).length;
+              // "Expired" only shows up when there is something expired to look at.
+              if (value === "expired" && !count && filter !== value) return null;
+              return (
+                <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)} className={cn(focusRing, "rounded-lg px-3 py-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground", filter === value && "bg-card text-foreground shadow-[0_0_0_1px_var(--border)]")}>
+                  {label}
+                  <span className="ml-1.5 text-xs tabular-nums opacity-70">
+                    {count}
+                    <span className="sr-only"> docs</span>
+                  </span>
+                </button>
+              );
+            })}
             <div className="relative w-full sm:ml-auto sm:w-60">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
               <Input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search docs and messages" aria-label="Search docs and messages" autoComplete="off" className="pl-8" />
@@ -90,6 +101,7 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                           <span>
                             {plural(head.files, "file")}, {size(head.size)}
                           </span>
+                          <Locked d={d} />
                           <Expiry d={d} />
                         </>
                       }
@@ -105,8 +117,12 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                               <Copy /> Copy link
                             </Button>
                           </div>
-                          <a href={openUrl(d)} target="_blank" rel="noopener noreferrer" className={cn(focusRing, "max-w-56 truncate text-[0.8125rem] text-muted-foreground hover:underline")}>
-                            /view/<span className="font-medium text-foreground">{d.slug ?? d.id}</span>
+                          <a href={openUrl(d)} target="_blank" rel="noopener noreferrer" className={cn(focusRing, "flex max-w-56 items-center gap-1 text-[0.8125rem] text-muted-foreground hover:underline")}>
+                            <span className="truncate">
+                              /view/<span className="font-medium text-foreground">{d.slug ?? d.id}</span>
+                            </span>
+                            <ExternalLink className="size-3 shrink-0" aria-hidden />
+                            <span className="sr-only">(opens in a new tab)</span>
                           </a>
                         </div>
                       }
