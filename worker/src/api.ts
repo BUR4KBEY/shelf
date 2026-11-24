@@ -32,6 +32,25 @@ const validPath = (p: string) =>
   p.split("/").every((s) => s !== "" && s !== "." && s !== ".." && !/[\\\x00-\x1f]/.test(s));
 
 const isOpt = (v: unknown, ok: (v: unknown) => boolean) => v === undefined || v === null || ok(v);
+const DURATION = /^\d{1,4}[mhdw]$/;
+const defaultExpires = (env: Env) => env.DB.prepare("SELECT value FROM settings WHERE key = 'default_expires'").first<string>("value");
+
+/** App-wide settings, set from the dashboard. `defaultExpires` is the expiry a new doc gets when its push doesn't name one. */
+export async function getAppSettings(env: Env): Promise<Response> {
+  return json({ defaultExpires: await defaultExpires(env) });
+}
+
+export async function patchAppSettings(req: Request, env: Env): Promise<Response> {
+  const body = (await req.json().catch(() => null)) as { defaultExpires?: unknown } | null;
+  if (!body || typeof body !== "object") return json({ error: "JSON object required" }, 400);
+  const d = body.defaultExpires;
+  if (d !== undefined && !isOpt(d, (v) => typeof v === "string" && DURATION.test(v))) {
+    return json({ error: "defaultExpires: a duration like 30m, 12h, 7d or 2w, or null for never" }, 400);
+  }
+  if (d === null) await env.DB.prepare("DELETE FROM settings WHERE key = 'default_expires'").run();
+  else if (d !== undefined) await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('default_expires', ?1) ON CONFLICT (key) DO UPDATE SET value = ?1").bind(d).run();
+  return getAppSettings(env);
+}
 
 interface Settings {
   title?: string | null;
@@ -54,7 +73,7 @@ async function settingsColumns(env: Env, s: Settings, doc: Doc | null): Promise<
   if (!isOpt(s.password, (v) => typeof v === "string" && v.length >= 8 && v.length <= 256)) {
     return json({ error: "password: 8 to 256 chars" }, 400);
   }
-  if (!isOpt(s.expires, (v) => typeof v === "string" && /^\d{1,4}[mhdw]$/.test(v))) {
+  if (!isOpt(s.expires, (v) => typeof v === "string" && DURATION.test(v))) {
     return json({ error: "expires: a duration like 30m, 12h, 7d or 2w, or null for never" }, 400);
   }
   if (s.favorite !== undefined && typeof s.favorite !== "boolean") return json({ error: "favorite: boolean" }, 400);
@@ -130,6 +149,8 @@ export async function push(req: Request, env: Env, keyId: string | null): Promis
   } else if (body.slug) {
     doc = await env.DB.prepare("SELECT * FROM docs WHERE slug = lower(?)").bind(body.slug).first<Doc>();
   }
+  // A new doc that doesn't name an expiry gets the owner's default; `expires: null` still means never.
+  if (!doc && body.expires === undefined) body.expires = await defaultExpires(env);
   const cols = await settingsColumns(env, body, doc);
   if (cols instanceof Response) return cols;
 
