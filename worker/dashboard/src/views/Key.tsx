@@ -1,10 +1,14 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { ChevronLeft, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Confirm, Loading, Problem, Time, chip, display, focusRing, useLoad } from "@/components/bits";
 import { DocName, isExpired } from "@/components/DocBits";
 import { Entry } from "@/components/Entry";
+import { Field, Hint } from "@/components/Settings";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, errorText, nameOf, type Doc, type KeyDetail } from "@/lib/api";
 import { byDay, daily } from "@/lib/feed";
 import { ago, dayName, fullDate, longDate, plural, size } from "@/lib/format";
@@ -112,6 +116,80 @@ function Heatmap({ times }: { times: number[] }) {
   );
 }
 
+const GB = 1e9;
+const MB = 1e6;
+
+/** How many bytes the key's uploads may keep, and what happens to an upload that doesn't fit. */
+function QuotaForm({ k, used, onSaved }: { k: KeyDetail; used: number; onSaved: () => void }) {
+  const [unit, setUnit] = useState(String(k.quota !== null && k.quota % GB === 0 ? GB : MB));
+  const [amount, setAmount] = useState(k.quota === null ? "" : String(k.quota / Number(unit)));
+  const [strategy, setStrategy] = useState(k.strategy);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      // Empty or 0 means no limit.
+      const quota = Number(amount) > 0 ? Math.round(Number(amount) * Number(unit)) : null;
+      await api(`/keys/${k.id}`, { method: "PATCH", json: { quota, strategy } });
+      toast.success("Quota saved");
+      onSaved();
+    } catch (err) {
+      toast.error(errorText(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="grid grid-cols-1 gap-x-4 gap-y-4 rounded-xl border bg-card p-4 sm:grid-cols-2">
+      {k.quota !== null && (
+        <div className="grid gap-1.5 sm:col-span-2">
+          <p className="text-sm tabular-nums">
+            {size(used)} of {size(k.quota)} kept
+          </p>
+          <Progress value={Math.min(100, (used / k.quota) * 100)} aria-label="Quota used" className="h-1.5 *:bg-(--k)" />
+        </div>
+      )}
+      <Field label="Keep at most" htmlFor="f-quota">
+        <div className="flex gap-2">
+          <Input id="f-quota" type="number" inputMode="decimal" min={0} step="any" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="No limit" aria-describedby="f-quota-hint" className="min-w-0 flex-1" />
+          <Select value={unit} onValueChange={setUnit}>
+            <SelectTrigger aria-label="Unit" className="w-20">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              <SelectItem value={String(MB)}>MB</SelectItem>
+              <SelectItem value={String(GB)}>GB</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Hint id="f-quota-hint">Empty or 0 means no limit. Counts every version this key uploaded that is still on the shelf, so expired and deleted docs free room.</Hint>
+      </Field>
+      <Field label="When an upload doesn't fit" htmlFor="f-strategy">
+        <Select value={strategy} onValueChange={(v) => setStrategy(v as KeyDetail["strategy"])}>
+          <SelectTrigger id="f-strategy" aria-describedby="f-strategy-hint" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent position="popper" align="start">
+            <SelectItem value="reject">Refuse it</SelectItem>
+            <SelectItem value="fifo">Delete this key's oldest uploads</SelectItem>
+          </SelectContent>
+        </Select>
+        <Hint id="f-strategy-hint">
+          Deleting goes oldest first until the upload fits. Favorites stay, and so does the current version of a doc that has older versions from someone else. A doc left with no versions is deleted. An upload bigger than the whole quota is always refused.
+        </Hint>
+      </Field>
+      <div className="sm:col-span-2">
+        <Button type="submit" disabled={saving}>
+          Save changes
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 type Props = { docs: Doc[]; colorOf: (keyId: string | null) => string; onChanged: () => void; onKeysChanged: () => void };
 
 /** One key: how much and how often it uploads, the docs it touched, and its uploads as a log. Revoking lives here. */
@@ -204,6 +282,15 @@ function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props &
           }
         />
       </section>
+
+      {!k.revokedAt && (
+        <section aria-labelledby="quota-name" className="grid grid-cols-1 gap-2.5">
+          <h2 id="quota-name" className={heading}>
+            Quota
+          </h2>
+          <QuotaForm key={`${k.quota}:${k.strategy}`} k={k} used={bytes} onSaved={reload} />
+        </section>
+      )}
 
       <section aria-labelledby="activity-name" className="grid grid-cols-1 gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
