@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Clock, Lock, Monitor, Moon, PanelLeftClose, Rows3, Settings, Star, Sun } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Logo, Tip, display, focusRing, groupName } from "@/components/bits";
@@ -19,17 +19,17 @@ const THEMES = [
 ] as const;
 
 /** Light, dark, or whatever the system says. Kept in a cookie, so the Worker's own pages (the password form) follow it too. */
-function ThemeSwitch() {
+export function ThemeSwitch({ className }: { className?: string }) {
   const root = document.documentElement;
-  const [theme, setTheme] = useState(root.dataset.theme ?? "system");
+  // Read from <html>, not local state: the sidebar and the folded rail each have a switch and must agree.
+  const theme = useSyncExternalStore(watchTheme, () => root.dataset.theme ?? "system");
   const pick = (t: string) => {
     if (t === "system") delete root.dataset.theme;
     else root.dataset.theme = t;
     document.cookie = `theme=${t}; Path=/; Max-Age=${t === "system" ? 0 : 31536000}; SameSite=Lax`;
-    setTheme(t);
   };
   return (
-    <div role="group" aria-label="Theme" className="flex shrink-0 rounded-lg border p-0.5">
+    <div role="group" aria-label="Theme" className={cn("flex shrink-0 rounded-lg border p-0.5", className)}>
       {THEMES.map(([value, label, Icon]) => (
         <Tip key={value} label={label}>
           <button type="button" aria-label={label} aria-pressed={theme === value} onClick={() => pick(value)} className={cn(focusRing, "grid size-7 place-items-center rounded-md text-muted-foreground hover:text-foreground max-lg:size-9", theme === value && "bg-card text-foreground")}>
@@ -39,6 +39,12 @@ function ThemeSwitch() {
       ))}
     </div>
   );
+}
+
+function watchTheme(onChange: () => void) {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, { attributeFilter: ["data-theme"] });
+  return () => observer.disconnect();
 }
 
 /** Every doc and every key, always in reach. The log shows what happened; this shows what there is. */

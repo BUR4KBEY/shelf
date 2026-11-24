@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { AppSettingsView } from "@/views/AppSettings";
 import { DocView } from "@/views/Doc";
 import { FeedView } from "@/views/Feed";
-import { Sidebar } from "@/views/Sidebar";
+import { Sidebar, ThemeSwitch } from "@/views/Sidebar";
 
 function useHashPath() {
   const [hash, setHash] = useState(location.hash);
@@ -98,12 +98,16 @@ export function App() {
               <div className={cn("max-lg:contents lg:h-full lg:w-[calc(19rem-1px)]", !side && "lg:hidden")}>
                 <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} settings={settings} email={email} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} onCollapse={toggleSide} />
               </div>
-              <div className={cn("hidden w-14 justify-center pt-5", !side && "lg:flex")}>
+              <div className={cn("hidden h-full w-14 flex-col items-center gap-3 pt-5 pb-6", !side && "lg:flex")}>
+                <a href="#/" aria-label="shelf" className={cn(focusRing, "rounded-md p-1")}>
+                  <Logo className="w-8" />
+                </a>
                 <Tip label="Show sidebar">
                   <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" aria-label="Show sidebar" onClick={toggleSide}>
                     <PanelLeftOpen />
                   </Button>
                 </Tip>
+                <ThemeSwitch className="mt-auto flex-col" />
               </div>
             </aside>
             <main ref={mainRef} className={cn("min-w-0", menu && "max-lg:hidden")}>
