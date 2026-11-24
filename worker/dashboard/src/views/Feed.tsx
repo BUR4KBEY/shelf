@@ -95,8 +95,9 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                       color={colorOf(head.keyId)}
                       at={head.createdAt}
                       who={head.keyName ?? "You"}
-                      // A click anywhere on a closed card, off its controls, opens its settings; the gear button stays for keyboards.
-                      onClick={open === key ? undefined : (e) => !(e.target as Element).closest("a, button, input, label, select, textarea") && !getSelection()?.toString() && setOpen(key)}
+                      // A click on the card, off its controls and its open settings, toggles them; the gear button stays for keyboards.
+                      // `contains` skips clicks in portals (the expiry menu, the delete dialog), which React still bubbles here.
+                      onClick={(e) => e.currentTarget.contains(e.target as Node) && !(e.target as Element).closest("a, button, input, label, select, textarea, [data-settings]") && !getSelection()?.toString() && setOpen(open === key ? null : key)}
                       did={head.n === 1 ? "uploaded a new doc" : `uploaded version ${head.n} of`}
                       title={<DocName d={d} onChanged={onChanged} />}
                       message={head.message}
@@ -148,7 +149,7 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                           {open === key && (
                             // Clipped only while it slides, so the inputs' focus rings show once it is open.
                             <motion.div initial={{ height: 0, opacity: 0, overflow: "hidden" }} animate={{ height: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }} exit={{ height: 0, opacity: 0, overflow: "hidden" }} transition={{ duration: 0.22, ease: "easeOut" }}>
-                              <div className="mt-3 border-t border-(--k)/30 pt-3.5">
+                              <div data-settings className="mt-3 border-t border-(--k)/30 pt-3.5">
                                 <Settings key={[d.title, d.slug, d.locked, d.expiresAt].join("\n")} d={d} onChanged={onChanged} onDeleted={() => setOpen(null)} />
                               </div>
                             </motion.div>
