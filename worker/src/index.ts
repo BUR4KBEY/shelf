@@ -1,7 +1,7 @@
 import { previewAccess } from "./access";
 import { deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, push, putBlob, sweep } from "./api";
 import { apiKey } from "./auth";
-import { createKey, dashboardPage, getKey, listKeys, revokeKey } from "./dashboard";
+import { createKey, dashboardPage, getKey, listKeys, patchKey, revokeKey } from "./dashboard";
 import { llmsTxt } from "./llms";
 import { mcp } from "./mcp";
 import { favicon, font, notFound, notice, setTheme } from "./page";
@@ -12,7 +12,7 @@ import { ownerOpen, unlock, view } from "./view";
 async function docRoutes(req: Request, env: Env, path: string, keyId: string | null): Promise<Response | undefined> {
   let m: RegExpMatchArray | null;
   if (req.method === "POST" && path === "/api/push") return push(req, env, keyId);
-  if (req.method === "PUT" && (m = path.match(/^\/api\/blobs\/([0-9a-f]{64})$/))) return putBlob(req, env, m[1]);
+  if (req.method === "PUT" && (m = path.match(/^\/api\/blobs\/([0-9a-f]{64})$/))) return putBlob(req, env, m[1], keyId);
   if (req.method === "GET" && path === "/api/docs") return listDocs(req, env);
   if (req.method === "GET" && path === "/api/uploads") return listUploads(env);
   if ((m = path.match(/^\/api\/docs\/([A-Za-z0-9-]{1,64})$/))) {
@@ -65,6 +65,7 @@ export default {
         if (req.method === "POST" && sub === "/api/keys") return createKey(req, env);
         if (req.method === "GET" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})$/))) return getKey(env, m[1]);
         if (req.method === "POST" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})\/revoke$/))) return revokeKey(env, m[1]);
+        if (req.method === "PATCH" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})$/))) return patchKey(req, env, m[1]);
         // Dashboard only: an API key publishes docs, it doesn't change how the app treats everyone's uploads.
         if (req.method === "GET" && sub === "/api/settings") return getAppSettings(env);
         if (req.method === "PATCH" && sub === "/api/settings") return patchAppSettings(req, env);

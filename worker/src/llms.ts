@@ -33,7 +33,7 @@ curl -sS -X PUT -H "Authorization: Bearer $KEY" --data-binary @plan.html ${origi
 curl -sS -H "Authorization: Bearer $KEY" -d "$M" ${origin}/api/push                               # the receipt
 \`\`\`
 
-Errors come back as \`{"error": "..."}\` with a 4xx status.
+Errors come back as \`{"error": "..."}\` with a 4xx status. 413 means the upload is over this key's quota; tell the user rather than retrying.
 
 The receipt has \`id\`, \`url\`, \`versionUrl\`, \`version\` and \`created\`. Give the user \`url\`, or \`versionUrl\` for this exact version. \`"created": false\` means the content was identical and no new version was made.
 

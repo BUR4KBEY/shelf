@@ -45,6 +45,19 @@ export async function revokeKey(env: Env, id: string): Promise<Response> {
   return meta.changes ? new Response(null, { status: 204 }) : json({ error: "key not found" }, 404);
 }
 
+/** Sets how many bytes a key's uploads may keep (`quota`, null for no limit) and what a push over it does (`strategy`). */
+export async function patchKey(req: Request, env: Env, id: string): Promise<Response> {
+  const body = (await req.json().catch(() => null)) as { quota?: unknown; strategy?: unknown } | null;
+  if (!body || typeof body !== "object") return json({ error: "JSON object required" }, 400);
+  const { quota, strategy } = body;
+  if (quota !== undefined && quota !== null && !(Number.isSafeInteger(quota) && (quota as number) > 0)) return json({ error: "quota: a whole number of bytes above 0, or null for no limit" }, 400);
+  if (strategy !== undefined && strategy !== "reject" && strategy !== "fifo") return json({ error: "strategy: reject or fifo" }, 400);
+  const { meta } = await env.DB.prepare("UPDATE api_keys SET quota_bytes = iif(?1, ?2, quota_bytes), quota_strategy = coalesce(?3, quota_strategy) WHERE id = ?4")
+    .bind(quota !== undefined ? 1 : 0, quota ?? null, strategy ?? null, id)
+    .run();
+  return meta.changes ? new Response(null, { status: 204 }) : json({ error: "key not found" }, 404);
+}
+
 /** The most uploads a key's page lists. Its per-doc totals always count every upload. */
 const KEY_UPLOADS = 500;
 /** How far back a key's upload times go: the 53 weeks its yearly heatmap shows. */
@@ -57,7 +70,9 @@ const ACTIVITY_MS = 371 * 86_400_000;
  */
 export async function getKey(env: Env, id: string): Promise<Response> {
   const [key, docs, uploads, times] = await env.DB.batch<Record<string, unknown>>([
-    env.DB.prepare("SELECT id, name, created_at AS createdAt, last_used_at AS lastUsedAt, revoked_at AS revokedAt FROM api_keys WHERE id = ?").bind(id),
+    env.DB.prepare(
+      "SELECT id, name, created_at AS createdAt, last_used_at AS lastUsedAt, revoked_at AS revokedAt, quota_bytes AS quota, quota_strategy AS strategy FROM api_keys WHERE id = ?",
+    ).bind(id),
     env.DB.prepare(
       "SELECT doc_id AS docId, COUNT(*) AS uploads, SUM(n = 1) AS created, SUM(size) AS size, MIN(created_at) AS firstAt, MAX(created_at) AS lastAt FROM versions WHERE key_id = ? GROUP BY doc_id ORDER BY lastAt DESC",
     ).bind(id),
