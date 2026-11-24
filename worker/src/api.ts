@@ -250,12 +250,14 @@ export async function getDoc(req: Request, env: Env, ref: string): Promise<Respo
   return json({ ...docJson(req, doc), versions: results });
 }
 
+/** Columns of one upload, for a `FROM versions v` query. */
+export const UPLOAD_SELECT =
+  "SELECT v.doc_id AS docId, v.n, v.message, v.size, v.created_at AS createdAt, v.key_id AS keyId, k.name AS keyName, (SELECT COUNT(*) FROM files f WHERE f.doc_id = v.doc_id AND f.n = v.n) AS files FROM versions v LEFT JOIN api_keys k ON k.id = v.key_id";
+
 /** The newest uploads across all docs, newest first. A doc's own versions are complete in `getDoc`; this is capped. */
 export async function listUploads(env: Env): Promise<Response> {
   // rowid breaks ties between versions committed in the same millisecond.
-  const { results } = await env.DB.prepare(
-    "SELECT v.doc_id AS docId, v.n, v.message, v.size, v.created_at AS createdAt, v.key_id AS keyId, k.name AS keyName, (SELECT COUNT(*) FROM files f WHERE f.doc_id = v.doc_id AND f.n = v.n) AS files FROM versions v LEFT JOIN api_keys k ON k.id = v.key_id ORDER BY v.created_at DESC, v.rowid DESC LIMIT 200",
-  ).all();
+  const { results } = await env.DB.prepare(`${UPLOAD_SELECT} ORDER BY v.created_at DESC, v.rowid DESC LIMIT 200`).all();
   return json(results);
 }
 

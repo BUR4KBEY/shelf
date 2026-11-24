@@ -1,7 +1,7 @@
 import { previewAccess } from "./access";
 import { deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, push, putBlob, sweep } from "./api";
 import { apiKey } from "./auth";
-import { createKey, dashboardPage, listKeys, revokeKey } from "./dashboard";
+import { createKey, dashboardPage, getKey, listKeys, revokeKey } from "./dashboard";
 import { llmsTxt } from "./llms";
 import { mcp } from "./mcp";
 import { favicon, font, notFound, notice, setTheme } from "./page";
@@ -63,6 +63,7 @@ export default {
         if (req.method === "GET" && sub === "/api/me") return json({ email: ctx.access ? ((await ctx.access.getIdentity())?.email ?? null) : preview!.email });
         if (req.method === "GET" && sub === "/api/keys") return listKeys(env);
         if (req.method === "POST" && sub === "/api/keys") return createKey(req, env);
+        if (req.method === "GET" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})$/))) return getKey(env, m[1]);
         if (req.method === "POST" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})\/revoke$/))) return revokeKey(env, m[1]);
         // Dashboard only: an API key publishes docs, it doesn't change how the app treats everyone's uploads.
         if (req.method === "GET" && sub === "/api/settings") return getAppSettings(env);

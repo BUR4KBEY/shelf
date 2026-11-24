@@ -1,4 +1,5 @@
 import page from "./dashboard.html";
+import { UPLOAD_SELECT } from "./api";
 import { themeAttr } from "./page";
 import { json, randomId, sha256Hex } from "./util";
 
@@ -42,4 +43,20 @@ export async function createKey(req: Request, env: Env): Promise<Response> {
 export async function revokeKey(env: Env, id: string): Promise<Response> {
   const { meta } = await env.DB.prepare("UPDATE api_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL").bind(Date.now(), id).run();
   return meta.changes ? new Response(null, { status: 204 }) : json({ error: "key not found" }, 404);
+}
+
+/** The most uploads a key's page lists. Its per-doc totals always count every upload. */
+const KEY_UPLOADS = 500;
+
+/** One key and what it uploaded: a row per doc it touched, with totals, and its newest uploads. */
+export async function getKey(env: Env, id: string): Promise<Response> {
+  const [key, docs, uploads] = await env.DB.batch<Record<string, unknown>>([
+    env.DB.prepare("SELECT id, name, created_at AS createdAt, last_used_at AS lastUsedAt, revoked_at AS revokedAt FROM api_keys WHERE id = ?").bind(id),
+    env.DB.prepare(
+      "SELECT doc_id AS docId, COUNT(*) AS uploads, SUM(n = 1) AS created, SUM(size) AS size, MIN(created_at) AS firstAt, MAX(created_at) AS lastAt FROM versions WHERE key_id = ? GROUP BY doc_id ORDER BY lastAt DESC",
+    ).bind(id),
+    env.DB.prepare(`${UPLOAD_SELECT} WHERE v.key_id = ? ORDER BY v.created_at DESC, v.rowid DESC LIMIT ${KEY_UPLOADS}`).bind(id),
+  ]);
+  if (!key.results.length) return json({ error: "key not found" }, 404);
+  return json({ ...key.results[0], docs: docs.results, uploads: uploads.results });
 }

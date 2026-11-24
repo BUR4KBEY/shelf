@@ -422,6 +422,25 @@ describe("dashboard", () => {
     expect((await withKey()).status).toBe(401);
   });
 
+  it("shows a key with totals per doc and its uploads", async () => {
+    const { id, key } = (await (await dash("/dashboard/api/keys", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "ci" }) })).json()) as { id: string; key: string };
+    const auth = { authorization: `Bearer ${key}`, "content-type": "application/json" };
+    const sha = await sha256Hex("by ci");
+    await exports.default.fetch(`${BASE}/api/blobs/${sha}`, { method: "PUT", headers: { ...auth, "content-length": "5" }, body: "by ci" });
+    const pushed = (await (await exports.default.fetch(`${BASE}/api/push`, { method: "POST", headers: auth, body: JSON.stringify({ files: [{ path: "ci.html", sha256: sha }] }) })).json()) as { id: string };
+    await publish({ "ci.html": "by test" }, { ref: pushed.id, message: "not ci's" }); // the test key's upload stays off ci's page
+    const sha2 = await sha256Hex("by ci again");
+    await exports.default.fetch(`${BASE}/api/blobs/${sha2}`, { method: "PUT", headers: { ...auth, "content-length": "11" }, body: "by ci again" });
+    await exports.default.fetch(`${BASE}/api/push`, { method: "POST", headers: auth, body: JSON.stringify({ ref: pushed.id, message: "again", files: [{ path: "ci.html", sha256: sha2 }] }) });
+
+    const k = (await (await dash(`/dashboard/api/keys/${id}`)).json()) as { name: string; docs: object[]; uploads: { n: number; message: string | null; keyName: string }[] };
+    expect(k.name).toBe("ci");
+    expect(k.docs).toEqual([{ docId: pushed.id, uploads: 2, created: 1, size: 16, firstAt: expect.any(Number), lastAt: expect.any(Number) }]);
+    expect(k.uploads.map((u) => [u.n, u.message, u.keyName])).toEqual([[3, "again", "ci"], [1, null, "ci"]]);
+    expect((await dash("/dashboard/api/keys/k_nope")).status).toBe(404);
+    expect((await api(`/api/keys/${id}`)).status).toBe(404); // dashboard only
+  });
+
   it("uploads through the dashboard api without an api key", async () => {
     const sha = await sha256Hex("from browser");
     const body = JSON.stringify({ files: [{ path: "b.html", sha256: sha }] });
