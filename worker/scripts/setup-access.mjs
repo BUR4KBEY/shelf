@@ -22,7 +22,8 @@ async function cf(method, path, body) {
   });
   const data = await res.json().catch(() => ({}));
   if (!data.success) {
-    const errors = (data.errors ?? []).map((e) => `${e.code}: ${e.message}`).join("; ") || `HTTP ${res.status}`;
+    // Access endpoints put the reason in `error` (e.g. "auth.forbidden"), the rest of the API in `message`.
+    const errors = (data.errors ?? []).map((e) => `${e.code}: ${e.message ?? e.error}`).join("; ") || `HTTP ${res.status}`;
     throw new Error(`${method} ${path} failed: ${errors}`);
   }
   return data.result;
