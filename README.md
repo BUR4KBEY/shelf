@@ -39,7 +39,7 @@ Then, in the Cloudflare dashboard:
 - Expired docs are hidden until the daily sweep deletes them: the **Expired** filter and the sidebar's "Show expired" bring them back.
 - The sidebar lists every doc, favorites first, so one that has not changed in months is still one click away. It folds down to a narrow rail. A doc's page has its link, settings, a place to upload a new version and its whole history.
 - Keys sit in the sidebar with their uploads over the last 14 days: mint a key for each machine or agent (shown once), and revoke it from its menu.
-- **Settings** (in the sidebar) holds app-wide settings. *Expire after* gives every new doc uploaded without an expiry (from the dashboard, the CLI or the API) a default one, e.g. 7 days. An upload that sets its own expiry, or `never`, keeps it; existing docs and new versions of them don't change.
+- **Settings** (in the sidebar) holds app-wide settings. *New uploads expire after* gives every new doc uploaded without an expiry (from the dashboard, the CLI or the API) a default one, e.g. 7 days. An upload that sets its own expiry, or `never`, keeps it; existing docs and new versions of them don't change. *Longest expiry allowed* (30 days unless changed) caps any expiry set from then on; never is always allowed, and docs that already expire later keep their date.
 - Upload by dropping a file or folder anywhere on the page. On a doc's page, a drop adds a version to that doc.
 
 The page source is in `worker/dashboard/`. It is built into one HTML file (`worker/src/dashboard.html`, not committed) that the Worker serves. `wrangler dev`, `wrangler deploy` and `npm test` build it first.
@@ -98,7 +98,7 @@ Optional fields in the push body:
 | `ref` | Id or slug of an existing doc; the push becomes its next version. |
 | `slug` | Publish at `/view/<slug>`. A slug is guessable, so it requires a password. Slugs ignore case and are stored lowercase, so `/view/Q3-Plan` opens `q3-plan`. Pushing with a slug that exists updates that doc. |
 | `password` | Readers must enter it (8+ chars). `null` removes it. |
-| `expires` | A duration up to 30 days: `30m`, `12h`, `7d`, `2w`, `30d`. `0` or `null` for never. Left out, a new doc gets the default from the dashboard's Settings (never unless set). Expired links return 410 and are deleted by a daily cron. |
+| `expires` | A duration up to the longest expiry set in the dashboard's Settings (30 days unless changed): `30m`, `12h`, `7d`, `2w`, `30d`. `0` or `null` for never. Left out, a new doc gets the default from the dashboard's Settings (never unless set). Expired links return 410 and are deleted by a daily cron. |
 | `title`, `message` | Shown in listings and version history. |
 
 Pushing identical content creates no new version (`"created": false`).

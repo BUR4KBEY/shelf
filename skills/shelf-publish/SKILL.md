@@ -17,7 +17,7 @@ shelf README) and stop.
    published only when you have a JSON receipt with a `url`.
    - Lock it for other people: `--password-stdin`, with the password on stdin.
      A custom name (`--slug q3-plan`) always needs a password.
-   - Make the link expire: `--expires 7d` (`m`, `h`, `d`, `w`, up to 30d;
+   - Make the link expire: `--expires 7d` (`m`, `h`, `d`, `w`, up to the owner's limit, 30d by default;
      `0` or `never` for never). The owner may set a default expiry; pass
      `--expires never` when the link must last.
    - Describe the change: `-m "what changed"`.
