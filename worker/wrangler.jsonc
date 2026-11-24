@@ -14,5 +14,14 @@
   // Daily: delete expired docs and blobs nothing references.
   "triggers": { "crons": ["17 3 * * *"] },
   // Local `wrangler dev` only: pretend Cloudflare Access signed this user in, so the dashboard works offline.
-  "access": { "dev": { "aud": "local-dev", "identity": { "email": "you@localhost" } } }
+  "access": { "dev": { "aud": "local-dev", "identity": { "email": "you@localhost" } } },
+  // PR previews (`wrangler preview`, see .github/workflows/preview.yml) on workers.dev. Previews inherit no bindings,
+  // so they get their own bucket and database: preview code never touches production docs or keys.
+  "preview_urls": true,
+  "previews": {
+    "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "shelf-preview" }],
+    // Same database as wrangler.preview-migrations.jsonc, which applies migrations to it.
+    "d1_databases": [{ "binding": "DB", "database_name": "shelf-preview", "database_id": "7e32ae96-174c-4c79-bd91-fb5317eb1df6" }],
+    "ratelimits": [{ "name": "UNLOCK_LIMIT", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } }]
+  }
 }
