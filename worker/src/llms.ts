@@ -65,6 +65,8 @@ HTML and SVG are served in a sandbox with an opaque origin:
 
 ## Manage docs
 
+Your key belongs to one space, chosen by the owner. It sees and changes only that space's docs: another space's doc answers 404, and a slug another space uses answers 409 ("slug is taken"). The owner may also stop a space's keys from deleting (403).
+
 \`\`\`sh
 curl -sS -H "Authorization: Bearer $KEY" ${origin}/api/docs                 # list, favorites first
 curl -sS -H "Authorization: Bearer $KEY" ${origin}/api/docs/<ref>           # detail and version history

@@ -1,24 +1,25 @@
 import { previewAccess } from "./access";
 import { deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, push, putBlob, sweep } from "./api";
-import { apiKey } from "./auth";
-import { createKey, dashboardPage, getKey, listKeys, patchKey, revokeKey } from "./dashboard";
+import { type Caller, apiKey } from "./auth";
+import { createKey, createSpace, dashboardPage, getKey, listKeys, listSpaces, patchKey, patchSpace, revokeKey } from "./dashboard";
 import { llmsTxt } from "./llms";
 import { mcp } from "./mcp";
 import { favicon, font, notFound, notice, setTheme } from "./page";
 import { json } from "./util";
 import { ownerOpen, unlock, view } from "./view";
 
-/** Doc routes shared by /api (API key) and /dashboard/api (Cloudflare Access). `keyId` is null for the dashboard. */
-async function docRoutes(req: Request, env: Env, path: string, keyId: string | null): Promise<Response | undefined> {
+/** Doc routes shared by /api (API key) and /dashboard/api (Cloudflare Access). `caller` is null for the dashboard, which sees every space. */
+async function docRoutes(req: Request, env: Env, path: string, caller: Caller | null): Promise<Response | undefined> {
   let m: RegExpMatchArray | null;
-  if (req.method === "POST" && path === "/api/push") return push(req, env, keyId);
-  if (req.method === "PUT" && (m = path.match(/^\/api\/blobs\/([0-9a-f]{64})$/))) return putBlob(req, env, m[1], keyId);
-  if (req.method === "GET" && path === "/api/docs") return listDocs(req, env);
-  if (req.method === "GET" && path === "/api/uploads") return listUploads(env);
+  const scope = caller?.scope ?? null;
+  if (req.method === "POST" && path === "/api/push") return push(req, env, caller);
+  if (req.method === "PUT" && (m = path.match(/^\/api\/blobs\/([0-9a-f]{64})$/))) return putBlob(req, env, m[1], caller?.id ?? null);
+  if (req.method === "GET" && path === "/api/docs") return listDocs(req, env, scope);
+  if (req.method === "GET" && path === "/api/uploads") return listUploads(env, scope);
   if ((m = path.match(/^\/api\/docs\/([A-Za-z0-9-]{1,64})$/))) {
-    if (req.method === "GET") return getDoc(req, env, m[1]);
-    if (req.method === "PATCH") return patchDoc(req, env, m[1]);
-    if (req.method === "DELETE") return deleteDoc(env, m[1]);
+    if (req.method === "GET") return getDoc(req, env, m[1], scope);
+    if (req.method === "PATCH") return patchDoc(req, env, m[1], caller);
+    if (req.method === "DELETE") return deleteDoc(env, m[1], caller);
   }
 }
 
@@ -40,10 +41,10 @@ export default {
     if (req.method === "GET" && path === "/llms.txt") return new Response(llmsTxt(url.origin), { headers: { "content-type": "text/plain; charset=utf-8" } });
 
     if (path.startsWith("/api/") || path === "/mcp") {
-      const keyId = await apiKey(req, env, ctx);
-      if (!keyId) return json({ error: "unauthorized" }, 401);
-      if (path === "/mcp") return mcp(req, env, keyId);
-      return (await docRoutes(req, env, path, keyId)) ?? json({ error: "not found" }, 404);
+      const caller = await apiKey(req, env, ctx);
+      if (!caller) return json({ error: "unauthorized" }, 401);
+      if (path === "/mcp") return mcp(req, env, caller);
+      return (await docRoutes(req, env, path, caller)) ?? json({ error: "not found" }, 404);
     }
 
     if (path === "/") return Response.redirect(`${url.origin}/dashboard`, 302);
@@ -66,6 +67,9 @@ export default {
         if (req.method === "GET" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})$/))) return getKey(env, m[1]);
         if (req.method === "POST" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})\/revoke$/))) return revokeKey(env, m[1]);
         if (req.method === "PATCH" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})$/))) return patchKey(req, env, m[1]);
+        if (req.method === "GET" && sub === "/api/spaces") return listSpaces(env);
+        if (req.method === "POST" && sub === "/api/spaces") return createSpace(req, env);
+        if (req.method === "PATCH" && (m = sub.match(/^\/api\/spaces\/([A-Za-z0-9_]{1,32})$/))) return patchSpace(req, env, m[1]);
         // Dashboard only: an API key publishes docs, it doesn't change how the app treats everyone's uploads.
         if (req.method === "GET" && sub === "/api/settings") return getAppSettings(env);
         if (req.method === "PATCH" && sub === "/api/settings") return patchAppSettings(req, env);
