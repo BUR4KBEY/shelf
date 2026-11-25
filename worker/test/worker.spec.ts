@@ -376,6 +376,23 @@ describe("docs api", () => {
     expect(await list("?project=billing-poc")).toEqual([[a.id, "Billing-POC"]]);
     expect((await api(`/api/docs/${a.id}`, { method: "PATCH", body: JSON.stringify({ project: "x".repeat(65) }) })).status).toBe(400);
   });
+
+  it("changes and deletes many docs in one call, all or nothing", async () => {
+    const a = await publish({ "a.html": "bulk a" });
+    const b = await publish({ "b.html": "bulk b" }, { slug: "bulk-b", password: "hunter2hunter2" });
+    const bulk = (body: object) => api("/api/docs/bulk", { method: "POST", body: JSON.stringify(body) });
+
+    const changed = (await (await bulk({ ids: [a.id, "BULK-B"], favorite: true, project: "Batch" })).json()) as { id: string; favorite: boolean; project: string }[];
+    expect(changed.map((d) => [d.id, d.favorite, d.project]).sort()).toEqual([[a.id, true, "Batch"], [b.id, true, "Batch"]].sort());
+    // A setting that belongs to one doc, and a missing doc, both refuse the whole call.
+    expect((await bulk({ ids: [a.id], slug: "nope" })).status).toBe(400);
+    expect((await bulk({ ids: [a.id, "no-such-doc"], delete: true })).status).toBe(404);
+    expect((await api(`/api/docs/${a.id}`)).status).toBe(200);
+
+    expect((await bulk({ ids: [a.id, "bulk-b"], delete: true })).status).toBe(204);
+    expect((await api(`/api/docs/${a.id}`)).status).toBe(404);
+    expect((await api(`/api/docs/${b.id}`)).status).toBe(404);
+  });
 });
 
 describe("dashboard", () => {

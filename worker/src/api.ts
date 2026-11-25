@@ -426,6 +426,52 @@ export async function deleteDoc(env: Env, ref: string, caller: Caller | null): P
   return new Response(null, { status: 204 });
 }
 
+/** The most docs one bulk call may name; as many as the dashboard's log can show. */
+const BULK_MAX = 200;
+/** The settings that make sense for many docs at once. A title, slug or password belongs to one doc. */
+const BULK_SETTINGS = ["favorite", "expires", "project", "space"];
+
+/**
+ * Deletes or changes many docs at once, all or nothing. `ids`: ids or slugs; then `delete: true`, or the settings every doc gets.
+ * Any doc not found (or outside the caller's space) fails the whole call, so nothing changes.
+ */
+export async function bulkDocs(req: Request, env: Env, caller: Caller | null): Promise<Response> {
+  const body = (await req.json().catch(() => null)) as (Settings & { ids?: unknown; delete?: unknown }) | null;
+  if (!body || typeof body !== "object") return json({ error: "JSON object required" }, 400);
+  const { ids, delete: del, ...settings } = body;
+  if (!Array.isArray(ids) || !ids.length || ids.length > BULK_MAX || !ids.every((r) => typeof r === "string")) return json({ error: `ids: 1 to ${BULK_MAX} doc ids or slugs` }, 400);
+  if (Object.keys(settings).some((k) => !BULK_SETTINGS.includes(k))) return json({ error: `only ${BULK_SETTINGS.join(", ")} can be set on many docs at once` }, 400);
+  if (del !== undefined && (del !== true || Object.keys(settings).length)) return json({ error: "delete: true, with no settings" }, 400);
+  if (del && caller && !caller.canDelete) return json({ error: "keys in this space can't delete docs; the owner can, from the dashboard" }, 403);
+
+  const refs = ids.map((r: string) => r.toLowerCase());
+  // One query for every doc, not one per doc: D1 limits queries per request.
+  const { results: docs } = await env.DB.prepare("SELECT * FROM docs WHERE (id IN (SELECT value FROM json_each(?1)) OR slug IN (SELECT value FROM json_each(?1))) AND (?2 IS NULL OR space_id = ?2)")
+    .bind(JSON.stringify(refs), caller?.scope ?? null)
+    .all<Doc>();
+  const missing = refs.filter((r) => !docs.some((d) => d.id === r || d.slug === r));
+  if (missing.length) return json({ error: `not found: ${missing.join(", ")}` }, 404);
+  const idsOf = (ds: Doc[]) => JSON.stringify(ds.map((d) => d.id));
+
+  if (del) {
+    await env.DB.prepare("DELETE FROM docs WHERE id IN (SELECT value FROM json_each(?))").bind(idsOf(docs)).run();
+    return new Response(null, { status: 204 });
+  }
+  // A project's spelling is per space, so the columns are worked out once per space the docs are in.
+  const stmts: D1PreparedStatement[] = [];
+  for (const space of new Set(docs.map((d) => d.space_id))) {
+    const inSpace = docs.filter((d) => d.space_id === space);
+    const cols = await settingsColumns(env, { ...settings }, inSpace[0], caller);
+    if (cols instanceof Response) return cols;
+    if (!Object.keys(cols).length) continue;
+    cols.updated_at = Date.now();
+    stmts.push(env.DB.prepare(`UPDATE docs SET ${Object.keys(cols).map((k) => `${k} = ?`).join(", ")} WHERE id IN (SELECT value FROM json_each(?))`).bind(...Object.values(cols), idsOf(inSpace)));
+  }
+  if (stmts.length) await env.DB.batch(stmts);
+  const { results } = await env.DB.prepare("SELECT * FROM docs WHERE id IN (SELECT value FROM json_each(?)) ORDER BY favorite DESC, updated_at DESC").bind(idsOf(docs)).all<Doc>();
+  return json(results.map((d) => docJson(req, d)));
+}
+
 /**
  * Daily cron: drops expired docs, then deletes blobs no version references.
  * Blobs uploaded in the last day are kept so a push in progress never loses its uploads.

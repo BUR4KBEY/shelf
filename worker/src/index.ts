@@ -1,5 +1,5 @@
 import { previewAccess } from "./access";
-import { appSettings, deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, push, putBlob, sweep } from "./api";
+import { appSettings, bulkDocs, deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, push, putBlob, sweep } from "./api";
 import { type Caller, apiKey } from "./auth";
 import { exportShelf, importCheck, importShelf } from "./backup";
 import { createKey, createSpace, dashboardPage, deleteKey, deleteSpace, getAnalytics, getKey, listKeys, listSpaces, patchKey, patchSpace, revokeKey } from "./dashboard";
@@ -17,6 +17,7 @@ async function docRoutes(req: Request, env: Env, path: string, caller: Caller | 
   if (req.method === "PUT" && (m = path.match(/^\/api\/blobs\/([0-9a-f]{64})$/))) return putBlob(req, env, m[1], caller?.id ?? null);
   if (req.method === "GET" && path === "/api/docs") return listDocs(req, env, scope);
   if (req.method === "GET" && path === "/api/uploads") return listUploads(env, scope);
+  if (req.method === "POST" && path === "/api/docs/bulk") return bulkDocs(req, env, caller);
   if ((m = path.match(/^\/api\/docs\/([A-Za-z0-9-]{1,64})$/))) {
     if (req.method === "GET") return getDoc(req, env, m[1], scope);
     if (req.method === "PATCH") return patchDoc(req, env, m[1], caller);
