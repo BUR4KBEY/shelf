@@ -74,9 +74,12 @@ curl -sS -H "Authorization: Bearer $KEY" ${origin}/api/docs/<ref>           # de
 curl -sS -X PATCH -H "Authorization: Bearer $KEY" -d '{"expires":"7d"}' ${origin}/api/docs/<ref>
 curl -sS -X DELETE -H "Authorization: Bearer $KEY" ${origin}/api/docs/<ref>
 curl -sS -H "Authorization: Bearer $KEY" -d '{"ids":["<ref>","<ref>"],"delete":true}' ${origin}/api/docs/bulk
+curl -sS -X PATCH -H "Authorization: Bearer $KEY" -d '{"versions":[1,2],"disabled":true}' ${origin}/api/docs/<ref>/versions
 \`\`\`
 
 PATCH takes \`slug\`, \`password\`, \`expires\`, \`title\`, \`project\` and \`favorite\`.
 
 \`/api/docs/bulk\` acts on up to 200 docs at once, all or nothing: \`ids\` with \`"delete": true\`, or with \`expires\`, \`project\` and \`favorite\` to set on every one. If any doc isn't found, nothing changes.
+
+\`/api/docs/<ref>/versions\` turns old versions off (\`"disabled": true\`) or back on: a turned-off version keeps its files, but its pinned link \`/view/<ref>@<n>\` answers 410. The current version can't be turned off.
 `;
