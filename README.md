@@ -32,6 +32,29 @@ Then, in the Cloudflare dashboard:
 
 `/view/*` and `/api/*` stay public. Readers need the link (and the password if you set one), and the API needs a key.
 
+### Self-host with Docker
+
+No Cloudflare account needed: one container runs the same Worker code on [Bun](https://bun.sh), with docs in a SQLite file and their files on disk, both under `/data`. Images for `linux/amd64` and `linux/arm64` are published with every release, tagged like the CLI (`1.2.3`, `1.2` and `latest`):
+
+```sh
+docker run -d --name shelf -p 8080:8080 -v shelf-data:/data \
+  -e SHELF_PASSWORD='a long password' \
+  ghcr.io/bur4kbey/shelf:latest
+```
+
+Open `http://localhost:8080/dashboard` and sign in with `SHELF_PASSWORD`; that password is what Cloudflare Access does on Cloudflare. Everything else (the API, the CLI, MCP, `/view`) works as on Cloudflare: point the CLI at your URL.
+
+| Variable | |
+|---|---|
+| `SHELF_PASSWORD` | Required, 12 characters or more. Signs you in to the dashboard for 30 days; changing it signs every browser out. |
+| `SHELF_TRUST_PROXY` | `1` behind a reverse proxy (Caddy, nginx, Traefik, a Cloudflare Tunnel): the client's IP, scheme and host come from `X-Forwarded-For` (its last entry), `X-Forwarded-Proto` and `X-Forwarded-Host`. Leave it off when the port is reachable without the proxy, or anyone can forge them. |
+| `SHELF_EMAIL` | Shown in the dashboard's sidebar (`owner` unless set). |
+| `PORT` | `8080` unless set. |
+
+Serve it over HTTPS behind a reverse proxy with `SHELF_TRUST_PROXY=1`: the sign-in cookie, the CSRF check and the links shelf hands out all follow the URL the browser used. The daily cleanup runs at 03:17 UTC, as on Cloudflare. Back up the `/data` volume, or use **Backup** in Settings, which also moves a shelf between Cloudflare and Docker in either direction. The volume holds `shelf.db` (with its `-wal` and `-shm` files), `blobs/` and `session.key`, which signs sign-in cookies; the container runs as uid 1000, so a bind-mounted directory must be writable by it.
+
+To build it yourself: `docker build -t shelf worker`. The server is `worker/selfhost/server.ts`, and `worker/selfhost/store.ts` stands in for D1, R2 and the rate limiter. `bun selfhost/build.ts` (after `pnpm run build`) bundles it into `selfhost/dist/server.js`, and `bun test selfhost` tests the stand-ins.
+
 ## Dashboard
 
 `https://your-domain/dashboard` (light and dark, following your system until you pick one in the sidebar or Settings, in one of ten colours; React + shadcn/ui, animated with Motion, which moves nothing when your system asks for reduced motion):
