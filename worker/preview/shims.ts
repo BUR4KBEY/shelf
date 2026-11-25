@@ -107,7 +107,7 @@ export const r2 = {
   async list({ prefix = "" }: { prefix?: string; cursor?: string } = {}) {
     const keys = await store<IDBValidKey[]>("blobs", "readonly", (s) => s.getAllKeys());
     const blobs = await store<Stored[]>("blobs", "readonly", (s) => s.getAll());
-    const objects = keys.map((k, i) => ({ key: String(k), uploaded: new Date(blobs[i].uploaded) })).filter((o) => o.key.startsWith(prefix));
+    const objects = keys.map((k, i) => ({ key: String(k), size: blobs[i].bytes.byteLength, uploaded: new Date(blobs[i].uploaded) })).filter((o) => o.key.startsWith(prefix));
     return { objects, truncated: false };
   },
   async delete(keys: string | string[]) {

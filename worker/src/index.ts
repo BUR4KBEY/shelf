@@ -1,5 +1,5 @@
 import { previewAccess } from "./access";
-import { appSettings, bulkDocs, deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, patchVersions, push, putBlob, sweep } from "./api";
+import { appSettings, bulkDocs, cleanupStatus, deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, patchVersions, push, putBlob, sweep } from "./api";
 import { type Caller, apiKey } from "./auth";
 import { exportShelf, importCheck, importShelf } from "./backup";
 import { createKey, createSpace, dashboardPage, deleteKey, deleteSpace, getAnalytics, getKey, listKeys, listSpaces, patchKey, patchSpace, revokeKey } from "./dashboard";
@@ -85,6 +85,11 @@ export default {
         // Dashboard only: an API key publishes docs, it doesn't change how the app treats everyone's uploads.
         if (req.method === "GET" && sub === "/api/settings") return getAppSettings(env);
         if (req.method === "PATCH" && sub === "/api/settings") return patchAppSettings(req, env);
+        if (req.method === "GET" && sub === "/api/cleanup") return json(await cleanupStatus(env));
+        if (req.method === "POST" && sub === "/api/cleanup") {
+          await sweep(env, Date.now(), "manual");
+          return json(await cleanupStatus(env));
+        }
         if (req.method === "GET" && sub === "/api/export") return exportShelf(env, url.searchParams.get("space"), url.searchParams.get("passwords") === "1");
         if (req.method === "POST" && sub === "/api/import/check") return importCheck(req, env);
         if (req.method === "POST" && sub === "/api/import") return importShelf(req, env);
@@ -96,6 +101,7 @@ export default {
   },
 
   async scheduled(_event, env): Promise<void> {
-    await sweep(env);
+    const run = await sweep(env);
+    if (run.error) throw new Error(`cleanup failed: ${run.error}`); // so the Workers dashboard shows the cron run as failed
   },
 } satisfies ExportedHandler<Env>;
