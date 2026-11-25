@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Menu, PanelLeftOpen, X } from "lucide-react";
+import { Menu, PanelLeftOpen, Search, X } from "lucide-react";
 import { MotionConfig, animate, motion, useMotionValue, useReducedMotion, type MotionStyle } from "motion/react";
 import { Loading, Logo, Problem, Tip, display, focusRing, useLoad, useTitle } from "@/components/bits";
+import { CommandPalette } from "@/components/CommandPalette";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -15,7 +16,7 @@ import { AppSettingsView } from "@/views/AppSettings";
 import { DocView } from "@/views/Doc";
 import { KeyView } from "@/views/Key";
 import { FeedView } from "@/views/Feed";
-import { Sidebar, ThemeSwitch } from "@/views/Sidebar";
+import { MOD, Sidebar, ThemeSwitch } from "@/views/Sidebar";
 
 function useHashPath() {
   const [hash, setHash] = useState(location.hash);
@@ -59,6 +60,7 @@ export function App() {
     animate(sideWidth, side ? "3.5rem" : "19rem", { duration: reduce ? 0 : 0.25, ease: "easeOut" });
     setSide(!side);
   };
+  const [palette, setPalette] = useState(false);
   const [email, setEmail] = useState("");
   useEffect(() => void api<{ email: string }>("/me").then((me) => setEmail(me.email), () => { }), []);
   useEffect(() => {
@@ -112,7 +114,7 @@ export function App() {
               <aside ref={asideRef} className={cn("bg-sidebar max-lg:min-h-[calc(100dvh-3.5rem)] lg:sticky lg:top-0 lg:h-dvh lg:overflow-x-hidden lg:overflow-y-auto lg:border-r", !menu && "max-lg:hidden")}>
                 {/* Full width while the column slides, so the column clips it instead of squeezing it. */}
                 <div className={cn("max-lg:contents lg:h-full lg:w-[calc(19rem-1px)]", !side && "lg:hidden")}>
-                  <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} openKey={openKey} settings={settings} analytics={analytics} email={email} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} onCollapse={toggleSide} />
+                  <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} openKey={openKey} settings={settings} analytics={analytics} email={email} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} onCollapse={toggleSide} onSearch={() => setPalette(true)} />
                 </div>
                 <div className={cn("hidden h-full w-14 flex-col items-center gap-3 pt-5 pb-6", !side && "lg:flex")}>
                   <a href="#/" aria-label="shelf" className={cn(focusRing, "rounded-md p-1")}>
@@ -121,6 +123,11 @@ export function App() {
                   <Tip label="Show sidebar">
                     <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" aria-label="Show sidebar" onClick={toggleSide}>
                       <PanelLeftOpen />
+                    </Button>
+                  </Tip>
+                  <Tip label={`Search (${MOD}K)`}>
+                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" aria-label="Search" onClick={() => setPalette(true)}>
+                      <Search />
                     </Button>
                   </Tip>
                   <ThemeSwitch className="mt-auto flex-col" />
@@ -141,6 +148,7 @@ export function App() {
                   )}
                 </motion.div>
               </main>
+              <CommandPalette open={palette} onOpenChange={setPalette} docs={docs.data} keys={keys.data} side={side} onToggleSide={toggleSide} onNavigate={() => setMenu(false)} />
             </motion.div>
           )}
           <Toaster position="bottom-center" />
