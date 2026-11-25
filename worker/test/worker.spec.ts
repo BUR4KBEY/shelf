@@ -532,11 +532,11 @@ describe("dashboard", () => {
 
   it("gives new docs the default expiry unless the push names one", async () => {
     const setDefault = (defaultExpires: string | null) => dash("/dashboard/api/settings", { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ defaultExpires }) });
-    expect(await (await dash("/dashboard/api/settings")).json()).toEqual({ defaultExpires: null, maxExpires: "30d", isolateSpaces: true });
+    expect(await (await dash("/dashboard/api/settings")).json()).toEqual({ defaultExpires: null, maxExpires: "30d", isolateSpaces: true, maxSlugLength: 48 });
     expect((await setDefault("soon")).status).toBe(400);
     expect((await api("/api/settings")).status).toBe(404); // an API key can't change it
     try {
-      expect(await (await setDefault("7d")).json()).toEqual({ defaultExpires: "7d", maxExpires: "30d", isolateSpaces: true });
+      expect(await (await setDefault("7d")).json()).toEqual({ defaultExpires: "7d", maxExpires: "30d", isolateSpaces: true, maxSlugLength: 48 });
       const before = Date.now();
       expect((await publish({ "d1.html": "default" })).expiresAt).toBeGreaterThanOrEqual(before + 7 * 86_400_000);
       expect((await publish({ "d2.html": "forever" }, { expires: null })).expiresAt).toBeNull();
@@ -555,20 +555,37 @@ describe("dashboard", () => {
     try {
       expect((await publish({ "m1.html": "30d" }, { expires: "30d" })).expiresAt).not.toBeNull();
       for (const bad of [null, "0", "0d", "soon"]) expect((await patchApp({ maxExpires: bad })).status).toBe(400);
-      expect(await (await patchApp({ maxExpires: "90d" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d", isolateSpaces: true });
+      expect(await (await patchApp({ maxExpires: "90d" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48 });
       expect((await publish({ "m2.html": "60d" }, { expires: "60d" })).expiresAt).toBeGreaterThan(Date.now() + 59 * 86_400_000);
       expect((await pushManifest({ files: [{ path: "m3.html", sha256: await sha256Hex("91d") }], expires: "91d" })).status).toBe(400);
       // The default can't outgrow the max, from either side.
       expect((await patchApp({ defaultExpires: "14d", maxExpires: "7d" })).status).toBe(400);
-      expect(await (await patchApp({ defaultExpires: "14d" })).json()).toEqual({ defaultExpires: "14d", maxExpires: "90d", isolateSpaces: true });
+      expect(await (await patchApp({ defaultExpires: "14d" })).json()).toEqual({ defaultExpires: "14d", maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48 });
       expect((await patchApp({ maxExpires: "7d" })).status).toBe(400);
-      expect(await (await patchApp({ defaultExpires: "0" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d", isolateSpaces: true });
+      expect(await (await patchApp({ defaultExpires: "0" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48 });
       const { id } = await publish({ "m4.html": "patch" });
       await patchApp({ maxExpires: "1d" });
       expect((await api(`/api/docs/${id}`, { method: "PATCH", body: JSON.stringify({ expires: "2d" }) })).status).toBe(400);
       expect((await api(`/api/docs/${id}`, { method: "PATCH", body: JSON.stringify({ expires: null }) })).status).toBe(200);
     } finally {
       await patchApp({ defaultExpires: null, maxExpires: "30d" });
+    }
+  });
+
+  it("caps slugs at the owner's longest", async () => {
+    const patchApp = (body: object) => dash("/dashboard/api/settings", { method: "PATCH", headers: sameOrigin, body: JSON.stringify(body) });
+    const sha = await sha256Hex("long");
+    const withSlug = (slug: string) => pushManifest({ slug, password: "hunter22", files: [{ path: "l.html", sha256: sha }] });
+    try {
+      expect((await withSlug("a".repeat(49))).status).toBe(400);
+      for (const bad of [2, 129, 10.5, "60", null]) expect((await patchApp({ maxSlugLength: bad })).status).toBe(400);
+      expect(await (await patchApp({ maxSlugLength: 64 })).json()).toMatchObject({ maxSlugLength: 64 });
+      expect((await withSlug("a".repeat(64))).status).toBe(200);
+      expect((await withSlug("b".repeat(65))).status).toBe(400);
+      await patchApp({ maxSlugLength: 3 });
+      expect((await withSlug("abcd")).status).toBe(400);
+    } finally {
+      await patchApp({ maxSlugLength: 48 });
     }
   });
 

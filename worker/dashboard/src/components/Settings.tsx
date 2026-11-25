@@ -75,7 +75,9 @@ export function SpaceSelect({ id, value, onChange, describedBy, exclude }: { id?
  */
 export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () => void; onDeleted?: () => void }) {
   const id = useId();
-  const maxExpires = useLoad<AppSettings>("/settings").data?.maxExpires;
+  const app = useLoad<AppSettings>("/settings").data;
+  const maxExpires = app?.maxExpires;
+  const maxSlug = app?.maxSlugLength ?? 48;
   // An empty amount keeps the current expiry; 0 means never.
   const [amount, setAmount] = useState("");
   const [unit, setUnit] = useState("d");
@@ -135,9 +137,9 @@ export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () =>
           <span className="text-base text-muted-foreground md:text-sm" aria-hidden>
             /view/
           </span>
-          <input id={`${id}slug`} value={slug} onChange={(e) => setSlug(e.target.value)} maxLength={48} placeholder={d.id} autoComplete="off" autoCapitalize="none" spellCheck={false} aria-describedby={`${id}slug-hint`} className="h-full min-w-0 flex-1 bg-transparent pr-2.5 text-base outline-none placeholder:text-muted-foreground/70 md:text-sm" />
+          <input id={`${id}slug`} value={slug} onChange={(e) => setSlug(e.target.value)} maxLength={maxSlug} placeholder={d.id} autoComplete="off" autoCapitalize="none" spellCheck={false} aria-describedby={`${id}slug-hint`} className="h-full min-w-0 flex-1 bg-transparent pr-2.5 text-base outline-none placeholder:text-muted-foreground/70 md:text-sm" />
         </div>
-        <Hint id={`${id}slug-hint`}>A readable link instead of the random id. 3 to 48 lowercase letters, digits and hyphens. A slug is guessable, so it needs a password.</Hint>
+        <Hint id={`${id}slug-hint`}>A readable link instead of the random id. 3 to {maxSlug} lowercase letters, digits and hyphens. A slug is guessable, so it needs a password.</Hint>
       </Field>
       <Field label="Password" htmlFor={`${id}password`}>
         <Input id={`${id}password`} type="password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={unlock} autoComplete="new-password" placeholder={d.locked ? "Replace the password" : "None. Anyone with the link can read it"} aria-describedby={`${id}password-hint`} />
