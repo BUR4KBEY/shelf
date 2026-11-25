@@ -48,7 +48,7 @@ in
     worker-typecheck = {
       enable = true;
       name = "worker typecheck";
-      entry = "sh -c 'cd worker && pnpm run typecheck && pnpm run typecheck:dashboard'";
+      entry = "sh -c 'cd worker && pnpm run typecheck && pnpm run typecheck:dashboard && pnpm run typecheck:preview'";
       files = "^worker/.*\\.(ts|tsx|mts|cts|json|jsonc)$";
       pass_filenames = false;
       language = "system";
@@ -82,7 +82,9 @@ in
       cd "$DEVENV_ROOT/worker"
       pnpm run typecheck
       pnpm run typecheck:dashboard
+      pnpm run typecheck:preview
       pnpm test
+      pnpm run build:preview
     '';
     "shelf:check-cli".exec = ''
       set -euo pipefail
