@@ -1,5 +1,5 @@
 import { Fragment, useState, type ReactNode } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Star } from "lucide-react";
 import { code } from "@/components/bits";
 import { Hint } from "@/components/Settings";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,12 @@ export function About() {
     ["Built", when(BUILD.builtAt)],
     ["Built with", `Node.js ${BUILD.node}`],
     ["Runs on", `Cloudflare Workers, compatibility date ${BUILD.compatibilityDate ?? "unknown"}`],
+    [
+      "Source",
+      <a href={`https://github.com/${REPO}`} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+        github.com/{REPO}
+      </a>,
+    ],
   ];
   const commits = check.commits;
   return (
@@ -41,11 +47,17 @@ export function About() {
         ))}
       </dl>
       <div className="grid gap-2">
-        <div>
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={run} disabled={check.busy}>
             <RefreshCw className={cn(check.busy && "motion-safe:animate-spin")} aria-hidden /> Check for updates
           </Button>
+          <Button variant="outline" asChild>
+            <a href={`https://github.com/${REPO}`} target="_blank" rel="noreferrer">
+              <Star className="fill-current text-warning" aria-hidden /> Star on GitHub
+            </a>
+          </Button>
         </div>
+        <p className="text-sm text-muted-foreground">Finding shelf useful? A star on GitHub helps others find it too. ⭐</p>
         <div aria-live="polite" className="text-sm">
           {check.error && <p className="text-destructive">{check.error}</p>}
           {commits?.length === 0 && <p>Up to date with {REPO}.</p>}
