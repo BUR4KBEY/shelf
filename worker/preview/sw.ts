@@ -72,11 +72,13 @@ async function reset() {
   await store("state", "readwrite", (s) => s.clear());
 }
 
-const ctx = {
-  waitUntil: (p: Promise<unknown>) => void p.catch(console.error),
+const base = {
   passThroughOnException() { },
   access: { aud: "preview", getIdentity: async () => ({ email: "you@preview" }) },
-} as unknown as ExecutionContext;
+};
+
+/** Cookies that live seconds (the `owner` mark from opening a doc in the dashboard): kept in memory only, never saved. */
+const brief = new Map<string, { value: string; until: number }>();
 
 /**
  * The request as the Worker sees it. A service worker can't read the Cookie header, Origin or Content-Length, nor set
@@ -88,9 +90,12 @@ async function forWorker(req: Request, jar: Map<string, string>): Promise<Reques
   const headers = new Headers(req.headers);
   if (body) headers.set("content-length", String(body.byteLength));
   headers.set("origin", location.origin);
+  // Browsers leave it off a service worker's requests; view statistics count only requests that name a browser.
+  if (!headers.has("user-agent")) headers.set("user-agent", navigator.userAgent);
   // The page's own cookies (theme, palette) win over the jar's, which may hold an older theme from the Worker's pages.
   const page = (await cookieStore?.getAll().catch(() => [])) ?? [];
-  const cookies = new Map([...jar, ...page.map((c) => [c.name, c.value] as const)]);
+  const live = [...brief].filter(([, c]) => c.until > Date.now()).map(([k, c]) => [k, c.value] as const);
+  const cookies = new Map([...jar, ...live, ...page.map((c) => [c.name, c.value] as const)]);
   headers.set("cookie", [...cookies].map(([k, v]) => `${k}=${v}`).join("; "));
   Object.defineProperty(out, "headers", { value: headers });
   return out;
@@ -100,6 +105,8 @@ async function forWorker(req: Request, jar: Map<string, string>): Promise<Reques
 async function keep(jar: Map<string, string>, setCookie: string) {
   const [, name, value] = setCookie.match(/^([^=;]+)=([^;]*)/) ?? [];
   if (!name) return;
+  const maxAge = Number(setCookie.match(/;\s*max-age=(\d+)/i)?.[1]);
+  if (maxAge > 0 && maxAge <= 60) return void brief.set(name, { value, until: Date.now() + maxAge * 1000 });
   const gone = /;\s*max-age=0\b/i.test(setCookie);
   if (gone) jar.delete(name);
   else jar.set(name, value);
@@ -108,7 +115,8 @@ async function keep(jar: Map<string, string>, setCookie: string) {
 
 const ROUTES = /^\/(?:$|view\/|dashboard(?:\/|$)|font\/|theme\/|favicon\.svg$|llms\.txt$|api\/|mcp$|__preview\/)/;
 
-async function handle(req: Request, url: URL): Promise<Response> {
+/** `keepAlive` holds the service worker open for work the Worker left running (recording a view), which is then saved. */
+async function handle(req: Request, url: URL, keepAlive: (p: Promise<unknown>) => void): Promise<Response> {
   if (url.pathname.startsWith("/api/") || url.pathname === "/mcp") {
     return Response.json({ error: "the preview has no API or MCP server: upload from the dashboard" }, { status: 403 });
   }
@@ -129,7 +137,10 @@ async function handle(req: Request, url: URL): Promise<Response> {
       },
     });
   }
+  const pending: Promise<unknown>[] = [];
+  const ctx = { ...base, waitUntil: (p: Promise<unknown>) => void pending.push(p.catch(console.error)) } as unknown as ExecutionContext;
   const res = await worker.fetch(wreq, s.env, ctx);
+  if (pending.length) keepAlive(Promise.all(pending).then(() => save(s)));
   const set = setCookies.get(res) ?? [];
   for (const c of set) await keep(s.jar, c);
   if (set.length || (req.method !== "GET" && req.method !== "HEAD")) await save(s);
@@ -145,5 +156,5 @@ self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin || !ROUTES.test(url.pathname)) return;
-  e.respondWith(handle(e.request, url).catch((err) => new Response(`The preview failed: ${err}`, { status: 500, headers: { "content-type": "text/plain; charset=utf-8" } })));
+  e.respondWith(handle(e.request, url, (p) => e.waitUntil(p)).catch((err) => new Response(`The preview failed: ${err}`, { status: 500, headers: { "content-type": "text/plain; charset=utf-8" } })));
 });
