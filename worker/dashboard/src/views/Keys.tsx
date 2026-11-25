@@ -15,8 +15,12 @@ import { cn } from "@/lib/utils";
 const row = "grid w-full grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1.5 text-left";
 
 const agentInstructions = (key: string) =>
-  `Publish files with shelf at ${location.origin}. Read ${location.origin}/llms.txt for how, and use this API key: ${key}\n` +
-  `Or connect its MCP server: ${location.origin}/mcp (Streamable HTTP) with the header "Authorization: Bearer ${key}".`;
+  `Set up shelf (${location.origin}) so you can publish files. It needs these two environment variables:\n` +
+  `SHELF_URL=${location.origin}\n` +
+  `SHELF_KEY=${key}\n` +
+  `I'd like them exported in my shell profile (e.g. ~/.zshrc or ~/.bashrc) so every project and MCP client can read them. Ask me to approve that change before you make it. If I say no, ask where to put them instead; a .env at the project root works for llms.txt and the CLI but most MCP clients don't read it, and .gitignore must cover it.\n` +
+  `Then read ${location.origin}/llms.txt for how to publish. Never print the key or put it in a page you publish.\n` +
+  `If you use MCP, connect ${location.origin}/mcp (Streamable HTTP) with the header "Authorization: Bearer <SHELF_KEY>", referencing the variable in your MCP config in its own syntax rather than writing the key into it.`;
 
 /** The keys in the sidebar: each in its colour, with its last two weeks of uploads. A key opens its own page, where it can be revoked. Revoked keys are hidden until asked for. */
 export function KeyList({ keys, uploads, colorOf, openKey, onChanged, onNavigate }: { keys: Key[]; uploads: Activity[]; colorOf: (keyId: string | null) => string; openKey?: string; onChanged: () => void; onNavigate: () => void }) {
