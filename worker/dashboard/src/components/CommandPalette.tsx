@@ -3,6 +3,7 @@ import { ChartColumn, FileText, PanelLeft, Rows3, Settings } from "lucide-react"
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut } from "@/components/ui/command";
 import { nameOf, type Doc, type Key } from "@/lib/api";
 import { setPref, usePref } from "@/lib/prefs";
+import { SETTINGS_SECTIONS, sectionElementId } from "@/views/AppSettings";
 import { THEMES } from "@/views/Sidebar";
 
 /** `g` then one of these keys opens a page, like GitHub and Linear. */
@@ -46,6 +47,8 @@ export function CommandPalette(props: { open: boolean; onOpenChange: (open: bool
     action();
   };
   const go = (hash: string) => run(() => ((location.hash = hash), onNavigate()));
+  // Already on the page, the hash may not change, so scroll here too; AppSettingsView scrolls once it mounts.
+  const goSection = (id: string) => run(() => ((location.hash = `#/settings/${id}`), onNavigate(), document.getElementById(sectionElementId(id))?.scrollIntoView({ block: "start" })));
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} title="Command palette" description="Jump to a page, doc or key, or run a command">
@@ -59,6 +62,15 @@ export function CommandPalette(props: { open: boolean; onOpenChange: (open: bool
                 <Icon />
                 {label}
                 <CommandShortcut>G {key.toUpperCase()}</CommandShortcut>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+          <CommandGroup heading="Settings">
+            {SETTINGS_SECTIONS.map(([id, label, words]) => (
+              <CommandItem key={id} value={`settings > ${label}`} keywords={[...words]} onSelect={goSection(id)}>
+                <Settings />
+                <span className="text-muted-foreground">Settings ›</span>
+                {label}
               </CommandItem>
             ))}
           </CommandGroup>
