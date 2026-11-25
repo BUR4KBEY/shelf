@@ -16,6 +16,24 @@ export function progress(text: string, done: number, total: number) {
   toast.loading(text, { id: PROGRESS, duration: Infinity, description: <Progress value={total ? (done / total) * 100 : 0} aria-label={text} className="mt-1.5" /> });
 }
 
+/** Blob uploads in flight at once: each is a round trip plus an R2 write, so one at a time leaves the connection idle. */
+const PARALLEL_BLOBS = 8;
+
+/** PUTs each blob in `shas`, PARALLEL_BLOBS at a time; after a failure no new upload starts and the first error is thrown. */
+export async function uploadBlobs(shas: string[], body: (sha: string) => Blob) {
+  let next = 0;
+  let done = 0;
+  if (shas.length) progress(`Uploading ${plural(shas.length, "file")}…`, 0, shas.length);
+  const worker = async () => {
+    while (next < shas.length) {
+      const sha = shas[next++];
+      await api(`/blobs/${sha}`, { method: "PUT", body: body(sha) });
+      progress(`Uploading ${plural(shas.length, "file")}… ${++done} done`, done, shas.length);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PARALLEL_BLOBS, shas.length) }, () => worker().catch((e) => ((next = shas.length), Promise.reject(e)))));
+}
+
 const hex = (buf: ArrayBuffer) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 const visible = (path: string) => !path.split("/").some((s) => s.startsWith("."));
 
@@ -33,10 +51,7 @@ async function push(items: Item[], opts: { ref?: string; title?: string; message
   let res = await api<PushResult>("/push", request);
   if (res.missing) {
     const missing = res.missing.filter((sha) => blobs.has(sha));
-    for (const [i, sha] of missing.entries()) {
-      progress(`Uploading ${i + 1} of ${missing.length}…`, i, missing.length);
-      await api(`/blobs/${sha}`, { method: "PUT", body: blobs.get(sha) });
-    }
+    await uploadBlobs(missing, (sha) => blobs.get(sha)!);
     progress("Finishing…", 1, 1);
     res = await api<PushResult>("/push", request);
     if (res.missing) throw new Error("The server is still missing files. Try again.");
