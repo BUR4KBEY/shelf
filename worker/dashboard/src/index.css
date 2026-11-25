@@ -158,6 +158,21 @@
   }
 }
 
+/* The section a link or the command palette jumped to (lib/sections.ts): a ring that fades out. */
+.landed {
+  border-radius: 0.75rem;
+  animation: landed 1.6s ease-out;
+}
+@keyframes landed {
+  0%,
+  35% {
+    box-shadow: 0 0 0 8px color-mix(in oklab, var(--ring) 30%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+
 /* State variants the shadcn "nova" components use (from shadcn/tailwind.css, without pulling in the CLI as a dependency). */
 @custom-variant data-open {
   &:where([data-state="open"]),

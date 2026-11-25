@@ -1,4 +1,4 @@
-import { useContext, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useContext, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronLeft, Download, RefreshCw, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { About } from "@/components/About";
@@ -16,6 +16,7 @@ import { checkBackup, readBackup, restore, type Backup as BackupFile, type Backu
 import { BUILD } from "@/lib/build";
 import { ago, fullDate, nextDaily, plural, size } from "@/lib/format";
 import { PALETTES, setPref, usePref } from "@/lib/prefs";
+import { useLanding } from "@/lib/sections";
 import { PROGRESS } from "@/lib/upload";
 import { cn } from "@/lib/utils";
 import { THEMES } from "@/views/Sidebar";
@@ -36,11 +37,9 @@ export const SETTINGS_SECTIONS = [
 ] as const;
 type SectionId = (typeof SETTINGS_SECTIONS)[number][0];
 
-export const sectionElementId = (id: string) => `settings-${id}`;
-
 function Section({ id, children }: { id: SectionId; children: ReactNode }) {
   return (
-    <section id={sectionElementId(id)} className="grid scroll-mt-6 grid-cols-1 gap-2.5">
+    <section id={`settings-${id}`} className="grid scroll-mt-6 grid-cols-1 gap-2.5">
       <h2 className="text-base leading-none font-bold">{SETTINGS_SECTIONS.find(([s]) => s === id)![1]}</h2>
       {children}
     </section>
@@ -711,12 +710,7 @@ export function AppSettingsView({ section, onSpacesChanged }: { section?: string
   const { data, error } = useLoad<AppSettings>("/settings");
   const [saved, setSaved] = useState<AppSettings>();
   const s = saved ?? data;
-  const loaded = !!s;
-
-  // Most sections only render once the settings load, so try again then.
-  useEffect(() => {
-    if (section) document.getElementById(sectionElementId(section))?.scrollIntoView({ block: "start" });
-  }, [section, loaded]);
+  useLanding("settings", section, !!s);
 
   return (
     <div className="mx-auto grid max-w-[60rem] grid-cols-1 gap-7 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
