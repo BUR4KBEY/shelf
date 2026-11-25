@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { memo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { ChevronLeft, Copy, ExternalLink, EyeOff, ListChecks, Lock, LockOpen, Power, PowerOff } from "lucide-react";
 import { Loading, Problem, Time, chip, copy, dashed, display, focusRing, useLoad } from "@/components/bits";
@@ -20,7 +20,7 @@ const heading = "text-base leading-none font-bold";
 const LISTED = 50;
 
 /** One doc: its link, its settings, a place to add a version, and its whole history as a log. */
-export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyId: string | null) => string; onChanged: () => void }) {
+export const DocView = memo(function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyId: string | null) => string; onChanged: () => void }) {
   const { data: d, error, reload } = useLoad<DocDetail>(`/docs/${encodeURIComponent(id)}?tz=${new Date().getTimezoneOffset()}`);
   const message = useRef<HTMLInputElement>(null);
   // Versions picked to turn off or on. The current version can't be turned off, so it has no checkbox.
@@ -240,7 +240,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
       )}
     </div>
   );
-}
+});
 
 /** How many days of views the strip's bars cover, today last. */
 const STRIP_DAYS = 30;

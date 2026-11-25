@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { memo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { ChevronLeft, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Confirm, Loading, Problem, Time, chip, display, focusRing, useLoad } from "@/components/bits";
@@ -207,7 +207,7 @@ function QuotaForm({ k, used, onSaved }: { k: KeyDetail; used: number; onSaved: 
 type Props = { docs: Doc[]; colorOf: (keyId: string | null) => string; onChanged: () => void; onKeysChanged: () => void };
 
 /** One key: how much and how often it uploads, the docs it touched, and its uploads as a log. Revoking, then deleting, lives here. */
-export function KeyView({ id, ...props }: Props & { id: string }) {
+export const KeyView = memo(function KeyView({ id, ...props }: Props & { id: string }) {
   const { data: k, error, reload } = useLoad<KeyDetail>(`/keys/${encodeURIComponent(id)}`);
   return (
     <div style={{ "--k": props.colorOf(id) } as CSSProperties} className="mx-auto flex max-w-[60rem] flex-col gap-7 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
@@ -218,7 +218,7 @@ export function KeyView({ id, ...props }: Props & { id: string }) {
       {error ? <Problem error={error} /> : !k ? <Loading /> : <KeyPage k={k} reload={reload} {...props} />}
     </div>
   );
-}
+});
 
 function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props & { k: KeyDetail; reload: () => void }) {
   const [revoking, setRevoking] = useState(false);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Menu, PanelLeftOpen, Search, X } from "lucide-react";
 import { MotionConfig, animate, motion, useMotionValue, useReducedMotion, type MotionStyle } from "motion/react";
 import { Loading, Logo, Problem, Tip, display, focusRing, useLoad, useTitle } from "@/components/bits";
@@ -79,18 +79,19 @@ export function App() {
   const openDoc = docs.data?.find((d) => d.id === openId || d.slug === openId);
   useTitle(openDoc ? nameOf(openDoc) : openKey ? (keys.data?.find((k) => k.id === openKey)?.name ?? "") : settings ? "Settings" : analytics ? "Analytics" : "");
   const colors = useMemo(() => keyColors(keys.data ?? []), [keys.data]);
-  const colorOf = (keyId: string | null) => (keyId && colors.get(keyId)) || NO_KEY;
+  // Stable, so the memoized pages skip re-rendering when only the shell changes (folding the sidebar, the phone menu).
+  const colorOf = useCallback((keyId: string | null) => (keyId && colors.get(keyId)) || NO_KEY, [colors]);
   // Spaces count their docs, so they reload with them.
-  const changed = () => {
+  const changed = useCallback(() => {
     docs.reload();
     uploads.reload();
     spaces.reload();
-  };
+  }, [docs.reload, uploads.reload, spaces.reload]);
   // Deleting a space moves its keys too.
-  const spacesChanged = () => {
+  const spacesChanged = useCallback(() => {
     keys.reload();
     changed();
-  };
+  }, [keys.reload, changed]);
   const error = docs.error ?? uploads.error ?? keys.error;
 
   return (
