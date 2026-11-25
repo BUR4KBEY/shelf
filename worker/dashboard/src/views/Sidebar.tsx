@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Clock, Lock, Monitor, Moon, PanelLeftClose, Rows3, Settings, Star, Sun } from "lucide-react";
+import { ChartColumn, Clock, Lock, Monitor, Moon, PanelLeftClose, Rows3, Settings, Star, Sun } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Logo, Tip, display, focusRing, groupName } from "@/components/bits";
 import { isExpired } from "@/components/DocBits";
@@ -37,7 +37,7 @@ export function ThemeSwitch({ className }: { className?: string }) {
 }
 
 /** Every doc and every key, always in reach. The log shows what happened; this shows what there is. */
-export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; colorOf: (keyId: string | null) => string; openId?: string; openKey?: string; settings: boolean; email: string; onNavigate: () => void; onKeysChanged: () => void; onCollapse: () => void }) {
+export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; colorOf: (keyId: string | null) => string; openId?: string; openKey?: string; settings: boolean; analytics: boolean; email: string; onNavigate: () => void; onKeysChanged: () => void; onCollapse: () => void }) {
   const [showExpired, setShowExpired] = useState(false);
   const isOpen = (d: Doc) => d.id === props.openId || (d.slug !== null && d.slug === props.openId);
   const expired = props.docs.filter(isExpired).length;
@@ -56,9 +56,13 @@ export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; 
       </div>
 
       <nav aria-label="Docs" onClick={props.onNavigate}>
-        <a href="#/" aria-current={props.openId || props.openKey || props.settings ? undefined : "page"} className={cn(item, "-mx-2.5")}>
+        <a href="#/" aria-current={props.openId || props.openKey || props.settings || props.analytics ? undefined : "page"} className={cn(item, "-mx-2.5")}>
           <Rows3 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           All uploads
+        </a>
+        <a href="#/analytics" aria-current={props.analytics ? "page" : undefined} className={cn(item, "-mx-2.5 mt-px")}>
+          <ChartColumn className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          Analytics
         </a>
         <a href="#/settings" aria-current={props.settings ? "page" : undefined} className={cn(item, "-mx-2.5 mt-px mb-5")}>
           <Settings className="size-4 shrink-0 text-muted-foreground" aria-hidden />

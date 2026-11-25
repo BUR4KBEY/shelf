@@ -24,6 +24,17 @@ export type Space = { id: string; name: string; keysDelete: boolean; keysReadLoc
 /** A doc a key uploaded to: how often, how much, and when. `created` is 1 when the key made the doc. */
 export type KeyDoc = { docId: string; uploads: number; created: number; size: number; firstAt: number; lastAt: number };
 /**
+ * Every uploader's uploads, for the analytics page. A null `keyId` is the dashboard; an id no key has any more is a deleted key.
+ * `days`: uploads per local day (days since 1970) over the last two years. `keys`: all-time totals; `size` counts every version in full.
+ * `shared`: each uploader's share of the docs more than one uploader touched, newest first. `quotas`: the keys that have one.
+ */
+export type Analytics = {
+  days: { keyId: string | null; space: string; day: number; uploads: number }[];
+  keys: { keyId: string | null; space: string; uploads: number; docs: number; size: number; lastAt: number }[];
+  shared: { docId: string; keyId: string | null; uploads: number; lastAt: number }[];
+  quotas: { id: string; quota: number }[];
+};
+/**
  * A key with every doc it touched, its newest uploads (capped), and the time of each upload in the last 53 weeks.
  * `quota`: bytes its uploads may keep on the shelf, null for no limit. `strategy`: what an upload over it does.
  */
