@@ -166,7 +166,8 @@ type ImportDoc = {
 type ImportSpace = { id: string; name: string; keysDelete: boolean; keysReadLocked: boolean; createdAt: number };
 type ImportKey = { id: string; name: string; space: string; createdAt: number; lastUsedAt: number | null; revokedAt: number | null; quota: number | null; strategy: "reject" | "fifo" };
 
-const time = (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 0;
+// Not only integers: the try-it preview's sample data has fractional milliseconds, and SQLite keeps whatever it was given.
+const time = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0;
 const text = (v: unknown, max: number) => typeof v === "string" && v.length <= max;
 
 /** Why a doc from shelf.json can't be imported, or null. The file came from the owner, but it is still outside input. */
@@ -252,7 +253,7 @@ export async function importShelf(req: Request, env: Env): Promise<Response> {
   }
   if (
     !Array.isArray(keys) ||
-    !keys.every((k) => k && KEY_ID.test(k.id) && text(k.name, 200) && SPACE_ID.test(k.space) && time(k.createdAt) && (k.lastUsedAt === null || time(k.lastUsedAt)) && (k.revokedAt === null || time(k.revokedAt)) && (k.quota === null || time(k.quota)) && (k.strategy === "reject" || k.strategy === "fifo"))
+    !keys.every((k) => k && KEY_ID.test(k.id) && text(k.name, 200) && SPACE_ID.test(k.space) && time(k.createdAt) && (k.lastUsedAt === null || time(k.lastUsedAt)) && (k.revokedAt === null || time(k.revokedAt)) && (k.quota === null || (Number.isSafeInteger(k.quota) && k.quota >= 0)) && (k.strategy === "reject" || k.strategy === "fifo"))
   ) {
     return json({ error: "keys: bad entry" }, 400);
   }
