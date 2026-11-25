@@ -237,6 +237,18 @@ describe("slugs and passwords", () => {
     expect(await forged.text()).toContain('<html lang="en">');
   });
 
+  it("renders its pages and the favicon in the palette picked in the dashboard", async () => {
+    const page = await (await get("/view/nope", { headers: { accept: "text/html", cookie: "theme=dark; palette=teal" } })).text();
+    expect(page).toContain('<html lang="en" data-theme="dark" data-palette="teal">');
+    expect(page).toContain('href="/favicon.svg?palette=teal&theme=dark"');
+    // Only a palette the Worker knows, never one from the prototype.
+    expect(await (await get("/view/nope", { headers: { accept: "text/html", cookie: "palette=constructor" } })).text()).toContain('<html lang="en">');
+    const icon = await (await get("/favicon.svg?palette=teal&theme=dark")).text();
+    expect(icon).toContain(".a{fill:oklch(0.773 0.048 200)}");
+    expect(icon).not.toContain("prefers-color-scheme");
+    expect(await (await get("/favicon.svg")).text()).toContain("@media (prefers-color-scheme:dark){.i{fill:oklch(0.96 0.019 270)}");
+  });
+
   it("locks a doc until the password is given by header or form", async () => {
     const { id } = await publish({ "lock.html": "secret" }, { password: "hunter22" });
     const locked = await get(`/view/${id}`);
