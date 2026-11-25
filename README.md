@@ -153,13 +153,15 @@ curl -X DELETE -H "Authorization: Bearer $KEY" $U/api/docs/<ref>
 
 ## Develop
 
-The dev shell is managed with [devenv](https://devenv.sh). It provides Node 22 and Go.
+The dev shell is managed with [devenv](https://devenv.sh). It provides Node 22 and Go 1.27, and installs the Worker's npm packages on entry.
 
 ```sh
-devenv shell -- sh -c 'cd worker && npm install && npm run dev'   # :8787, dashboard signed in as you@localhost
-devenv shell -- sh -c 'cd worker && npm test && npm run typecheck && npm run typecheck:dashboard'
-devenv shell -- sh -c 'cd cli && go test ./...'
+devenv up -d      # Worker on :8787 (the next free port in another worktree), dashboard signed in as you@localhost
+devenv down
+devenv test       # everything CI checks: worker typecheck and tests, cli gofmt, vet and tests
 ```
+
+Entering the shell installs git hooks that run gofmt, `go vet`, the Worker typecheck and nixfmt on staged files before each commit.
 
 ### PR previews
 
