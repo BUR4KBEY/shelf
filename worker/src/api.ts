@@ -2,7 +2,8 @@ import { type Caller, hashPassword } from "./auth";
 import { docId, json, sha256Hex } from "./util";
 
 const SHA = /^[0-9a-f]{64}$/;
-const SLUG = /^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$/;
+const SLUG = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
+const SLUG_LIMIT = 128; // the longest slug length the owner may allow
 const MAX_FILES = 1000;
 const DAY = 86_400_000;
 const UNIT: Record<string, number> = { m: 60_000, h: 3_600_000, d: DAY, w: 7 * DAY };
@@ -43,12 +44,13 @@ const durationMs = (v: unknown) => {
 
 /**
  * App-wide settings, set from the dashboard. `defaultExpires` is the expiry a new doc gets when its push doesn't name one
- * (null: never); `maxExpires` is the longest expiry any doc may be given; `isolateSpaces` keeps each API key to its own space's docs.
+ * (null: never); `maxExpires` is the longest expiry any doc may be given; `isolateSpaces` keeps each API key to its own space's docs;
+ * `maxSlugLength` is the longest slug any doc may be given.
  */
-async function appSettings(env: Env): Promise<{ defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean }> {
+async function appSettings(env: Env): Promise<{ defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean; maxSlugLength: number }> {
   const { results } = await env.DB.prepare("SELECT key, value FROM settings").all<{ key: string; value: string }>();
   const s = Object.fromEntries(results.map((r) => [r.key, r.value]));
-  return { defaultExpires: s.default_expires ?? null, maxExpires: s.max_expires ?? "30d", isolateSpaces: s.isolate_spaces !== "0" };
+  return { defaultExpires: s.default_expires ?? null, maxExpires: s.max_expires ?? "30d", isolateSpaces: s.isolate_spaces !== "0", maxSlugLength: Number(s.max_slug_length ?? 48) };
 }
 
 export async function getAppSettings(env: Env): Promise<Response> {
@@ -56,18 +58,22 @@ export async function getAppSettings(env: Env): Promise<Response> {
 }
 
 export async function patchAppSettings(req: Request, env: Env): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { defaultExpires?: unknown; maxExpires?: unknown; isolateSpaces?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { defaultExpires?: unknown; maxExpires?: unknown; isolateSpaces?: unknown; maxSlugLength?: unknown } | null;
   if (!body || typeof body !== "object") return json({ error: "JSON object required" }, 400);
-  const { defaultExpires: d, maxExpires: max, isolateSpaces: iso } = body;
+  const { defaultExpires: d, maxExpires: max, isolateSpaces: iso, maxSlugLength: slugMax } = body;
   if (d !== undefined && !isOpt(d, (v) => durationMs(v) >= 0)) {
     return json({ error: "defaultExpires: a duration like 30m, 12h, 7d or 2w; 0 or null for never" }, 400);
   }
   if (max !== undefined && !(durationMs(max) > 0)) return json({ error: "maxExpires: a duration like 30m, 12h, 7d or 2w" }, 400);
   if (iso !== undefined && typeof iso !== "boolean") return json({ error: "isolateSpaces: boolean" }, 400);
+  if (slugMax !== undefined && !(Number.isInteger(slugMax) && (slugMax as number) >= 3 && (slugMax as number) <= SLUG_LIMIT)) {
+    return json({ error: `maxSlugLength: a whole number from 3 to ${SLUG_LIMIT}` }, 400);
+  }
   const next = await appSettings(env);
   if (d !== undefined) next.defaultExpires = durationMs(d) ? (d as string) : null; // null or a zero duration: never
   if (max !== undefined) next.maxExpires = max as string;
   if (iso !== undefined) next.isolateSpaces = iso;
+  if (slugMax !== undefined) next.maxSlugLength = slugMax as number;
   if (next.defaultExpires !== null && durationMs(next.defaultExpires) > durationMs(next.maxExpires)) {
     return json({ error: `the default expiry (${next.defaultExpires}) can't be longer than the longest allowed (${next.maxExpires})` }, 400);
   }
@@ -76,6 +82,7 @@ export async function patchAppSettings(req: Request, env: Env): Promise<Response
     next.defaultExpires === null ? env.DB.prepare("DELETE FROM settings WHERE key = 'default_expires'") : upsert.bind("default_expires", next.defaultExpires),
     upsert.bind("max_expires", next.maxExpires),
     upsert.bind("isolate_spaces", next.isolateSpaces ? "1" : "0"),
+    upsert.bind("max_slug_length", String(next.maxSlugLength)),
   ]);
   return json(next);
 }
@@ -97,8 +104,9 @@ interface Settings {
 async function settingsColumns(env: Env, s: Settings, doc: Doc | null, caller: Caller | null): Promise<Record<string, unknown> | Response> {
   if (typeof s.slug === "string") s.slug = s.slug.toLowerCase();
   if (!isOpt(s.title, (v) => typeof v === "string" && v.length <= 200)) return json({ error: "title: up to 200 chars" }, 400);
-  if (!isOpt(s.slug, (v) => typeof v === "string" && SLUG.test(v))) {
-    return json({ error: "slug: 3 to 48 chars of a-z, 0-9 and -, not starting or ending with -" }, 400);
+  const maxSlug = typeof s.slug === "string" ? (await appSettings(env)).maxSlugLength : 0;
+  if (!isOpt(s.slug, (v) => typeof v === "string" && v.length >= 3 && v.length <= maxSlug && SLUG.test(v))) {
+    return json({ error: `slug: 3 to ${maxSlug || "the allowed number of"} chars of a-z, 0-9 and -, not starting or ending with -` }, 400);
   }
   if (!isOpt(s.password, (v) => typeof v === "string" && v.length >= 8 && v.length <= 256)) {
     return json({ error: "password: 8 to 256 chars" }, 400);

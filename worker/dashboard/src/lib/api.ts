@@ -28,8 +28,11 @@ export type KeyDoc = { docId: string; uploads: number; created: number; size: nu
  * `quota`: bytes its uploads may keep on the shelf, null for no limit. `strategy`: what an upload over it does.
  */
 export type KeyDetail = Key & { docs: KeyDoc[]; uploads: Activity[]; times: number[]; quota: number | null; strategy: "reject" | "fifo" };
-/** `defaultExpires`: what a new doc gets when its upload names no expiry; null for never. `maxExpires`: the longest expiry any doc may get. `isolateSpaces`: keys see only their own space. */
-export type AppSettings = { defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean };
+/**
+ * `defaultExpires`: what a new doc gets when its upload names no expiry; null for never. `maxExpires`: the longest expiry any doc may get.
+ * `isolateSpaces`: keys see only their own space. `maxSlugLength`: the longest slug any doc may get.
+ */
+export type AppSettings = { defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean; maxSlugLength: number };
 
 export async function api<T>(path: string, { method = "GET", json, body }: { method?: string; json?: unknown; body?: Blob } = {}): Promise<T> {
   let res: Response;

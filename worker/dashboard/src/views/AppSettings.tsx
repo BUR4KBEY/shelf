@@ -103,6 +103,38 @@ function ExpiryForm({ saved, onSaved }: { saved: AppSettings; onSaved: (s: AppSe
   );
 }
 
+function SlugForm({ saved, onSaved }: { saved: AppSettings; onSaved: (s: AppSettings) => void }) {
+  const [max, setMax] = useState(String(saved.maxSlugLength));
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      onSaved(await api<AppSettings>("/settings", { method: "PATCH", json: { maxSlugLength: Number(max) } }));
+      toast.success("Settings saved");
+    } catch (err) {
+      toast.error(errorText(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="grid grid-cols-1 gap-x-4 gap-y-4 rounded-xl border bg-card p-4 sm:grid-cols-2">
+      <Field label="Longest slug allowed" htmlFor="f-max-slug">
+        <Input id="f-max-slug" type="number" inputMode="numeric" min={3} max={128} step={1} value={max} onChange={(e) => setMax(e.target.value)} required aria-describedby="f-max-slug-hint" />
+        <Hint id="f-max-slug-hint">From 3 to 128 characters. No upload or change can set a longer slug. Docs that already have a longer one keep it.</Hint>
+      </Field>
+      <div className="sm:col-span-2">
+        <Button type="submit" disabled={saving}>
+          Save changes
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 /**
  * A switch that flips at once and saves in the background, putting itself back if the save fails.
  * Its hint says what the current position means, so it changes with the switch. `subject` names it in the toast.
@@ -331,6 +363,10 @@ export function AppSettingsView({ onSpacesChanged }: { onSpacesChanged: () => vo
           <section className="grid grid-cols-1 gap-2.5">
             <h2 className="text-base leading-none font-bold">Expiry</h2>
             <ExpiryForm saved={s} onSaved={setSaved} />
+          </section>
+          <section className="grid grid-cols-1 gap-2.5">
+            <h2 className="text-base leading-none font-bold">Slugs</h2>
+            <SlugForm saved={s} onSaved={setSaved} />
           </section>
           <section className="grid grid-cols-1 gap-2.5">
             <h2 className="text-base leading-none font-bold">Spaces</h2>
