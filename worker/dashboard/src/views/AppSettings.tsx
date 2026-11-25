@@ -311,6 +311,9 @@ function Spaces({ settings, onSaved, onChanged }: { settings: AppSettings; onSav
       <Hint>
         Every key belongs to one space, and what it uploads goes there. Pick a key's space when you make it, or later on its page; move a doc from its settings. A key never reads another space's locked docs without the password. Here, in the dashboard, you see every space.
       </Hint>
+      <Hint>
+        Keys that work together go in the same space; a space is for keys that must not see each other's docs, such as a client's machine or a shared CI runner. To sort docs inside a space, use projects: agents name them when they upload. A machine that works in two spaces gets a key for each.
+      </Hint>
       <div className="rounded-xl border bg-card p-4">
         <Toggle
           label="Keep spaces apart"
