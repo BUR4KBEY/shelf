@@ -21,3 +21,5 @@ worker/selfhost/dist
 
 # cli
 cli/dist
+# nix build
+result
