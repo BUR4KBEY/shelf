@@ -1,5 +1,6 @@
-import { useRef, type ReactNode } from "react";
-import { ChevronLeft, Copy, ExternalLink, Lock, LockOpen } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
+import { ChevronLeft, Copy, ExternalLink, EyeOff, ListChecks, Lock, LockOpen, Power, PowerOff } from "lucide-react";
 import { Loading, Problem, Time, chip, copy, dashed, display, focusRing, useLoad } from "@/components/bits";
 import { Expiry, ProjectChip, SpaceChip, Star } from "@/components/DocBits";
 import { DropZone } from "@/components/DropZone";
@@ -7,7 +8,7 @@ import { Entry } from "@/components/Entry";
 import { Settings } from "@/components/Settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { nameOf, openUrl, type DocDetail } from "@/lib/api";
+import { api, errorText, nameOf, openUrl, type DocDetail } from "@/lib/api";
 import { byDay } from "@/lib/feed";
 import { ago, dayName, plural, size } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -20,9 +21,35 @@ const heading = "text-base leading-none font-bold";
 export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyId: string | null) => string; onChanged: () => void }) {
   const { data: d, error, reload } = useLoad<DocDetail>(`/docs/${encodeURIComponent(id)}?tz=${new Date().getTimezoneOffset()}`);
   const message = useRef<HTMLInputElement>(null);
+  // Versions picked to turn off or on. The current version can't be turned off, so it has no checkbox.
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [anchor, setAnchor] = useState<number | null>(null); // the version clicked last, where a shift-click range starts
   const changed = () => {
     reload();
     onChanged();
+  };
+  const older = d ? d.versions.filter((v) => v.n !== d.latest).map((v) => v.n) : [];
+  const chosen = d ? d.versions.filter((v) => picked.has(v.n)) : [];
+  /** Checks or unchecks a version; with shift, every version between the last one clicked and this one follows it. */
+  const toggle = (n: number, shift: boolean) => {
+    const on = !picked.has(n);
+    const [from, to] = [older.indexOf(anchor ?? -1), older.indexOf(n)];
+    const range = shift && from >= 0 ? older.slice(Math.min(from, to), Math.max(from, to) + 1) : [n];
+    setPicked(new Set(on ? [...picked, ...range] : [...picked].filter((x) => !range.includes(x))));
+    setAnchor(n);
+  };
+  const stopSelecting = () => (setSelecting(false), setPicked(new Set()), setAnchor(null));
+  const setDisabled = async (disabled: boolean) => {
+    const versions = chosen.filter((v) => !!v.disabled !== disabled).map((v) => v.n);
+    try {
+      await api(`/docs/${d!.id}/versions`, { method: "PATCH", json: { versions, disabled } });
+      toast.success(`${disabled ? "Turned off" : "Turned on"} ${plural(versions.length, "version")}`);
+      stopSelecting();
+    } catch (e) {
+      toast.error(errorText(e));
+    }
+    reload();
   };
 
   return (
@@ -110,7 +137,15 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
           </section>
 
           <section className="grid grid-cols-1 gap-5">
-            <h2 className={heading}>History</h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className={heading}>History</h2>
+              {/* Only worth a control once there is a version besides the current one. */}
+              {older.length > 0 && (
+                <Button variant="outline" size="sm" aria-pressed={selecting} onClick={() => (selecting ? stopSelecting() : setSelecting(true))}>
+                  <ListChecks /> {selecting ? "Done" : "Select"}
+                </Button>
+              )}
+            </div>
             {byDay(d.versions, (v) => String(v.n)).map(({ day, entries }) => (
               <div key={day} className="grid grid-cols-1 gap-2.5">
                 <h3 className={cn(display, "text-2xl leading-none")}>{dayName(day)}</h3>
@@ -121,11 +156,19 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                       color={colorOf(v.keyId)}
                       at={v.createdAt}
                       who={v.keyName ?? (v.keyId ? "A deleted key" : "You")}
+                      select={selecting && v.n !== d.latest ? { checked: picked.has(v.n), label: `Select version ${v.n}`, onToggle: (shift) => toggle(v.n, shift) } : undefined}
+                      onClick={selecting && v.n !== d.latest ? (e) => !(e.target as Element).closest("a, button, input") && toggle(v.n, e.shiftKey) : undefined}
                       did="uploaded"
                       title={
                         <p className="flex items-center gap-2 text-xl leading-tight font-bold">
                           Version {v.n}
                           {v.n === d.latest && <span className={cn(chip, "bg-primary text-primary-foreground")}>Current</span>}
+                          {v.disabled && (
+                            <span className={cn(chip, "bg-destructive/10 text-destructive")}>
+                              <EyeOff aria-hidden />
+                              Turned off
+                            </span>
+                          )}
                         </p>
                       }
                       message={v.message}
@@ -138,17 +181,39 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                         </>
                       }
                       actions={
-                        <Button variant="outline" size="sm" className="max-sm:h-9 max-sm:px-3" asChild>
-                          <a href={openUrl(d, v.n)} target="_blank" rel="noopener noreferrer" aria-label={`Open version ${v.n} in a new tab`}>
-                            <ExternalLink /> Open this version
-                          </a>
-                        </Button>
+                        // A turned-off version answers its link with "turned off", so there is nothing to open.
+                        !v.disabled && (
+                          <Button variant="outline" size="sm" className="max-sm:h-9 max-sm:px-3" asChild>
+                            <a href={openUrl(d, v.n)} target="_blank" rel="noopener noreferrer" aria-label={`Open version ${v.n} in a new tab`}>
+                              <ExternalLink /> Open this version
+                            </a>
+                          </Button>
+                        )
                       }
                     />
                   ))}
                 </div>
               </div>
             ))}
+            {selecting && (
+              <div role="toolbar" aria-label="Selected versions" className="sticky bottom-4 z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-card py-2 pr-2 pl-4 shadow-lg">
+                <p aria-live="polite" className="mr-auto text-sm font-semibold">
+                  {chosen.length ? `${plural(chosen.length, "version")} selected` : "Select versions to turn their links off or on. Shift-click selects a range."}
+                </p>
+                <Button variant="ghost" size="sm" onClick={() => setPicked(new Set(picked.size === older.length ? [] : older))}>
+                  {picked.size === older.length ? "Clear" : `Select all ${older.length} older`}
+                </Button>
+                <Button variant="outline" size="sm" disabled={!chosen.some((v) => !v.disabled)} onClick={() => setDisabled(true)}>
+                  <PowerOff /> Turn off
+                </Button>
+                <Button variant="outline" size="sm" disabled={!chosen.some((v) => v.disabled)} onClick={() => setDisabled(false)}>
+                  <Power /> Turn on
+                </Button>
+                <Button variant="outline" size="sm" onClick={stopSelecting}>
+                  Cancel
+                </Button>
+              </div>
+            )}
           </section>
         </>
       )}
