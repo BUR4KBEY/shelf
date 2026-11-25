@@ -241,6 +241,7 @@ function SpaceRow({ space, isolated, onChanged }: { space: Space; isolated: bool
           on={
             <>
               They can read this space's password-protected docs with the MCP tool <code className={code}>read_doc</code>, without being given the password.
+              {!isolated && " Locked docs in other spaces still need their password."}
             </>
           }
           off="They need the password to read a locked doc, like anyone with the link."
