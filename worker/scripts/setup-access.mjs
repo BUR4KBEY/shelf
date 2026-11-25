@@ -1,7 +1,7 @@
 // Puts Cloudflare Access in front of the shelf dashboard: one allow-policy for the given emails,
 // one self-hosted app for <domain>/dashboard. Safe to rerun: both are found by name and updated.
 //
-//   CLOUDFLARE_API_TOKEN=... npm run setup:access -- --domain shelf.example.com --email you@example.com
+//   CLOUDFLARE_API_TOKEN=... pnpm run setup:access -- --domain shelf.example.com --email you@example.com
 //
 // The token needs "Access: Apps and Policies → Edit". Set CLOUDFLARE_ACCOUNT_ID if it can see more than one account.
 import { parseArgs } from "node:util";
@@ -9,7 +9,7 @@ import { parseArgs } from "node:util";
 const { values: args } = parseArgs({ options: { domain: { type: "string" }, email: { type: "string", multiple: true } } });
 const token = process.env.CLOUDFLARE_API_TOKEN;
 if (!token || !args.domain || !args.email?.length) {
-  console.error("usage: CLOUDFLARE_API_TOKEN=... npm run setup:access -- --domain <host> --email <you@example.com> [--email ...]");
+  console.error("usage: CLOUDFLARE_API_TOKEN=... pnpm run setup:access -- --domain <host> --email <you@example.com> [--email ...]");
   process.exit(2);
 }
 const domain = args.domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");

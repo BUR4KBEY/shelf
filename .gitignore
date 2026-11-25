@@ -12,7 +12,7 @@ devenv.local.yaml
 # worker
 node_modules
 .wrangler
-# built from worker/dashboard by `npm run build`
+# built from worker/dashboard by `pnpm run build`
 worker/src/dashboard.html
 
 # cli
