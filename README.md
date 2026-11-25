@@ -12,9 +12,9 @@ Either click the button above, which creates the Worker, R2 bucket and D1 databa
 
 ```sh
 cd worker
-npm install
-npx wrangler login
-npm run deploy      # deploys (creating the bucket and database on first run), then applies D1 migrations
+pnpm install
+pnpm exec wrangler login
+pnpm run deploy    # deploys (creating the bucket and database on first run), then applies D1 migrations
 ```
 
 Then, in the Cloudflare dashboard:
@@ -23,7 +23,7 @@ Then, in the Cloudflare dashboard:
 2. **Protect the dashboard with Cloudflare Access.** With an API token that has *Access: Apps and Policies → Edit*:
 
    ```sh
-   CLOUDFLARE_API_TOKEN=... npm run setup:access -- --domain your-domain --email you@example.com
+   CLOUDFLARE_API_TOKEN=... pnpm run setup:access -- --domain your-domain --email you@example.com
    ```
 
    It creates (or updates) an allow-policy for your email and an Access app for `your-domain/dashboard`. Rerun it to change the emails. The Worker refuses `/dashboard` unless Access signed the request in, so `workers.dev` URLs can't reach it.
@@ -46,16 +46,16 @@ Then, in the Cloudflare dashboard:
 - **Spaces** (in Settings) keep keys apart. Each key belongs to one space, and its uploads land there. A key lists, reads, updates and deletes only its own space's docs; another space's docs are "not found" to it, and another space's slug is "taken". Everything starts in *Default*, so nothing changes until you add a second space. Per space you choose whether its keys may delete docs and read its password-protected docs without the password (MCP `read_doc`). Turning off *Keep spaces apart* lets every key reach every space; even then a key never skips another space's password. The dashboard sees every space: once there are two, each doc shows its space, a doc's settings move it to another space, and docs uploaded from the dashboard start in *Default*. Deleting a space moves its keys to a space you pick, and its docs too unless you choose to delete them; *Default* can't be deleted. Public `/view` links are not affected.
 - Upload by dropping a file or folder anywhere on the page. On a doc's page, a drop adds a version to that doc.
 
-The page source is in `worker/dashboard/`. It is built into one HTML file (`worker/src/dashboard.html`, not committed) that the Worker serves. `wrangler dev`, `wrangler deploy` and `npm test` build it first.
+The page source is in `worker/dashboard/`. It is built into one HTML file (`worker/src/dashboard.html`, not committed) that the Worker serves. `wrangler dev`, `wrangler deploy` and `pnpm test` build it first.
 
 ## First API key
 
-Mint keys in the dashboard under **Keys**. Without Access set up yet, you can insert one with wrangler instead (use `--local` instead of `--remote` for `npm run dev`):
+Mint keys in the dashboard under **Keys**. Without Access set up yet, you can insert one with wrangler instead (use `--local` instead of `--remote` for `pnpm run dev`):
 
 ```sh
 KEY="sk_$(openssl rand -hex 32)"
 HASH=$(printf %s "$KEY" | sha256sum | cut -d' ' -f1)
-npx wrangler d1 execute DB --remote --command \
+pnpm exec wrangler d1 execute DB --remote --command \
   "INSERT INTO api_keys (id, name, hash, created_at) VALUES ('k_$(openssl rand -hex 6)', 'bootstrap', '$HASH', unixepoch() * 1000)"
 echo "$KEY"   # shown once; only the hash is stored
 ```
@@ -153,7 +153,7 @@ curl -X DELETE -H "Authorization: Bearer $KEY" $U/api/docs/<ref>
 
 ## Develop
 
-The dev shell is managed with [devenv](https://devenv.sh). It provides Node 22 and Go 1.27, and installs the Worker's npm packages on entry.
+The dev shell is managed with [devenv](https://devenv.sh). It provides Node 26 (LTS), pnpm and Go 1.27, and installs the Worker's packages on entry.
 
 ```sh
 devenv up -d      # Worker on :8787 (the next free port in another worktree), dashboard signed in as you@localhost
@@ -173,7 +173,7 @@ Every deploy sets a `preview` commit status: pending while it deploys, then succ
 
 To set it up on your own deployment:
 
-1. Create the bucket and database (`npx wrangler r2 bucket create shelf-preview`, `npx wrangler d1 create shelf-preview`) and put the database ID in `previews.d1_databases` in `wrangler.jsonc` and in `wrangler.preview-migrations.jsonc`.
+1. Create the bucket and database (`pnpm exec wrangler r2 bucket create shelf-preview`, `pnpm exec wrangler d1 create shelf-preview`) and put the database ID in `previews.d1_databases` in `wrangler.jsonc` and in `wrangler.preview-migrations.jsonc`.
 2. Create an account API token limited to this account with *Workers* → **Editor** scoped to the `shelf` Worker only, and *D1* → **Edit**. It needs no R2 permission: deploying a binding doesn't need access to the bucket. D1 can't be scoped to one database yet, so the token can still edit every D1 database in the account; that is why fork PRs only deploy by hand. Add it and the account ID as repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 3. For the dashboard to work in previews, protect the Worker's previews with Access: Workers & Pages → shelf → Access → **Protect this Worker behind Access** → *Previews only*. Then set `previews.vars` in `wrangler.jsonc`: `ACCESS_TEAM_DOMAIN` (`<team>.cloudflareaccess.com`) and `ACCESS_AUD` (the Access app's audience tag). Cloudflare doesn't set `ctx.access` on preview URLs, so the Worker checks the Access token itself.
 
