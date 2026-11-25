@@ -310,7 +310,10 @@ describe("markdown", () => {
     expect(html).toContain("<h1>Hello</h1>");
     expect(html).not.toContain("<shelf-credit"); // not a browser
     const browser = (u: string) => get(u, { headers: { accept: "text/html" } });
-    expect(await (await browser(url)).text()).toContain("<shelf-credit");
+    const badged = await (await browser(url)).text();
+    expect(badged).toContain("<shelf-credit");
+    // No request of its own: behind Access, a sandboxed doc's fetch of /favicon.svg gets the login redirect.
+    expect(badged.slice(badged.indexOf("<shelf-credit"))).not.toMatch(/src="\//);
     const page = await publish({ "page.html": "<p>hi</p>" });
     expect(await (await get(page.url)).text()).toBe("<p>hi</p>");
     expect(await (await browser(page.url)).text()).toMatch(/^<p>hi<\/p><shelf-credit/);

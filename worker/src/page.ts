@@ -11,6 +11,9 @@ const FONTS: Record<string, ArrayBuffer> = { latin, "latin-ext": latinExt };
 /** shelf's source; the credit badge, the 404 page and the API's 404 link here. Also `REPO` in dashboard/src/lib/build.ts. */
 export const REPO_URL = "https://github.com/BUR4KBEY/shelf";
 
+// The logo inline, not <img src="/favicon.svg">: a sandboxed doc fetches as an opaque origin, so behind Access (a PR preview, or an owner
+// who put the whole domain behind it) that request carries no sign-in cookie and the image breaks. Its own <style> follows the system theme.
+const LOGO = faviconSvg.replace(/<title>.*?<\/title>/, "").replace("<svg ", '<svg aria-hidden="true" ');
 /**
  * The "Shared with shelf" badge, pinned to the bottom-right corner of HTML and Markdown docs while `credit` is on. Appended after the
  * doc's own markup: a declarative shadow root keeps the doc's CSS and the badge's apart, and needs no script to show. The close button
@@ -20,10 +23,10 @@ export const CREDIT_BADGE = `<shelf-credit style="all:initial;position:fixed;rig
 div{display:flex;align-items:center;gap:2px;padding:2px 2px 2px 10px;border:1px solid rgb(0 0 0/.08);border-radius:999px;background:rgb(255 255 255/.85);backdrop-filter:blur(8px);box-shadow:0 1px 3px rgb(0 0 0/.08);font:500 12px/1 system-ui,sans-serif;color:#4b5068;opacity:.75;transition:opacity .15s}
 div:hover,div:focus-within{opacity:1}
 a{display:flex;align-items:center;gap:6px;color:inherit;text-decoration:none}a:hover b{text-decoration:underline}b{color:#1c1f33}
-img{width:14px;height:14px}
+svg{width:14px;height:14px;flex:none}
 button{all:unset;display:grid;place-items:center;width:20px;height:20px;border-radius:999px;cursor:pointer;font-size:14px}button:hover,button:focus-visible{background:rgb(0 0 0/.06)}
 @media (prefers-color-scheme:dark){div{border-color:rgb(255 255 255/.1);background:rgb(24 26 40/.85);color:#a9adc4}b{color:#f2f3f8}button:hover,button:focus-visible{background:rgb(255 255 255/.1)}}
-</style><div><a href="${REPO_URL}" target="_blank" rel="noopener"><img src="/favicon.svg" alt="">Shared with <b>shelf</b></a><button type="button" aria-label="Hide" onclick="this.getRootNode().host.remove()">×</button></div></template></shelf-credit>`;
+</style><div><a href="${REPO_URL}" target="_blank" rel="noopener">${LOGO}Shared with <b>shelf</b></a><button type="button" aria-label="Hide" onclick="this.getRootNode().host.remove()">×</button></div></template></shelf-credit>`;
 
 /** GET /font/<name>.woff2. Public and CORS-open: a sandboxed doc has an opaque origin, so its font request is cross-origin. */
 export function font(name: string): Response | undefined {
