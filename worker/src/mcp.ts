@@ -16,6 +16,10 @@ const settings = {
   password: { type: ["string", "null"], description: "Readers must enter it (8+ characters). null removes it." },
   expires: { type: ["string", "null"], description: "30m, 12h, 7d, 2w, up to the owner's limit; \"0\" or null for never." },
   title: { type: "string" },
+  project: {
+    type: ["string", "null"],
+    description: "Groups docs in your space, e.g. one per thing you build. Reuse a name list_docs shows; a new name starts a new project. A new version keeps the doc's project unless you pass one. \"\" or null removes it.",
+  },
 };
 const ref = { type: "string", description: "Doc id or slug." };
 
@@ -61,11 +65,15 @@ const TOOLS = [
       required: ["ref"],
     },
   },
-  { name: "list_docs", description: "List the docs in your space, favorites first.", inputSchema: { type: "object", properties: {} } },
+  {
+    name: "list_docs",
+    description: "List the docs in your space, favorites first, each with its project.",
+    inputSchema: { type: "object", properties: { project: { type: "string", description: "Only this project's docs." } } },
+  },
   { name: "get_doc", description: "A doc's settings and version history.", inputSchema: { type: "object", properties: { ref }, required: ["ref"] } },
   {
     name: "update_doc",
-    description: "Change a doc's slug, password, expiry, title or favorite flag.",
+    description: "Change a doc's slug, password, expiry, title, project or favorite flag.",
     inputSchema: { type: "object", properties: { ref, ...settings, favorite: { type: "boolean" } }, required: ["ref"] },
   },
   { name: "delete_doc", description: "Delete a doc and every version of it.", inputSchema: { type: "object", properties: { ref }, required: ["ref"] } },
@@ -159,7 +167,7 @@ async function callTool(req: Request, env: Env, caller: Caller, name: unknown, a
     case "read_doc":
       return readDoc(env, caller, args);
     case "list_docs":
-      return fromApi(await listDocs(req, env, caller.scope));
+      return fromApi(await listDocs(req, env, caller.scope, typeof args.project === "string" && args.project ? args.project : null));
     case "get_doc":
       return fromApi(await getDoc(req, env, r, caller.scope));
     case "update_doc": {

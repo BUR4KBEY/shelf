@@ -359,6 +359,23 @@ describe("docs api", () => {
       [a.id, 1, null, "test", 1],
     ]);
   });
+
+  it("groups docs into projects that exist while a doc names them", async () => {
+    const a = await publish({ "a.html": "plan" }, { project: " Billing-POC " });
+    // Another case joins the same project; a new version without one keeps it.
+    const b = await publish({ "b.html": "notes" }, { project: "billing-poc" });
+    await publish({ "a.html": "plan v2" }, { ref: a.id });
+    await publish({ "c.html": "other" }, { project: "search" });
+    const list = async (q: string) => ((await (await api(`/api/docs${q}`)).json()) as { id: string; project: string | null }[]).map((d) => [d.id, d.project]);
+    expect(await list("?project=BILLING-poc")).toEqual([[a.id, "Billing-POC"], [b.id, "Billing-POC"]]);
+
+    const mcp = (await (await exports.default.fetch(`${BASE}/mcp`, { method: "POST", headers: AUTH, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "list_docs", arguments: { project: "search" } } }) })).json()) as { result: { content: { text: string }[] } };
+    expect((JSON.parse(mcp.result.content[0].text) as { project: string }[]).map((d) => d.project)).toEqual(["search"]);
+
+    expect(await (await api(`/api/docs/${b.id}`, { method: "PATCH", body: JSON.stringify({ project: "" }) })).json()).toMatchObject({ project: null });
+    expect(await list("?project=billing-poc")).toEqual([[a.id, "Billing-POC"]]);
+    expect((await api(`/api/docs/${a.id}`, { method: "PATCH", body: JSON.stringify({ project: "x".repeat(65) }) })).status).toBe(400);
+  });
 });
 
 describe("dashboard", () => {
