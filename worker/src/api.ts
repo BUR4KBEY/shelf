@@ -491,24 +491,60 @@ export async function bulkDocs(req: Request, env: Env, caller: Caller | null): P
 }
 
 /**
- * Daily cron: drops expired docs, then deletes blobs no version references.
- * Blobs uploaded in the last day are kept so a push in progress never loses its uploads.
- * shortcut: a day-old orphan blob re-pushed in the same second the sweep deletes it is lost; fine for one owner.
+ * One cleanup run: when, what started it, how long it took, and what it deleted. `bytes` counts the deleted blobs.
+ * `error` is set when the run failed; the counts are then what it deleted before failing.
  */
-export async function sweep(env: Env, now = Date.now()): Promise<void> {
-  await env.DB.prepare("DELETE FROM docs WHERE expires_at IS NOT NULL AND expires_at <= ?").bind(now).run();
-  let cursor: string | undefined;
-  do {
-    const page = await env.BUCKET.list({ prefix: "docs/", cursor });
-    const old = page.objects.filter((o) => o.uploaded.getTime() < now - DAY).map((o) => o.key.slice("docs/".length));
-    if (old.length) {
-      const { results } = await env.DB.prepare("SELECT DISTINCT sha256 FROM files WHERE sha256 IN (SELECT value FROM json_each(?))")
-        .bind(JSON.stringify(old))
-        .all<{ sha256: string }>();
-      const used = new Set(results.map((r) => r.sha256));
-      const dead = old.filter((s) => !used.has(s)).map((s) => `docs/${s}`);
-      if (dead.length) await env.BUCKET.delete(dead);
-    }
-    cursor = page.truncated ? page.cursor : undefined;
-  } while (cursor);
+export type Cleanup = { at: number; trigger: "daily" | "manual"; ms: number; docs: number; blobs: number; bytes: number; error?: string };
+const RUNS_KEPT = 10;
+
+/** The newest cleanup runs first, at most RUNS_KEPT. Kept in the settings table, so it needs no migration and no backup carries it. */
+async function cleanupRuns(env: Env): Promise<Cleanup[]> {
+  const v = await env.DB.prepare("SELECT value FROM settings WHERE key = 'cleanup_runs'").first<string>("value");
+  return v ? (JSON.parse(v) as Cleanup[]) : [];
+}
+
+/** What Settings → Cleanup shows: the latest runs, and how many expired docs the next run would delete. */
+export async function cleanupStatus(env: Env): Promise<{ runs: Cleanup[]; expired: number }> {
+  const [runs, expired] = await Promise.all([
+    cleanupRuns(env),
+    env.DB.prepare("SELECT COUNT(*) AS n FROM docs WHERE expires_at IS NOT NULL AND expires_at <= ?").bind(Date.now()).first<number>("n"),
+  ]);
+  return { runs, expired: expired ?? 0 };
+}
+
+/**
+ * Daily cron, or the dashboard's Run now: drops expired docs, then deletes blobs no version references, and records the run,
+ * failed or not. Blobs uploaded in the last day are kept so a push in progress never loses its uploads.
+ * shortcut: a day-old orphan blob re-pushed in the same second the sweep deletes it is lost; fine for one owner.
+ * shortcut: a run killed by the Workers CPU limit records nothing; the dashboard's overdue warning catches a cron that keeps dying.
+ */
+export async function sweep(env: Env, now = Date.now(), trigger: Cleanup["trigger"] = "daily"): Promise<Cleanup> {
+  const started = Date.now();
+  const run: Cleanup = { at: started, trigger, ms: 0, docs: 0, blobs: 0, bytes: 0 };
+  try {
+    const expired = await env.DB.prepare("DELETE FROM docs WHERE expires_at IS NOT NULL AND expires_at <= ?").bind(now).run();
+    run.docs = expired.meta.changes ?? 0;
+    let cursor: string | undefined;
+    do {
+      const page = await env.BUCKET.list({ prefix: "docs/", cursor });
+      const old = new Map(page.objects.filter((o) => o.uploaded.getTime() < now - DAY).map((o) => [o.key.slice("docs/".length), o.size]));
+      if (old.size) {
+        const { results } = await env.DB.prepare("SELECT DISTINCT sha256 FROM files WHERE sha256 IN (SELECT value FROM json_each(?))")
+          .bind(JSON.stringify([...old.keys()]))
+          .all<{ sha256: string }>();
+        for (const r of results) old.delete(r.sha256);
+        if (old.size) await env.BUCKET.delete([...old.keys()].map((s) => `docs/${s}`));
+        run.blobs += old.size;
+        for (const n of old.values()) run.bytes += n;
+      }
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+  } catch (e) {
+    run.error = e instanceof Error ? e.message : String(e);
+  }
+  run.ms = Date.now() - started;
+  // shortcut: read-modify-write, so a manual run finishing in the same instant as the cron can drop one entry; fine for one owner.
+  const runs = [run, ...(await cleanupRuns(env))].slice(0, RUNS_KEPT);
+  await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('cleanup_runs', ?1) ON CONFLICT (key) DO UPDATE SET value = ?1").bind(JSON.stringify(runs)).run();
+  return run;
 }

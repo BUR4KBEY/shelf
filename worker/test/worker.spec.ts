@@ -2,7 +2,7 @@ import { env, exports } from "cloudflare:workers";
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "../src/util";
-import { sweep } from "../src/api";
+import { cleanupStatus, sweep } from "../src/api";
 import worker from "../src";
 
 const BASE = "https://shelf.test";
@@ -319,7 +319,9 @@ describe("expiry, delete and sweep", () => {
     expect((await get(`/view/${id}`)).status).toBe(200);
     await env.DB.prepare("UPDATE docs SET expires_at = 1 WHERE id = ?").bind(id).run();
     expect((await get(`/view/${id}`)).status).toBe(410);
-    await sweep(env);
+    expect((await cleanupStatus(env)).expired).toBeGreaterThanOrEqual(1);
+    expect((await sweep(env)).docs).toBeGreaterThanOrEqual(1);
+    expect((await cleanupStatus(env)).expired).toBe(0);
     expect((await get(`/view/${id}`)).status).toBe(404);
     expect(await env.DB.prepare("SELECT COUNT(*) AS c FROM files WHERE doc_id = ?").bind(id).first("c")).toBe(0);
   });
@@ -344,10 +346,28 @@ describe("expiry, delete and sweep", () => {
     expect((await api(`/api/docs/${gone.id}`, { method: "DELETE" })).status).toBe(204);
     expect((await get(`/view/${gone.id}/`)).status).toBe(404);
 
-    await sweep(env, Date.now() + 2 * 86_400_000);
+    const run = await sweep(env, Date.now() + 2 * 86_400_000, "manual");
+    expect(run.trigger).toBe("manual");
+    expect(run.blobs).toBeGreaterThanOrEqual(1);
+    expect(run.bytes).toBeGreaterThanOrEqual("only here".length);
+    expect((await cleanupStatus(env)).runs[0]).toEqual(run);
     expect(await env.BUCKET.head(`docs/${await sha256Hex("only here")}`)).toBeNull();
     expect(await env.BUCKET.head(`docs/${await sha256Hex("shared bytes")}`)).not.toBeNull();
     expect(await (await get(shared.url)).text()).toBe("shared bytes");
+  });
+
+  it("records a failed cleanup with what it deleted before, and keeps the last 10 runs", async () => {
+    const { id } = await publish({ "fail.html": "fail" });
+    await env.DB.prepare("UPDATE docs SET expires_at = 1 WHERE id = ?").bind(id).run();
+    vi.spyOn(env.BUCKET, "list").mockRejectedValueOnce(new Error("R2 is down"));
+    const failed = await sweep(env);
+    expect(failed).toMatchObject({ trigger: "daily", error: "R2 is down", blobs: 0 });
+    expect(failed.docs).toBeGreaterThanOrEqual(1);
+    expect((await cleanupStatus(env)).runs[0]).toEqual(failed);
+    for (let i = 0; i < 10; i++) await sweep(env, Date.now(), "manual");
+    const { runs } = await cleanupStatus(env);
+    expect(runs).toHaveLength(10);
+    expect(runs.every((r) => r.trigger === "manual" && !r.error)).toBe(true);
   });
 });
 
