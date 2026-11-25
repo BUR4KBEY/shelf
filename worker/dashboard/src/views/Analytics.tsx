@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { nameOf, type Analytics, type Doc, type Key } from "@/lib/api";
 import { NO_KEY } from "@/lib/feed";
 import { ago, dayName, longDate, plural, size } from "@/lib/format";
+import { useLanding } from "@/lib/sections";
 import { cn } from "@/lib/utils";
 import { DAY, Heatmap, PERIODS, PeriodPicker, Stat, heading, type Period } from "@/views/Key";
 
@@ -18,6 +19,17 @@ const NEAR = 0.8;
 const DASHBOARD = "";
 const DELETED = "?";
 
+/** The page's sections, in page order: id (`#/analytics/<id>`), heading, and extra words the command palette matches. */
+export const ANALYTICS_SECTIONS = [
+  ["uploads", "Uploads by key", ["per day", "per week", "chart", "activity"]],
+  ["keys", "Keys", ["table", "change", "uploaders"]],
+  ["views", "Views", ["readers", "most read", "unread", "traffic"]],
+  ["storage", "Storage", ["quota", "size", "kept", "space used"]],
+  ["shared", "Shared docs", ["shared", "handoff", "collaboration"]],
+  ["idle", "Idle keys", ["unused", "inactive", "revoke"]],
+  ["last-year", "Last year", ["heatmap", "calendar", "year"]],
+] as const;
+
 /** Anyone who uploads, with their uploads per day (oldest first, the last is today) and all-time totals. */
 type Uploader = { id: string; name: string; color: string; key?: Key; counts: number[]; uploads: number; docs: number; size: number; lastAt: number | null };
 
@@ -25,10 +37,14 @@ const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
 type Props = { keys: Key[]; docs: Doc[]; colorOf: (keyId: string | null) => string };
 
-/** Every key's uploads side by side: who uploads how much and when, what they keep, which docs they share, and which keys sit idle. */
-export function AnalyticsView(props: Props) {
+/**
+ * Every key's uploads side by side: who uploads how much and when, what they keep, which docs they share, and which keys sit idle.
+ * `section` (from `#/analytics/<section>`) scrolls to that section once it renders; `query` holds the filters, `space` and `key`.
+ */
+export function AnalyticsView({ section, query, ...props }: Props & { section?: string; query?: string }) {
   const tz = new Date().getTimezoneOffset();
   const { data, error } = useLoad<Analytics>(`/analytics?tz=${tz}`);
+  useLanding("analytics", section, !!data);
   return (
     <div className="mx-auto grid max-w-[60rem] grid-cols-1 gap-7 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
       <a href="#/" className={cn(focusRing, "-ml-1 flex w-fit items-center gap-0.5 text-sm text-muted-foreground hover:text-foreground")}>
@@ -36,16 +52,24 @@ export function AnalyticsView(props: Props) {
         All uploads
       </a>
       <h1 className={cn(display, "text-5xl leading-[0.95]")}>Analytics</h1>
-      {error ? <Problem error={error} /> : !data ? <Loading /> : <AnalyticsPage a={data} today={Math.floor((Date.now() - tz * 60_000) / DAY)} {...props} />}
+      {error ? <Problem error={error} /> : !data ? <Loading /> : <AnalyticsPage a={data} today={Math.floor((Date.now() - tz * 60_000) / DAY)} query={query} {...props} />}
     </div>
   );
 }
 
-function AnalyticsPage({ a, today, keys, docs, colorOf }: Props & { a: Analytics; today: number }) {
+function AnalyticsPage({ a, today, query, keys, docs, colorOf }: Props & { a: Analytics; today: number; query?: string }) {
   const spaces = useContext(SpacesContext) ?? [];
-  const [space, setSpace] = useState("*"); // "*": every space
+  // The filters live in the link, so the command palette can set them and a copied link keeps them.
+  const params = new URLSearchParams(query);
+  const space = params.get("space") ?? "*"; // "*": every space
+  const only = params.get("key");
+  const setFilter = (name: "space" | "key", value: string | null) => {
+    if (value === null || value === "*") params.delete(name);
+    else params.set(name, value);
+    const q = String(params);
+    location.replace(`#/analytics${q && `?${q}`}`);
+  };
   const [period, setPeriod] = useState(PERIODS[1]);
-  const [only, setOnly] = useState<string | null>(null);
   const inSpace = (s: string) => space === "*" || s === space;
 
   const known = new Map(keys.map((k) => [k.id, k]));
@@ -107,7 +131,7 @@ function AnalyticsPage({ a, today, keys, docs, colorOf }: Props & { a: Analytics
         <PeriodPicker period={period} onChange={setPeriod} />
         {/* Only worth a control once there are two spaces to tell apart. */}
         {spaces.length > 1 && (
-          <Select value={space} onValueChange={setSpace}>
+          <Select value={space} onValueChange={(v) => setFilter("space", v)}>
             <SelectTrigger aria-label="Space" className="ml-auto">
               <SelectValue />
             </SelectTrigger>
@@ -130,7 +154,7 @@ function AnalyticsPage({ a, today, keys, docs, colorOf }: Props & { a: Analytics
         <Stat label="Kept" value={size(kept)} note="every version still on the shelf" />
       </section>
 
-      <section aria-labelledby="per-key-name" className="grid grid-cols-1 gap-3">
+      <section id="analytics-uploads" aria-labelledby="per-key-name" className="grid scroll-mt-6 grid-cols-1 gap-3">
         <h2 id="per-key-name" className={heading}>
           Uploads per {period.step === 1 ? "day" : "week"}, by key
         </h2>
@@ -144,7 +168,7 @@ function AnalyticsPage({ a, today, keys, docs, colorOf }: Props & { a: Analytics
                   key={u.id}
                   type="button"
                   aria-pressed={pick === u.id}
-                  onClick={() => setOnly(pick === u.id ? null : u.id)}
+                  onClick={() => setFilter("key", pick === u.id ? null : u.id)}
                   className={cn(focusRing, "flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[0.8125rem] font-semibold text-muted-foreground hover:text-foreground", pick === u.id && "bg-card text-foreground shadow-[0_0_0_1px_var(--border)]", pick !== null && pick !== u.id && "opacity-50")}
                 >
                   <i className="size-2.5 rounded-full" style={{ background: u.color }} aria-hidden />
@@ -156,7 +180,7 @@ function AnalyticsPage({ a, today, keys, docs, colorOf }: Props & { a: Analytics
         )}
       </section>
 
-      <section aria-labelledby="keys-table-name" className="grid grid-cols-1 gap-2.5">
+      <section id="analytics-keys" aria-labelledby="keys-table-name" className="grid scroll-mt-6 grid-cols-1 gap-2.5">
         <h2 id="keys-table-name" className={heading}>
           Keys
         </h2>
@@ -226,7 +250,7 @@ function AnalyticsPage({ a, today, keys, docs, colorOf }: Props & { a: Analytics
 
       <Views a={a} today={today} period={period} inSpace={inSpace} docById={docById} />
 
-      <section aria-labelledby="storage-name" className="grid grid-cols-1 gap-2.5">
+      <section id="analytics-storage" aria-labelledby="storage-name" className="grid scroll-mt-6 grid-cols-1 gap-2.5">
         <h2 id="storage-name" className={heading}>
           Storage
         </h2>
@@ -256,7 +280,7 @@ function AnalyticsPage({ a, today, keys, docs, colorOf }: Props & { a: Analytics
         </div>
       </section>
 
-      <section aria-labelledby="shared-name" className="grid grid-cols-1 gap-2.5">
+      <section id="analytics-shared" aria-labelledby="shared-name" className="grid scroll-mt-6 grid-cols-1 gap-2.5">
         <h2 id="shared-name" className={heading}>
           Shared docs
         </h2>
@@ -293,7 +317,7 @@ function AnalyticsPage({ a, today, keys, docs, colorOf }: Props & { a: Analytics
         )}
       </section>
 
-      <section aria-labelledby="idle-name" className="grid grid-cols-1 gap-2.5">
+      <section id="analytics-idle" aria-labelledby="idle-name" className="grid scroll-mt-6 grid-cols-1 gap-2.5">
         <h2 id="idle-name" className={heading}>
           Idle keys
         </h2>
@@ -325,7 +349,7 @@ function AnalyticsPage({ a, today, keys, docs, colorOf }: Props & { a: Analytics
         )}
       </section>
 
-      <section className="grid grid-cols-1 gap-2.5" style={{ "--k": pick === null ? "var(--ring)" : shown[0].color } as CSSProperties}>
+      <section id="analytics-last-year" className="grid scroll-mt-6 grid-cols-1 gap-2.5" style={{ "--k": pick === null ? "var(--ring)" : shown[0].color } as CSSProperties}>
         <h2 className={heading}>Last year{pick !== null && `: ${shown[0].name}`}</h2>
         <Heatmap countsFor={(n) => shown.reduce((acc, u) => acc.map((c, i) => c + u.counts[SPAN - n + i]), new Array<number>(n).fill(0))} />
       </section>
@@ -362,7 +386,7 @@ function Views({ a, today, period, inSpace, docById }: { a: Analytics; today: nu
   const bars: Uploader = { id: "views", name: "Views", color: "var(--ring)", counts, uploads: 0, docs: 0, size: 0, lastAt: null };
 
   return (
-    <section aria-labelledby="views-name" className="grid grid-cols-1 gap-3">
+    <section id="analytics-views" aria-labelledby="views-name" className="grid scroll-mt-6 grid-cols-1 gap-3">
       <h2 id="views-name" className={heading}>
         Views
       </h2>
