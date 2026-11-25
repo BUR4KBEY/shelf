@@ -58,9 +58,9 @@ export type KeyDetail = Key & { docs: KeyDoc[]; uploads: Activity[]; times: numb
 export type AppSettings = { defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean; maxSlugLength: number; viewStats: boolean; linkPreviews: boolean };
 /**
  * One cleanup run: when (`at`), whether the daily cron or Run now started it, how long it took, and the expired docs and unused files
- * (`bytes` in all) it deleted. `error`: why it failed; the counts are then what it deleted before.
+ * (`bytes` in all) it deleted. `error`: why it failed; the counts are then what it deleted before. `cron`: the schedule a daily run ran on.
  */
-export type Cleanup = { at: number; trigger: "daily" | "manual"; ms: number; docs: number; blobs: number; bytes: number; error?: string };
+export type Cleanup = { at: number; trigger: "daily" | "manual"; cron?: string; ms: number; docs: number; blobs: number; bytes: number; error?: string };
 /** The newest runs first (up to 10), and how many expired docs the next run would delete. */
 export type CleanupStatus = { runs: Cleanup[]; expired: number };
 

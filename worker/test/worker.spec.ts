@@ -356,6 +356,11 @@ describe("expiry, delete and sweep", () => {
     expect(await (await get(shared.url)).text()).toBe("shared bytes");
   });
 
+  it("records the schedule the cron ran on, so a trigger changed in Cloudflare shows", async () => {
+    await worker.scheduled!({ cron: "45 6 * * *", scheduledTime: Date.now(), noRetry() { } } as ScheduledController, env);
+    expect((await cleanupStatus(env)).runs[0]).toMatchObject({ trigger: "daily", cron: "45 6 * * *" });
+  });
+
   it("records a failed cleanup with what it deleted before, and keeps the last 10 runs", async () => {
     const { id } = await publish({ "fail.html": "fail" });
     await env.DB.prepare("UPDATE docs SET expires_at = 1 WHERE id = ?").bind(id).run();

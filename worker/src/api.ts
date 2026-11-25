@@ -493,8 +493,9 @@ export async function bulkDocs(req: Request, env: Env, caller: Caller | null): P
 /**
  * One cleanup run: when, what started it, how long it took, and what it deleted. `bytes` counts the deleted blobs.
  * `error` is set when the run failed; the counts are then what it deleted before failing.
+ * `cron`: the schedule Cloudflare ran a daily run on, which may differ from wrangler.jsonc if it was changed in Cloudflare.
  */
-export type Cleanup = { at: number; trigger: "daily" | "manual"; ms: number; docs: number; blobs: number; bytes: number; error?: string };
+export type Cleanup = { at: number; trigger: "daily" | "manual"; cron?: string; ms: number; docs: number; blobs: number; bytes: number; error?: string };
 const RUNS_KEPT = 10;
 
 /** The newest cleanup runs first, at most RUNS_KEPT. Kept in the settings table, so it needs no migration and no backup carries it. */
@@ -518,9 +519,9 @@ export async function cleanupStatus(env: Env): Promise<{ runs: Cleanup[]; expire
  * shortcut: a day-old orphan blob re-pushed in the same second the sweep deletes it is lost; fine for one owner.
  * shortcut: a run killed by the Workers CPU limit records nothing; the dashboard's overdue warning catches a cron that keeps dying.
  */
-export async function sweep(env: Env, now = Date.now(), trigger: Cleanup["trigger"] = "daily"): Promise<Cleanup> {
+export async function sweep(env: Env, now = Date.now(), trigger: Cleanup["trigger"] = "daily", cron?: string): Promise<Cleanup> {
   const started = Date.now();
-  const run: Cleanup = { at: started, trigger, ms: 0, docs: 0, blobs: 0, bytes: 0 };
+  const run: Cleanup = { at: started, trigger, ...(cron && { cron }), ms: 0, docs: 0, blobs: 0, bytes: 0 };
   try {
     const expired = await env.DB.prepare("DELETE FROM docs WHERE expires_at IS NOT NULL AND expires_at <= ?").bind(now).run();
     run.docs = expired.meta.changes ?? 0;
