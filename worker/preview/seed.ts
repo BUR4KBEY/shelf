@@ -37,6 +37,7 @@ const some = (key: string | null, count: number, from: number, to: number, hours
 type SeedDoc = {
   title: string;
   space?: string;
+  project?: string;
   slug?: string;
   password?: string;
   favorite?: boolean;
@@ -78,6 +79,7 @@ function bars(n: number) {
 const DOCS: SeedDoc[] = [
   {
     title: "Acme API reference",
+    project: "acme-api",
     messages: ["docs: regenerate from openapi.yaml", "docs: add pagination examples", "docs: document rate limits", "docs: new /v2/invoices endpoint", "docs: fix typos"],
     uploads: daily(CI, 0.55, 300, [9, 9], true),
     files: (n) => ({
@@ -108,6 +110,7 @@ const DOCS: SeedDoc[] = [
   },
   {
     title: "Q3 launch plan",
+    project: "teams-launch",
     favorite: true,
     messages: ["Draft the launch timeline", "Add the pricing section", "Tighten risks after review", "Move beta to week 3", "Add owner for each workstream", "Final pass"],
     uploads: [...daily(LAPTOP, 0.3, 45, [19, 4]), ...some(null, 2, 20, 1, [10, 6])],
@@ -142,6 +145,7 @@ const DOCS: SeedDoc[] = [
   },
   {
     title: "Architecture overview",
+    project: "acme-api",
     messages: ["First sketch", "Split the queue out of the API", "Add the read replica", "Label the edges"],
     uploads: some(DESKTOP, 4, 150, 10, [10, 8]),
     files: (n) => ({
@@ -156,6 +160,7 @@ ${n > 3 ? '<g fill="#6c5ce7" font-size="12"><text x="170" y="105">HTTPS</text><t
   },
   {
     title: "Release notes",
+    project: "acme-api",
     messages: ["chore(release): notes for the new version", "Reword the highlights"],
     uploads: [...some(CI, 15, 120, 0, [14, 4]), ...some(LAPTOP, 6, 100, 2, [20, 3])],
     files: (n) => ({
@@ -244,6 +249,7 @@ Welcome! Work through this in your first week. Ask in #new-joiners if anything i
   },
   {
     title: "Competitor research",
+    project: "pricing-refresh",
     space: "clients",
     messages: ["Add pricing for three more competitors", "Summarise the feature matrix", "New launch from Globex", "Update positioning notes", "Weekly refresh"],
     uploads: daily(RESEARCH, 0.35, 90, [0, 24]),
@@ -267,6 +273,7 @@ Refresh ${n}. Collected by the research agent from public pricing pages and chan
   },
   {
     title: "Pricing page draft",
+    project: "pricing-refresh",
     space: "clients",
     messages: ["First layout", "Three tiers instead of four", "Annual toggle", "Copy pass", "Highlight the Team plan"],
     uploads: some(RESEARCH, 8, 40, 1, [10, 10]),
@@ -344,7 +351,7 @@ export async function seed(env: Env) {
     const id = docId();
     made.push({ id, uploads });
     await run(
-      "INSERT INTO docs (id, slug, title, password_hash, favorite, expires_at, latest, created_at, updated_at, space_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO docs (id, slug, title, password_hash, favorite, expires_at, latest, created_at, updated_at, space_id, project) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       id,
       d.slug ?? null,
       d.title,
@@ -355,6 +362,7 @@ export async function seed(env: Env) {
       uploads[0][1],
       uploads.at(-1)![1],
       d.space ?? "default",
+      d.project ?? null,
     );
     for (const [i, [key, time]] of uploads.entries()) {
       const n = i + 1;
