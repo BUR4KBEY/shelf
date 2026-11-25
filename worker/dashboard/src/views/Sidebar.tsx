@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChartColumn, Clock, Lock, Monitor, Moon, PanelLeftClose, Rows3, Settings, Star, Sun } from "lucide-react";
+import { ChartColumn, Clock, Lock, Monitor, Moon, PanelLeftClose, Rows3, Search, Settings, Star, Sun } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Logo, Tip, display, focusRing, groupName } from "@/components/bits";
 import { isExpired } from "@/components/DocBits";
@@ -12,6 +12,9 @@ import { KeyList } from "@/views/Keys";
 
 const DAY = 86_400_000;
 const item = "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none hover:bg-card/60 focus-visible:ring-3 focus-visible:ring-ring/50 aria-[current=page]:bg-card aria-[current=page]:font-semibold";
+
+/** How the palette's shortcut reads on this machine. */
+export const MOD = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl+";
 
 export const THEMES = [
   ["system", "Match the system", Monitor],
@@ -37,7 +40,7 @@ export function ThemeSwitch({ className }: { className?: string }) {
 }
 
 /** Every doc and every key, always in reach. The log shows what happened; this shows what there is. */
-export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; colorOf: (keyId: string | null) => string; openId?: string; openKey?: string; settings: boolean; analytics: boolean; email: string; onNavigate: () => void; onKeysChanged: () => void; onCollapse: () => void }) {
+export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; colorOf: (keyId: string | null) => string; openId?: string; openKey?: string; settings: boolean; analytics: boolean; email: string; onNavigate: () => void; onKeysChanged: () => void; onCollapse: () => void; onSearch: () => void }) {
   const [showExpired, setShowExpired] = useState(false);
   const isOpen = (d: Doc) => d.id === props.openId || (d.slug !== null && d.slug === props.openId);
   const expired = props.docs.filter(isExpired).length;
@@ -54,6 +57,12 @@ export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; 
           </Button>
         </Tip>
       </div>
+
+      <button type="button" onClick={props.onSearch} className={cn(item, "-mx-2.5 -mb-4 border bg-card/40 text-muted-foreground hover:text-foreground")}>
+        <Search className="size-4 shrink-0" aria-hidden />
+        Search
+        <kbd className="ml-auto font-sans text-xs max-lg:hidden">{MOD}K</kbd>
+      </button>
 
       <nav aria-label="Docs" onClick={props.onNavigate}>
         <a href="#/" aria-current={props.openId || props.openKey || props.settings || props.analytics ? undefined : "page"} className={cn(item, "-mx-2.5")}>
