@@ -644,7 +644,7 @@ describe("dashboard", () => {
 
   it("counts readers only while view statistics are on, leaving out bots and the owner", async () => {
     const { id, url } = await publish({ "read.html": "<p>v1</p>" });
-    const views = async () => ((await (await dash(`/dashboard/api/docs/${id}`)).json()) as { views: { total: number; readers: number }; versions: { n: number; views: number }[] });
+    const views = async () => (await (await dash(`/dashboard/api/docs/${id}`)).json()) as { views: { total: number; readers: number; days: { day: number; views: number }[] }; versions: { n: number; views: number }[] };
     await get(url, { headers: BROWSER });
     expect((await views()).views.total).toBe(0); // off by default
     expect((await patchSettings({ viewStats: "yes" })).status).toBe(400);
@@ -665,6 +665,10 @@ describe("dashboard", () => {
       const v = await views();
       expect(v.views).toMatchObject({ total: 3, readers: 2 });
       expect(v.versions).toMatchObject([{ n: 1, views: 3 }]);
+      expect(v.views.days).toEqual([{ day: Math.floor(Date.now() / 86_400_000), views: 3 }]);
+      const analytics = (await (await dash("/dashboard/api/analytics")).json()) as { viewStats: boolean; views: { docId: string; views: number; readers: number }[] };
+      expect(analytics.viewStats).toBe(true);
+      expect(analytics.views.filter((r) => r.docId === id)).toMatchObject([{ views: 3, readers: 2 }]);
     } finally {
       await patchSettings({ viewStats: false });
     }

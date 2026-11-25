@@ -16,8 +16,8 @@ export type Doc = {
 export type Version = { n: number; message: string | null; size: number; createdAt: number; keyId: string | null; keyName: string | null; files: number; views?: number };
 /** One upload in the feed: a version, with the doc it belongs to. */
 export type Activity = Version & { docId: string };
-/** `views.readers` counts each reader once a day; `lastAt` is null before the first view. */
-export type DocDetail = Doc & { versions: Version[]; views: { total: number; readers: number; lastAt: number | null } };
+/** `views.readers` counts each reader once a day; `lastAt` is null before the first view; `days`: views per local day (days since 1970) over the last 30. */
+export type DocDetail = Doc & { versions: Version[]; views: { total: number; readers: number; lastAt: number | null; days: { day: number; views: number }[] } };
 export type PushResult = (Doc & { version: number; versionUrl: string; created: boolean; missing?: undefined }) | { missing: string[] };
 export type Key = { id: string; name: string; space: string; createdAt: number; lastUsedAt: number | null; revokedAt: number | null };
 export type NewKey = { id: string; name: string; space: string; key: string };
@@ -29,12 +29,16 @@ export type KeyDoc = { docId: string; uploads: number; created: number; size: nu
  * Every uploader's uploads, for the analytics page. A null `keyId` is the dashboard; an id no key has any more is a deleted key.
  * `days`: uploads per local day (days since 1970) over the last two years. `keys`: all-time totals; `size` counts every version in full.
  * `shared`: each uploader's share of the docs more than one uploader touched, newest first. `quotas`: the keys that have one.
+ * `views`: readers opening each doc per local day, over the same two years; `readers` counts each once per doc and day.
+ * `viewStats`: whether views are being counted now.
  */
 export type Analytics = {
   days: { keyId: string | null; space: string; day: number; uploads: number }[];
   keys: { keyId: string | null; space: string; uploads: number; docs: number; size: number; lastAt: number }[];
   shared: { docId: string; keyId: string | null; uploads: number; lastAt: number }[];
   quotas: { id: string; quota: number }[];
+  views: { docId: string; space: string; day: number; views: number; readers: number }[];
+  viewStats: boolean;
 };
 /**
  * A key with every doc it touched, its newest uploads (capped), and the time of each upload in the last 53 weeks.

@@ -224,6 +224,8 @@ function AnalyticsPage({ a, today, keys, docs, colorOf }: Props & { a: Analytics
         </div>
       </section>
 
+      <Views a={a} today={today} period={period} inSpace={inSpace} docById={docById} />
+
       <section aria-labelledby="storage-name" className="grid grid-cols-1 gap-2.5">
         <h2 id="storage-name" className={heading}>
           Storage
@@ -334,8 +336,95 @@ function AnalyticsPage({ a, today, keys, docs, colorOf }: Props & { a: Analytics
 /** "+3", "−2" or "same": a count against the period before. */
 const change = (d: number) => (d === 0 ? "same" : `${d > 0 ? "+" : "−"}${Math.abs(d)}`);
 
-/** Bars of every uploader's uploads stacked in their colours, a bar per day (or week), today last. Screen readers get the total. */
-function StackedBars({ uploaders, period, total }: { uploaders: Uploader[]; period: Period; total: number }) {
+/** The most-read docs this many, and the unread docs this many at most. */
+const LIST = 5;
+
+/** Readers opening docs: how many, when, which docs they read, and which docs nobody opened. */
+function Views({ a, today, period, inSpace, docById }: { a: Analytics; today: number; period: Period; inSpace: (s: string) => boolean; docById: Map<string, Doc> }) {
+  const counts = new Array<number>(SPAN).fill(0);
+  const perDoc = new Map<string, { views: number; readers: number }>();
+  let readers = 0;
+  let readersBefore = 0;
+  for (const r of a.views) {
+    const age = today - r.day;
+    if (!inSpace(r.space) || age < 0 || age >= SPAN) continue;
+    counts[SPAN - 1 - age] += r.views;
+    if (age < period.days) {
+      readers += r.readers;
+      const p = perDoc.get(r.docId) ?? { views: 0, readers: 0 };
+      perDoc.set(r.docId, { views: p.views + r.views, readers: p.readers + r.readers });
+    } else if (age < 2 * period.days) readersBefore += r.readers;
+  }
+  const total = sum(counts.slice(SPAN - period.days));
+  const before = sum(counts.slice(SPAN - 2 * period.days, SPAN - period.days));
+  const top = [...perDoc].filter(([id]) => docById.has(id)).sort((x, y) => y[1].views - x[1].views);
+  const unread = [...docById.values()].filter((d) => inSpace(d.space) && !isExpired(d) && !perDoc.has(d.id));
+  const bars: Uploader = { id: "views", name: "Views", color: "var(--ring)", counts, uploads: 0, docs: 0, size: 0, lastAt: null };
+
+  return (
+    <section aria-labelledby="views-name" className="grid grid-cols-1 gap-3">
+      <h2 id="views-name" className={heading}>
+        Views
+      </h2>
+      {!a.viewStats && (
+        <p className="text-sm text-muted-foreground">
+          View statistics are off, so nothing new is counted. <a href="#/settings" className={cn(focusRing, "font-semibold text-foreground underline underline-offset-4")}>Turn them on in Settings</a>.
+        </p>
+      )}
+      {(a.viewStats || a.views.length > 0) && (
+        <>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <Stat label="Views" value={String(total)} note={`${change(total - before)} on the ${period.label} before`} />
+            <Stat label="Readers" value={String(readers)} note={`${change(readers - readersBefore)}; once a day per doc`} />
+            <Stat label="Most read" value={top[0] ? nameOf(docById.get(top[0][0])!) : "Nothing"} note={top[0] ? plural(top[0][1].views, "view") : `no views in the last ${period.label}`} />
+          </div>
+          <StackedBars uploaders={[bars]} period={period} total={total} unit="view" />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid content-start gap-1.5">
+              <h3 className="text-sm font-semibold">Most read</h3>
+              {top.length ? (
+                <ol className="grid divide-y rounded-xl border bg-card">
+                  {top.slice(0, LIST).map(([id, v]) => (
+                    <li key={id} className="flex items-center gap-3 px-3.5 py-2 text-sm">
+                      <a href={`#/doc/${id}`} className={cn(focusRing, "min-w-0 flex-1 truncate font-semibold underline-offset-4 hover:underline")}>
+                        {nameOf(docById.get(id)!)}
+                      </a>
+                      <span className="text-muted-foreground tabular-nums">
+                        {plural(v.views, "view")}, {plural(v.readers, "reader")}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="text-sm text-muted-foreground">No doc was opened in the last {period.label}.</p>
+              )}
+            </div>
+            <div className="grid content-start gap-1.5">
+              <h3 className="text-sm font-semibold">Not opened in the last {period.label}</h3>
+              {unread.length ? (
+                <ul className="flex flex-wrap gap-1.5">
+                  {unread.slice(0, LIST * 2).map((d) => (
+                    <li key={d.id}>
+                      <a href={`#/doc/${d.id}`} className={cn(focusRing, "block max-w-60 truncate rounded-md border px-2 py-0.5 text-[0.8125rem] font-semibold text-muted-foreground hover:text-foreground")}>
+                        {nameOf(d)}
+                      </a>
+                    </li>
+                  ))}
+                  {unread.length > LIST * 2 && <li className="px-1 py-0.5 text-[0.8125rem] text-muted-foreground">and {unread.length - LIST * 2} more</li>}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">Every doc was opened at least once.</p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Bars of every uploader's uploads (or `unit`s) stacked in their colours, a bar per day (or week), today last. Screen readers get the total. */
+function StackedBars({ uploaders, period, total, unit = "upload" }: { uploaders: Uploader[]; period: Period; total: number; unit?: string }) {
   const n = period.days / period.step;
   const from = SPAN - period.days;
   const cols = Array.from({ length: n }, (_, i) => uploaders.map((u) => ({ u, n: sum(u.counts.slice(from + i * period.step, from + (i + 1) * period.step)) })).filter((s) => s.n));
@@ -351,7 +440,7 @@ function StackedBars({ uploaders, period, total }: { uploaders: Uploader[]; peri
         {cols.map((c, i) => {
           const count = sum(c.map((s) => s.n));
           return (
-            <span key={i} title={`${label(i)}: ${plural(count, "upload")}${c.map((s) => `\n${s.u.name}: ${s.n}`).join("")}`} className="flex h-full flex-1 flex-col-reverse">
+            <span key={i} title={`${label(i)}: ${plural(count, unit)}${c.map((s) => `\n${s.u.name}: ${s.n}`).join("")}`} className="flex h-full flex-1 flex-col-reverse">
               {count ? c.map((s) => <span key={s.u.id} className="first:rounded-b-[2px] last:rounded-t-[2px]" style={{ height: `${(s.n / most) * 100}%`, background: s.u.color }} />) : <span className="h-[4%] rounded-[2px] bg-muted-foreground opacity-20" />}
             </span>
           );
@@ -361,7 +450,7 @@ function StackedBars({ uploaders, period, total }: { uploaders: Uploader[]; peri
         <span>{period.step === 1 ? `${period.label} ago` : "A year ago"}</span>
         <span>Today</span>
       </div>
-      <p className="sr-only">{`${plural(total, "upload")} in the last ${period.label}.`}</p>
+      <p className="sr-only">{`${plural(total, unit)} in the last ${period.label}.`}</p>
     </div>
   );
 }
