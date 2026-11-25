@@ -705,10 +705,6 @@ export function AppSettingsView({ onSpacesChanged }: { onSpacesChanged: () => vo
             <SlugForm saved={s} onSaved={setSaved} />
           </section>
           <section className="grid grid-cols-1 gap-2.5">
-            <h2 className="text-base leading-none font-bold">Cleanup</h2>
-            <Cleanup onDeleted={onSpacesChanged} />
-          </section>
-          <section className="grid grid-cols-1 gap-2.5">
             <h2 className="text-base leading-none font-bold">Readers</h2>
             <Readers settings={s} onSaved={setSaved} />
           </section>
@@ -723,6 +719,10 @@ export function AppSettingsView({ onSpacesChanged }: { onSpacesChanged: () => vo
           <section className="grid grid-cols-1 gap-2.5">
             <h2 className="text-base leading-none font-bold">Import</h2>
             <Import onImported={onSpacesChanged} />
+          </section>
+          <section className="grid grid-cols-1 gap-2.5">
+            <h2 className="text-base leading-none font-bold">Cleanup</h2>
+            <Cleanup onDeleted={onSpacesChanged} />
           </section>
         </>
       )}
