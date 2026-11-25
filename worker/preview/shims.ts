@@ -102,7 +102,8 @@ export const r2 = {
     const header = opts.range?.get("range");
     const r = header ? range(header, size) : undefined;
     const bytes = r ? b.bytes.subarray(r.offset, r.offset + r.length) : b.bytes;
-    return { key, size, range: r, body: bytes, text: async () => new TextDecoder().decode(bytes) };
+    // A stream, as R2 gives: the Worker pipes it (the credit badge).
+    return { key, size, range: r, body: new Response(bytes).body!, text: async () => new TextDecoder().decode(bytes) };
   },
   async list({ prefix = "" }: { prefix?: string; cursor?: string } = {}) {
     const keys = await store<IDBValidKey[]>("blobs", "readonly", (s) => s.getAllKeys());

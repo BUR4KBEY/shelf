@@ -306,7 +306,21 @@ describe("markdown", () => {
     const res = await get(url);
     expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
     expect(res.headers.get("content-security-policy")).toContain("sandbox");
-    expect(await res.text()).toContain("<h1>Hello</h1>");
+    const html = await res.text();
+    expect(html).toContain("<h1>Hello</h1>");
+    expect(html).not.toContain("<shelf-credit"); // not a browser
+    const browser = (u: string) => get(u, { headers: { accept: "text/html" } });
+    expect(await (await browser(url)).text()).toContain("<shelf-credit");
+    const page = await publish({ "page.html": "<p>hi</p>" });
+    expect(await (await get(page.url)).text()).toBe("<p>hi</p>");
+    expect(await (await browser(page.url)).text()).toMatch(/^<p>hi<\/p><shelf-credit/);
+    await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('credit', '0')").run();
+    try {
+      expect(await (await browser(url)).text()).not.toContain("<shelf-credit");
+      expect(await (await browser(page.url)).text()).toBe("<p>hi</p>");
+    } finally {
+      await env.DB.prepare("DELETE FROM settings WHERE key = 'credit'").run();
+    }
     const raw = await get(`${url}?raw`);
     expect(raw.headers.get("content-type")).toBe("text/plain; charset=utf-8");
     expect(await raw.text()).toBe("# Hello\n\n<script>x()</script>");
@@ -649,11 +663,11 @@ describe("dashboard", () => {
 
   it("gives new docs the default expiry unless the push names one", async () => {
     const setDefault = (defaultExpires: string | null) => dash("/dashboard/api/settings", { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ defaultExpires }) });
-    expect(await (await dash("/dashboard/api/settings")).json()).toEqual({ defaultExpires: null, maxExpires: "30d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false });
+    expect(await (await dash("/dashboard/api/settings")).json()).toEqual({ defaultExpires: null, maxExpires: "30d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false, credit: true });
     expect((await setDefault("soon")).status).toBe(400);
     expect((await api("/api/settings")).status).toBe(404); // an API key can't change it
     try {
-      expect(await (await setDefault("7d")).json()).toEqual({ defaultExpires: "7d", maxExpires: "30d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false });
+      expect(await (await setDefault("7d")).json()).toEqual({ defaultExpires: "7d", maxExpires: "30d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false, credit: true });
       const before = Date.now();
       expect((await publish({ "d1.html": "default" })).expiresAt).toBeGreaterThanOrEqual(before + 7 * 86_400_000);
       expect((await publish({ "d2.html": "forever" }, { expires: null })).expiresAt).toBeNull();
@@ -672,14 +686,14 @@ describe("dashboard", () => {
     try {
       expect((await publish({ "m1.html": "30d" }, { expires: "30d" })).expiresAt).not.toBeNull();
       for (const bad of [null, "0", "0d", "soon"]) expect((await patchApp({ maxExpires: bad })).status).toBe(400);
-      expect(await (await patchApp({ maxExpires: "90d" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false });
+      expect(await (await patchApp({ maxExpires: "90d" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false, credit: true });
       expect((await publish({ "m2.html": "60d" }, { expires: "60d" })).expiresAt).toBeGreaterThan(Date.now() + 59 * 86_400_000);
       expect((await pushManifest({ files: [{ path: "m3.html", sha256: await sha256Hex("91d") }], expires: "91d" })).status).toBe(400);
       // The default can't outgrow the max, from either side.
       expect((await patchApp({ defaultExpires: "14d", maxExpires: "7d" })).status).toBe(400);
-      expect(await (await patchApp({ defaultExpires: "14d" })).json()).toEqual({ defaultExpires: "14d", maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false });
+      expect(await (await patchApp({ defaultExpires: "14d" })).json()).toEqual({ defaultExpires: "14d", maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false, credit: true });
       expect((await patchApp({ maxExpires: "7d" })).status).toBe(400);
-      expect(await (await patchApp({ defaultExpires: "0" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false });
+      expect(await (await patchApp({ defaultExpires: "0" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false, credit: true });
       const { id } = await publish({ "m4.html": "patch" });
       await patchApp({ maxExpires: "1d" });
       expect((await api(`/api/docs/${id}`, { method: "PATCH", body: JSON.stringify({ expires: "2d" }) })).status).toBe(400);

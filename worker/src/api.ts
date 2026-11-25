@@ -47,9 +47,10 @@ const durationMs = (v: unknown) => {
  * App-wide settings, set from the dashboard. `defaultExpires` is the expiry a new doc gets when its push doesn't name one
  * (null: never); `maxExpires` is the longest expiry any doc may be given; `isolateSpaces` keeps each API key to its own space's docs;
  * `maxSlugLength` is the longest slug any doc may be given; `viewStats` counts readers opening docs; `linkPreviews` lets chat apps
- * (Slack, Discord, iMessage…) fetch a doc to show a card for its link. Search engines never index anything either way.
+ * (Slack, Discord, iMessage…) fetch a doc to show a card for its link; `credit` pins a small "Shared with shelf" badge to the corner of
+ * HTML and Markdown docs. Search engines never index anything either way.
  */
-export type AppSettings = { defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean; maxSlugLength: number; viewStats: boolean; linkPreviews: boolean };
+export type AppSettings = { defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean; maxSlugLength: number; viewStats: boolean; linkPreviews: boolean; credit: boolean };
 
 export async function appSettings(env: Env): Promise<AppSettings> {
   const { results } = await env.DB.prepare("SELECT key, value FROM settings").all<{ key: string; value: string }>();
@@ -61,6 +62,7 @@ export async function appSettings(env: Env): Promise<AppSettings> {
     maxSlugLength: Number(s.max_slug_length ?? 48),
     viewStats: s.view_stats === "1",
     linkPreviews: s.link_previews === "1",
+    credit: s.credit !== "0",
   };
 }
 
@@ -71,7 +73,7 @@ export async function getAppSettings(env: Env): Promise<Response> {
 export async function patchAppSettings(req: Request, env: Env): Promise<Response> {
   const body = (await req.json().catch(() => null)) as { [K in keyof AppSettings]?: unknown } | null;
   if (!body || typeof body !== "object") return json({ error: "JSON object required" }, 400);
-  const { defaultExpires: d, maxExpires: max, isolateSpaces: iso, maxSlugLength: slugMax, viewStats: stats, linkPreviews: previews } = body;
+  const { defaultExpires: d, maxExpires: max, isolateSpaces: iso, maxSlugLength: slugMax, viewStats: stats, linkPreviews: previews, credit } = body;
   if (d !== undefined && !isOpt(d, (v) => durationMs(v) >= 0)) {
     return json({ error: "defaultExpires: a duration like 30m, 12h, 7d or 2w; 0 or null for never" }, 400);
   }
@@ -79,6 +81,7 @@ export async function patchAppSettings(req: Request, env: Env): Promise<Response
   if (iso !== undefined && typeof iso !== "boolean") return json({ error: "isolateSpaces: boolean" }, 400);
   if (stats !== undefined && typeof stats !== "boolean") return json({ error: "viewStats: boolean" }, 400);
   if (previews !== undefined && typeof previews !== "boolean") return json({ error: "linkPreviews: boolean" }, 400);
+  if (credit !== undefined && typeof credit !== "boolean") return json({ error: "credit: boolean" }, 400);
   if (slugMax !== undefined && !(Number.isInteger(slugMax) && (slugMax as number) >= 3 && (slugMax as number) <= SLUG_LIMIT)) {
     return json({ error: `maxSlugLength: a whole number from 3 to ${SLUG_LIMIT}` }, 400);
   }
@@ -89,6 +92,7 @@ export async function patchAppSettings(req: Request, env: Env): Promise<Response
   if (slugMax !== undefined) next.maxSlugLength = slugMax as number;
   if (stats !== undefined) next.viewStats = stats;
   if (previews !== undefined) next.linkPreviews = previews;
+  if (credit !== undefined) next.credit = credit;
   if (next.defaultExpires !== null && durationMs(next.defaultExpires) > durationMs(next.maxExpires)) {
     return json({ error: `the default expiry (${next.defaultExpires}) can't be longer than the longest allowed (${next.maxExpires})` }, 400);
   }
@@ -100,6 +104,7 @@ export async function patchAppSettings(req: Request, env: Env): Promise<Response
     upsert.bind("max_slug_length", String(next.maxSlugLength)),
     upsert.bind("view_stats", next.viewStats ? "1" : "0"),
     upsert.bind("link_previews", next.linkPreviews ? "1" : "0"),
+    upsert.bind("credit", next.credit ? "1" : "0"),
   ]);
   return json(next);
 }

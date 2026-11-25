@@ -5,7 +5,7 @@ import { exportShelf, importCheck, importShelf } from "./backup";
 import { createKey, createSpace, dashboardPage, deleteKey, deleteSpace, getAnalytics, getKey, listKeys, listSpaces, patchKey, patchSpace, revokeKey } from "./dashboard";
 import { llmsTxt } from "./llms";
 import { mcp } from "./mcp";
-import { favicon, font, notFound, notice, setTheme } from "./page";
+import { REPO_URL, favicon, font, notFound, notice, setTheme } from "./page";
 import { json } from "./util";
 import { PREVIEW_BOTS, ownerOpen, unlock, view } from "./view";
 
@@ -97,7 +97,7 @@ export default {
       }
     }
 
-    return req.headers.get("accept")?.includes("text/html") ? notFound(req) : json({ error: "not found" }, 404);
+    return req.headers.get("accept")?.includes("text/html") ? notFound(req) : json({ error: "not found", source: REPO_URL }, 404);
   },
 
   async scheduled(event, env): Promise<void> {

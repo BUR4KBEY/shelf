@@ -54,8 +54,9 @@ export type KeyDetail = Key & { docs: KeyDoc[]; uploads: Activity[]; times: numb
  * `defaultExpires`: what a new doc gets when its upload names no expiry; null for never. `maxExpires`: the longest expiry any doc may get.
  * `isolateSpaces`: keys see only their own space. `maxSlugLength`: the longest slug any doc may get.
  * `viewStats`: count readers opening docs. `linkPreviews`: let chat apps fetch a doc to show a card for its link.
+ * `credit`: show a "Shared with shelf" badge in the corner of HTML and Markdown docs.
  */
-export type AppSettings = { defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean; maxSlugLength: number; viewStats: boolean; linkPreviews: boolean };
+export type AppSettings = { defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean; maxSlugLength: number; viewStats: boolean; linkPreviews: boolean; credit: boolean };
 /**
  * One cleanup run: when (`at`), whether the daily cron or Run now started it, how long it took, and the expired docs and unused files
  * (`bytes` in all) it deleted. `error`: why it failed; the counts are then what it deleted before. `cron`: the schedule a daily run ran on.

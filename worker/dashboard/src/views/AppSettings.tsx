@@ -345,7 +345,7 @@ function Spaces({ settings, onSaved, onChanged }: { settings: AppSettings; onSav
   );
 }
 
-/** Whether readers' opens are counted, and whether chat apps may build a card for a shared link. */
+/** Whether readers' opens are counted, whether chat apps may build a card for a shared link, and whether docs show the shelf badge. */
 function Readers({ settings, onSaved }: { settings: AppSettings; onSaved: (s: AppSettings) => void }) {
   const save = async (json: Partial<AppSettings>) => onSaved(await api<AppSettings>("/settings", { method: "PATCH", json }));
   return (
@@ -365,6 +365,14 @@ function Readers({ settings, onSaved }: { settings: AppSettings; onSaved: (s: Ap
         onSave={(linkPreviews) => save({ linkPreviews })}
         on="Slack, Discord, WhatsApp, iMessage and other chat apps may open a shared link to show a card with the doc's title. A locked doc's title never shows. Search engines still never index anything."
         off="Chat apps are turned away, so a shared link shows as plain text. Search engines never index anything either way."
+      />
+      <Toggle
+        label="Shelf credit"
+        subject="Shelf credit"
+        checked={settings.credit}
+        onSave={(credit) => save({ credit })}
+        on="HTML and Markdown docs show a small “Shared with shelf” badge in the bottom-right corner, linking to shelf on GitHub. Readers can close it. Other files are served exactly as uploaded."
+        off="Docs show only what you uploaded."
       />
     </div>
   );
