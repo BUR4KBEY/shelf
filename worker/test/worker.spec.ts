@@ -471,6 +471,28 @@ describe("dashboard", () => {
     expect((await api(`/api/keys/${id}`)).status).toBe(404); // dashboard only
   });
 
+  it("adds up every key's uploads per day and space, and finds docs more than one uploader shares", async () => {
+    const { id, key } = (await (await dash("/dashboard/api/keys", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "stats" }) })).json()) as { id: string; key: string };
+    const auth = { authorization: `Bearer ${key}`, "content-type": "application/json" };
+    const sha = await sha256Hex("by stats");
+    await exports.default.fetch(`${BASE}/api/blobs/${sha}`, { method: "PUT", headers: { ...auth, "content-length": "8" }, body: "by stats" });
+    const pushed = (await (await exports.default.fetch(`${BASE}/api/push`, { method: "POST", headers: auth, body: JSON.stringify({ files: [{ path: "s.html", sha256: sha }] }) })).json()) as { id: string };
+    await publish({ "s.html": "by test, after stats" }, { ref: pushed.id });
+    const at = ((await (await dash(`/dashboard/api/keys/${id}`)).json()) as { times: number[] }).times[0];
+
+    // UTC+14: the day the upload falls on there, not in UTC.
+    const a = (await (await dash("/dashboard/api/analytics?tz=-840")).json()) as {
+      days: { keyId: string | null; space: string; day: number; uploads: number }[];
+      keys: { keyId: string | null; space: string; uploads: number; docs: number; size: number; lastAt: number }[];
+      shared: { docId: string; keyId: string | null; uploads: number }[];
+    };
+    expect(a.days.filter((d) => d.keyId === id)).toEqual([{ keyId: id, space: "default", day: Math.floor((at + 840 * 60_000) / 86_400_000), uploads: 1 }]);
+    expect(a.keys.filter((k) => k.keyId === id)).toEqual([{ keyId: id, space: "default", uploads: 1, docs: 1, size: 8, lastAt: at }]);
+    expect(a.shared.filter((s) => s.docId === pushed.id).map((s) => [s.keyId, s.uploads]).sort()).toEqual([[id, 1], ["k_test", 1]]);
+    expect((await dash("/dashboard/api/analytics?tz=1.5")).status).toBe(400);
+    expect((await api("/api/analytics")).status).toBe(404); // dashboard only
+  });
+
   /** A new key with a quota, and a push of one file through it: the client flow, stopping at the first refusal. */
   async function quotaKey(quota: unknown, strategy: string) {
     const { id, key } = (await (await dash("/dashboard/api/keys", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "q" }) })).json()) as { id: string; key: string };

@@ -14,10 +14,10 @@ import { byDay, daily } from "@/lib/feed";
 import { ago, dayName, fullDate, longDate, plural, size } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const heading = "text-base leading-none font-bold";
-const DAY = 86_400_000;
+export const heading = "text-base leading-none font-bold";
+export const DAY = 86_400_000;
 /** What the activity charts can cover. A year is 52 weeks, one bar each. */
-const PERIODS = [
+export const PERIODS = [
   { days: 7, step: 1, short: "7d", label: "7 days" },
   { days: 30, step: 1, short: "30d", label: "30 days" },
   { days: 90, step: 1, short: "90d", label: "90 days" },
@@ -26,7 +26,7 @@ const PERIODS = [
 /** The Worker lists this many of a key's uploads at most; the totals still count them all. */
 const CAP = 500;
 
-const hh = (h: number) => `${String(h).padStart(2, "0")}:00`;
+export const hh = (h: number) => `${String(h).padStart(2, "0")}:00`;
 
 /** A row of bars in the key's colour, labelled at both ends. Screen readers get `summary` instead. */
 function Bars({ counts, label, from, to, summary }: { counts: number[]; label: (i: number, n: number) => string; from: string; to: string; summary: string }) {
@@ -47,7 +47,7 @@ function Bars({ counts, label, from, to, summary }: { counts: number[]; label: (
   );
 }
 
-function Stat({ label, value, note }: { label: string; value: string; note: ReactNode }) {
+export function Stat({ label, value, note }: { label: string; value: string; note: ReactNode }) {
   return (
     <div className="grid content-start gap-1 rounded-xl border bg-card p-3.5">
       <p className="text-[0.8125rem] font-semibold text-muted-foreground">{label}</p>
@@ -57,15 +57,29 @@ function Stat({ label, value, note }: { label: string; value: string; note: Reac
   );
 }
 
+export type Period = (typeof PERIODS)[number];
+
+export function PeriodPicker({ period, onChange }: { period: Period; onChange: (p: Period) => void }) {
+  return (
+    <div role="group" aria-label="Period" className="flex rounded-lg border p-0.5">
+      {PERIODS.map((p) => (
+        <button key={p.days} type="button" aria-pressed={p === period} onClick={() => onChange(p)} className={cn(focusRing, "rounded-md px-2.5 py-1 text-[0.8125rem] font-semibold text-muted-foreground hover:text-foreground", p === period && "bg-card text-foreground shadow-[0_0_0_1px_var(--border)]")}>
+          {p.short}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const SHADES = [0, 35, 60, 80, 100];
 
-/** The last 53 weeks a day per square, a week per column, like GitHub's contribution graph. Darker is more uploads. */
-function Heatmap({ times }: { times: number[] }) {
+/** The last 53 weeks a day per square, a week per column, like GitHub's contribution graph. Darker is more uploads. `countsFor(n)`: uploads per day over the last n days, oldest first. */
+export function Heatmap({ countsFor }: { countsFor: (days: number) => number[] }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   // Columns start on Sunday; the last one ends today.
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay() - 52 * 7);
-  const counts = daily(times, Math.round((today.getTime() - start.getTime()) / DAY) + 1);
+  const counts = countsFor(Math.round((today.getTime() - start.getTime()) / DAY) + 1);
   const most = Math.max(1, ...counts);
   const dayAt = (i: number) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
   const weeks = Math.ceil(counts.length / 7);
@@ -318,13 +332,7 @@ function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props &
           <h2 id="activity-name" className={heading}>
             Activity
           </h2>
-          <div role="group" aria-label="Period" className="flex rounded-lg border p-0.5">
-            {PERIODS.map((p) => (
-              <button key={p.days} type="button" aria-pressed={p === period} onClick={() => setPeriod(p)} className={cn(focusRing, "rounded-md px-2.5 py-1 text-[0.8125rem] font-semibold text-muted-foreground hover:text-foreground", p === period && "bg-card text-foreground shadow-[0_0_0_1px_var(--border)]")}>
-                {p.short}
-              </button>
-            ))}
-          </div>
+          <PeriodPicker period={period} onChange={setPeriod} />
         </div>
         <div className="grid grid-cols-1 gap-x-6 gap-y-7 sm:grid-cols-[2fr_1fr]">
           <div className="grid content-start gap-2.5">
@@ -354,7 +362,7 @@ function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props &
 
       <section className="grid grid-cols-1 gap-2.5">
         <h2 className={heading}>Last year</h2>
-        <Heatmap times={k.times} />
+        <Heatmap countsFor={(n) => daily(k.times, n)} />
       </section>
 
       {total === 0 ? (

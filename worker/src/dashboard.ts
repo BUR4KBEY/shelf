@@ -171,3 +171,32 @@ export async function getKey(env: Env, id: string): Promise<Response> {
   if (!key.results.length) return json({ error: "key not found" }, 404);
   return json({ ...key.results[0], docs: docs.results, uploads: uploads.results, times: times.results.map((r) => r.t) });
 }
+
+/** How far back the analytics page goes: a year and the year before it, so a year can be compared with the one before. */
+const ANALYTICS_DAYS = 728;
+
+/**
+ * Every key's uploads, for the analytics page. Counts are per key and space, so the page can filter by space; a key
+ * that is gone or the dashboard (null) gets rows too. `tz` is the browser's getTimezoneOffset(), so `day` (days since
+ * 1970 in the browser's time) lines up with its calendar.
+ * shortcut: one offset for the whole range puts uploads near midnight on the wrong day across a DST change; send the zone and bucket per day if that matters.
+ */
+export async function getAnalytics(req: Request, env: Env): Promise<Response> {
+  const tz = Number(new URL(req.url).searchParams.get("tz") ?? 0);
+  if (!Number.isInteger(tz) || Math.abs(tz) > 840) return json({ error: "tz: minutes from UTC, -840 to 840" }, 400);
+  const shift = tz * 60_000;
+  const [days, keys, shared, quotas] = await env.DB.batch<Record<string, unknown>>([
+    env.DB.prepare(
+      "SELECT v.key_id AS keyId, d.space_id AS space, CAST((v.created_at - ?1) / 86400000 AS INTEGER) AS day, COUNT(*) AS uploads FROM versions v JOIN docs d ON d.id = v.doc_id WHERE v.created_at >= ?2 GROUP BY 1, 2, 3",
+    ).bind(shift, Date.now() - (ANALYTICS_DAYS + 1) * 86_400_000),
+    env.DB.prepare(
+      "SELECT v.key_id AS keyId, d.space_id AS space, COUNT(*) AS uploads, COUNT(DISTINCT v.doc_id) AS docs, SUM(v.size) AS size, MAX(v.created_at) AS lastAt FROM versions v JOIN docs d ON d.id = v.doc_id GROUP BY 1, 2",
+    ),
+    // Docs more than one uploader (a key or the dashboard) put versions on, with each uploader's share.
+    env.DB.prepare(
+      "SELECT v.doc_id AS docId, v.key_id AS keyId, COUNT(*) AS uploads, MAX(v.created_at) AS lastAt FROM versions v WHERE v.doc_id IN (SELECT doc_id FROM versions GROUP BY doc_id HAVING COUNT(DISTINCT coalesce(key_id, '')) > 1) GROUP BY 1, 2 ORDER BY lastAt DESC",
+    ),
+    env.DB.prepare("SELECT id, quota_bytes AS quota FROM api_keys WHERE quota_bytes IS NOT NULL"),
+  ]);
+  return json({ days: days.results, keys: keys.results, shared: shared.results, quotas: quotas.results });
+}

@@ -1,7 +1,7 @@
 import { previewAccess } from "./access";
 import { deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, push, putBlob, sweep } from "./api";
 import { type Caller, apiKey } from "./auth";
-import { createKey, createSpace, dashboardPage, deleteKey, deleteSpace, getKey, listKeys, listSpaces, patchKey, patchSpace, revokeKey } from "./dashboard";
+import { createKey, createSpace, dashboardPage, deleteKey, deleteSpace, getAnalytics, getKey, listKeys, listSpaces, patchKey, patchSpace, revokeKey } from "./dashboard";
 import { llmsTxt } from "./llms";
 import { mcp } from "./mcp";
 import { favicon, font, notFound, notice, setTheme } from "./page";
@@ -68,6 +68,7 @@ export default {
         if (req.method === "POST" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})\/revoke$/))) return revokeKey(env, m[1]);
         if (req.method === "DELETE" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})$/))) return deleteKey(env, m[1]);
         if (req.method === "PATCH" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})$/))) return patchKey(req, env, m[1]);
+        if (req.method === "GET" && sub === "/api/analytics") return getAnalytics(req, env);
         if (req.method === "GET" && sub === "/api/spaces") return listSpaces(env);
         if (req.method === "POST" && sub === "/api/spaces") return createSpace(req, env);
         if (req.method === "PATCH" && (m = sub.match(/^\/api\/spaces\/([A-Za-z0-9_]{1,32})$/))) return patchSpace(req, env, m[1]);
