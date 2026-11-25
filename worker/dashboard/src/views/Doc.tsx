@@ -1,7 +1,7 @@
 import { useRef, type ReactNode } from "react";
 import { ChevronLeft, Copy, ExternalLink, Lock, LockOpen } from "lucide-react";
 import { Loading, Problem, Time, chip, copy, dashed, display, focusRing, useLoad } from "@/components/bits";
-import { Expiry, SpaceChip, Star } from "@/components/DocBits";
+import { Expiry, ProjectChip, SpaceChip, Star } from "@/components/DocBits";
 import { DropZone } from "@/components/DropZone";
 import { Entry } from "@/components/Entry";
 import { Settings } from "@/components/Settings";
@@ -56,6 +56,9 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
               )}
               <li className={chip}>{plural(d.versions.length, "version")}</li>
               <li className="flex empty:hidden">
+                <ProjectChip d={d} />
+              </li>
+              <li className="flex empty:hidden">
                 <SpaceChip d={d} />
               </li>
             </ul>
@@ -83,7 +86,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
             <h2 className={heading}>Settings</h2>
             <div className="rounded-xl border bg-card p-4">
               {/* Remounts when the saved settings change, but not when a new version arrives, so unsaved edits survive an upload. */}
-              <Settings key={[d.title, d.slug, d.locked, d.expiresAt, d.space].join("\n")} d={d} onChanged={changed} onDeleted={() => (location.hash = "#/")} />
+              <Settings key={[d.title, d.slug, d.locked, d.expiresAt, d.space, d.project].join("\n")} d={d} onChanged={changed} onDeleted={() => (location.hash = "#/")} />
             </div>
           </section>
 

@@ -70,7 +70,7 @@ export function SpaceSelect({ id, value, onChange, describedBy, exclude }: { id?
 }
 
 /**
- * A doc's title, slug, password, expiry and space, and its delete button. Favorite is the star next to the doc's name.
+ * A doc's title, slug, password, expiry, project and space, and its delete button. Favorite is the star next to the doc's name.
  * Mount it with a key made of the saved values, so it resets when they change but keeps unsaved edits through an upload.
  */
 export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () => void; onDeleted?: () => void }) {
@@ -84,6 +84,7 @@ export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () =>
   const [title, setTitle] = useState(d.title ?? "");
   const [slug, setSlug] = useState(d.slug ?? "");
   const [space, setSpace] = useState(d.space);
+  const [project, setProject] = useState(d.project ?? "");
   const [password, setPassword] = useState("");
   const [unlock, setUnlock] = useState(false);
   const [status, setStatus] = useState<{ text: string; error?: boolean }>({ text: "" });
@@ -99,6 +100,7 @@ export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () =>
     else if (unlock) body.password = null;
     if (amount !== "") body.expires = Number(amount) === 0 ? null : `${amount}${unit}`;
     if (space !== d.space) body.space = space;
+    if (project.trim() !== (d.project ?? "")) body.project = project.trim() || null;
     if (!Object.keys(body).length) return setStatus({ text: "Nothing to save." });
     setSaving(true);
     setStatus({ text: "Saving…" });
@@ -156,6 +158,10 @@ export function Settings({ d, onChanged, onDeleted }: { d: Doc; onChanged: () =>
       <Field label="Expires" htmlFor={`${id}expires`}>
         <DurationInput id={`${id}expires`} amount={amount} unit={unit} onAmount={setAmount} onUnit={setUnit} placeholder={d.expiresAt === null ? "Never" : d.expiresAt <= Date.now() ? `Expired ${fullDate(d.expiresAt)}` : `Keep: ${fullDate(d.expiresAt)}`} describedBy={`${id}expires-hint`} />
         <Hint id={`${id}expires-hint`}>From now, up to {maxExpires ?? "the longest allowed in Settings"}. 0 means never. After it expires the link stops working and the doc is deleted within a day.</Hint>
+      </Field>
+      <Field label="Project" htmlFor={`${id}project`}>
+        <Input id={`${id}project`} value={project} onChange={(e) => setProject(e.target.value)} maxLength={64} placeholder="None" autoComplete="off" aria-describedby={`${id}project-hint`} />
+        <Hint id={`${id}project-hint`}>Groups docs inside a space. Agents set it when they upload; a name the space already has, in any case, joins that project.</Hint>
       </Field>
       <Field label="Space" htmlFor={`${id}space`}>
         <SpaceSelect id={`${id}space`} value={space} onChange={setSpace} describedBy={`${id}space-hint`} />
