@@ -153,6 +153,10 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* On a narrow screen the top bar (App.tsx) is sticky, so a section scrolled to must land below it. */
+  html {
+    @apply max-lg:scroll-pt-14;
+  }
   body {
     @apply bg-background text-sm text-foreground antialiased;
   }
