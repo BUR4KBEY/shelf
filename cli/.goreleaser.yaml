@@ -8,7 +8,14 @@ builds:
     env:
       - CGO_ENABLED=0
     goos: [linux, darwin, windows]
-    goarch: [amd64, arm64]
+    goarch: [amd64, arm64, arm]
+    # 32-bit ARM (Raspberry Pi and similar) only matters on Linux.
+    goarm: ["7"]
+    ignore:
+      - goos: darwin
+        goarch: arm
+      - goos: windows
+        goarch: arm
     ldflags:
       - -s -w -X main.version={{.Version}}
 
@@ -41,6 +48,24 @@ aurs:
     private_key: '{{ envOrDefault "AUR_KEY" "" }}'
     git_url: ssh://aur@aur.archlinux.org/shelf-cli-bin.git
     skip_upload: '{{ if or (eq (envOrDefault "AUR_KEY" "") "") (eq (envOrDefault "MAKE_LATEST" "true") "false") }}true{{ else }}false{{ end }}'
+    commit_author:
+      name: BUR4KBEY
+      email: rectfc@gmail.com
+
+# Prebuilt binaries for the flake: each release commits nix/package.nix to main with the new URLs and hashes.
+nix:
+  - name: shelf
+    path: nix/package.nix
+    homepage: https://github.com/BUR4KBEY/shelf
+    description: CLI for shelf, publish HTML pages and docs and get a link back
+    license: mit
+    main_program: shelf
+    formatter: nixfmt
+    commit_msg_template: "chore(nix): update shelf to {{ .Tag }}"
+    repository:
+      owner: BUR4KBEY
+      name: shelf
+      branch: main
     commit_author:
       name: BUR4KBEY
       email: rectfc@gmail.com
