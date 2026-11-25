@@ -1,7 +1,7 @@
 import faviconSvg from "./favicon.svg";
 import latinExt from "@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-ext-wdth-normal.woff2";
 import latin from "@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wdth-normal.woff2";
-import { escapeHtml } from "./util";
+import { escapeHtml, randomId } from "./util";
 
 // The pages the Worker writes itself (password form, notices, rendered Markdown) share the dashboard's look.
 // The colours and the font faces mirror dashboard/src/index.css: change them there and here together.
@@ -113,13 +113,24 @@ export function setTheme(url: URL, value: string): Response | undefined {
 }
 
 /**
+ * Dark Reader repaints every page it meets, which breaks the palette; these pages have a dark theme of their own. When it shows up
+ * (it marks <html> with data-darkreader-mode), switch to dark unless the reader picked a theme or Dark Reader runs in its light mode
+ * ("dimmed"), then send it away: the darkreader-lock meta ends its dynamic mode, and its static and filter modes, which ignore
+ * the lock, lose their stylesheet. Not kept in the cookie, so the page follows the system again once the extension is off.
+ */
+const DARK_READER_JS = `(()=>{const r=document.documentElement,off=()=>{if(!r.hasAttribute("data-darkreader-mode"))return;if(!r.dataset.theme&&r.dataset.darkreaderScheme!=="dimmed")r.dataset.theme="dark";for(const id of["dark-reader-style","dark-reader-svg"])document.getElementById(id)?.remove();if(!document.querySelector('meta[name="darkreader-lock"]'))document.head.append(Object.assign(document.createElement("meta"),{name:"darkreader-lock"}))};new MutationObserver(off).observe(r,{attributeFilter:["data-darkreader-mode"]});off()})()`;
+/** The Dark Reader script for a page's <head>, early in it so it runs before the page paints. */
+export const darkReaderScript = (nonce?: string) => `<script${nonce ? ` nonce="${nonce}"` : ""}>${DARK_READER_JS}</script>`;
+
+/**
  * A small centred card under the wordmark, with the theme switcher below it. `card` and `foot` are trusted HTML: escape anything a user wrote.
  * `formAction` is a CSP source. `back` is where the theme switcher returns to, when that is not the page's own URL.
  */
 export function cardPage(req: Request, status: number, title: string, card: string, { foot = "", formAction = "'none'", back = new URL(req.url).pathname } = {}): Response {
   const links = THEMES.map((t) => `<a href="/theme/${t}?next=${encodeURIComponent(back)}"${t === theme(req) ? ' aria-current="true"' : ""}>${t[0].toUpperCase()}${t.slice(1)}</a>`).join("");
   const icon = new URLSearchParams({ ...(palette(req) && { palette: palette(req) }), ...(theme(req) !== "system" && { theme: theme(req) }) });
-  const html = `<!doctype html><html lang="en"${themeAttr(req)}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg?${icon}" type="image/svg+xml"><title>${escapeHtml(title)} · shelf</title>
+  const nonce = randomId(22);
+  const html = `<!doctype html><html lang="en"${themeAttr(req)}><head><meta charset="utf-8">${darkReaderScript(nonce)}<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg?${icon}" type="image/svg+xml"><title>${escapeHtml(title)} · shelf</title>
 <style>${BASE_CSS}
 ${CARD_CSS}</style></head>
 <body><main><header><p class="mark">shelf</p><nav class="theme" aria-label="Theme">${links}</nav></header><div class="card">${card}</div>${foot && `<p class="foot">${foot}</p>`}</main></body></html>`;
@@ -127,7 +138,7 @@ ${CARD_CSS}</style></head>
     status,
     headers: {
       "content-type": "text/html; charset=utf-8",
-      "content-security-policy": `default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; form-action ${formAction}; frame-ancestors 'none'`,
+      "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; form-action ${formAction}; frame-ancestors 'none'`,
       "cache-control": "private, no-store",
       "referrer-policy": "no-referrer",
       "x-robots-tag": "noindex",
