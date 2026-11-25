@@ -24,6 +24,9 @@ don't know them.
      `0` or `never` for never). The owner may set a default expiry; pass
      `--expires never` when the link must last.
    - Describe the change: `-m "what changed"`.
+   - Group it with the rest of the work: `--project billing-poc`, one name per
+     thing you build. Reuse a name `shelf ls` already shows instead of
+     inventing a variant. New versions keep the doc's project.
 3. **Report** the `url`, plus the `versionUrl` when the reader should see
    exactly this version. With `"created": false` the content was identical and
    no new version was made.
