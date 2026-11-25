@@ -7,6 +7,13 @@
 let
   isTesting = config.devenv.isTesting;
   workerPort = config.processes.worker.ports.http.value;
+  # Hooks run from whatever shell calls `git commit`, often outside devenv,
+  # so they bring their own toolchain instead of relying on PATH.
+  hookPath = lib.makeBinPath [
+    config.languages.go.package
+    config.languages.javascript.package
+    config.languages.javascript.pnpm.package
+  ];
 in
 {
   env.DEVSHELL_NAME = "shelf";
@@ -40,7 +47,7 @@ in
     go-vet = {
       enable = true;
       name = "go vet";
-      entry = "sh -c 'cd cli && go vet ./...'";
+      entry = "sh -c 'export PATH=${hookPath}:$PATH && cd cli && go vet ./...'";
       files = "^cli/.*\\.go$";
       pass_filenames = false;
       language = "system";
@@ -48,7 +55,7 @@ in
     worker-typecheck = {
       enable = true;
       name = "worker typecheck";
-      entry = "sh -c 'cd worker && pnpm run typecheck && pnpm run typecheck:dashboard && pnpm run typecheck:preview'";
+      entry = "sh -c 'export PATH=${hookPath}:$PATH && cd worker && pnpm run typecheck && pnpm run typecheck:dashboard && pnpm run typecheck:preview'";
       files = "^worker/.*\\.(ts|tsx|mts|cts|json|jsonc)$";
       pass_filenames = false;
       language = "system";

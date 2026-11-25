@@ -183,7 +183,7 @@ devenv down
 devenv test       # everything CI checks: worker typecheck and tests, the preview build, cli gofmt, vet and tests
 ```
 
-Entering the shell installs git hooks that run gofmt, `go vet`, the Worker typecheck and nixfmt on staged files before each commit.
+Entering the shell installs git hooks that run gofmt, `go vet`, the Worker typecheck and nixfmt on staged files before each commit. The hooks carry their own Go, Node and pnpm, so `git commit` works from any shell once the worktree has entered devenv (`devenv shell -- true`).
 
 ### PR previews
 
