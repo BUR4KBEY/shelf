@@ -1,11 +1,55 @@
 import { useState, type FormEvent } from "react";
 import { ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
-import { Loading, Problem, display, focusRing, useLoad } from "@/components/bits";
+import { Loading, Logo, Problem, display, focusRing, useLoad } from "@/components/bits";
 import { DurationInput, Field, Hint } from "@/components/Settings";
 import { Button } from "@/components/ui/button";
 import { api, errorText, type AppSettings } from "@/lib/api";
+import { PALETTES, setPref, usePref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
+import { THEMES } from "@/views/Sidebar";
+
+const option = (on: boolean) => cn(focusRing, "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-muted-foreground hover:text-foreground", on && "border-ring bg-background font-semibold text-foreground");
+
+/** Light or dark, and the colour. Applies at once, to this browser only: it is kept in cookies, like the sidebar's switch. */
+function Appearance() {
+  const theme = usePref("theme");
+  const palette = usePref("palette");
+  return (
+    <div className="grid grid-cols-1 gap-4 rounded-xl border bg-card p-4">
+      <div role="group" aria-labelledby="f-theme" className="grid gap-1.5">
+        <p id="f-theme" className="text-xs font-semibold text-muted-foreground">
+          Theme
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {THEMES.map(([value, label, Icon]) => (
+            <button key={value} type="button" aria-pressed={theme === value} onClick={() => setPref("theme", value)} className={option(theme === value)}>
+              <Icon className="size-4" aria-hidden />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div role="group" aria-labelledby="f-palette" aria-describedby="f-palette-hint" className="grid gap-1.5">
+        <p id="f-palette" className="text-xs font-semibold text-muted-foreground">
+          Colour
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {PALETTES.map(([value, label]) => (
+            <button key={value} type="button" aria-pressed={palette === value} onClick={() => setPref("palette", value)} className={option(palette === value)}>
+              {/* The logo in that palette, whatever the page's is. */}
+              <span data-palette={value} className="text-foreground">
+                <Logo className="h-4" />
+              </span>
+              {label}
+            </button>
+          ))}
+        </div>
+        <Hint id="f-palette-hint">The logo and the favicon change with it. Each browser keeps its own choice, and the password form and rendered Markdown follow it in this browser.</Hint>
+      </div>
+    </div>
+  );
+}
 
 /** "36h" → ["36", "h"]; null (never) → ["", "d"]. */
 const split = (v: string | null) => (v ? [v.slice(0, -1), v.slice(-1)] : ["", "d"]);
@@ -66,6 +110,10 @@ export function AppSettingsView() {
         All uploads
       </a>
       <h1 className={cn(display, "text-5xl leading-[0.95]")}>Settings</h1>
+      <section className="grid grid-cols-1 gap-2.5">
+        <h2 className="text-base leading-none font-bold">Appearance</h2>
+        <Appearance />
+      </section>
       {error ? (
         <Problem error={error} />
       ) : !s ? (

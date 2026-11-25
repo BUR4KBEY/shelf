@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { Clock, Lock, Monitor, Moon, PanelLeftClose, Rows3, Settings, Star, Sun } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Logo, Tip, display, focusRing, groupName } from "@/components/bits";
@@ -6,13 +6,14 @@ import { isExpired } from "@/components/DocBits";
 import { Button } from "@/components/ui/button";
 import { nameOf, type Activity, type Doc, type Key } from "@/lib/api";
 import { timeLeft } from "@/lib/format";
+import { setPref, usePref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { KeyList } from "@/views/Keys";
 
 const DAY = 86_400_000;
 const item = "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none hover:bg-card/60 focus-visible:ring-3 focus-visible:ring-ring/50 aria-[current=page]:bg-card aria-[current=page]:font-semibold";
 
-const THEMES = [
+export const THEMES = [
   ["system", "Match the system", Monitor],
   ["light", "Light", Sun],
   ["dark", "Dark", Moon],
@@ -20,14 +21,8 @@ const THEMES = [
 
 /** Light, dark, or whatever the system says. Kept in a cookie, so the Worker's own pages (the password form) follow it too. */
 export function ThemeSwitch({ className }: { className?: string }) {
-  const root = document.documentElement;
-  // Read from <html>, not local state: the sidebar and the folded rail each have a switch and must agree.
-  const theme = useSyncExternalStore(watchTheme, () => root.dataset.theme ?? "system");
-  const pick = (t: string) => {
-    if (t === "system") delete root.dataset.theme;
-    else root.dataset.theme = t;
-    document.cookie = `theme=${t}; Path=/; Max-Age=${t === "system" ? 0 : 31536000}; SameSite=Lax`;
-  };
+  const theme = usePref("theme");
+  const pick = (t: string) => setPref("theme", t);
   return (
     <div role="group" aria-label="Theme" className={cn("flex shrink-0 rounded-lg border p-0.5", className)}>
       {THEMES.map(([value, label, Icon]) => (
@@ -39,12 +34,6 @@ export function ThemeSwitch({ className }: { className?: string }) {
       ))}
     </div>
   );
-}
-
-function watchTheme(onChange: () => void) {
-  const observer = new MutationObserver(onChange);
-  observer.observe(document.documentElement, { attributeFilter: ["data-theme"] });
-  return () => observer.disconnect();
 }
 
 /** Every doc and every key, always in reach. The log shows what happened; this shows what there is. */
