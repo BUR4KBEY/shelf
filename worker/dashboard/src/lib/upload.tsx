@@ -9,10 +9,10 @@ export type Upload = { items: Item[]; title?: string };
 /** Where files go: a new doc, or a new version of `ref`. */
 export type Target = { ref?: string; message?: () => string };
 
-const PROGRESS = "upload";
+export const PROGRESS = "upload";
 let busy = false;
 
-function progress(text: string, done: number, total: number) {
+export function progress(text: string, done: number, total: number) {
   toast.loading(text, { id: PROGRESS, duration: Infinity, description: <Progress value={total ? (done / total) * 100 : 0} aria-label={text} className="mt-1.5" /> });
 }
 

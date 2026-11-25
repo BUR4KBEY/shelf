@@ -1,8 +1,8 @@
 import { previewAccess } from "./access";
 import { appSettings, deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, push, putBlob, sweep } from "./api";
 import { type Caller, apiKey } from "./auth";
+import { exportShelf, importCheck, importShelf } from "./backup";
 import { createKey, createSpace, dashboardPage, deleteKey, deleteSpace, getAnalytics, getKey, listKeys, listSpaces, patchKey, patchSpace, revokeKey } from "./dashboard";
-import { exportShelf } from "./export";
 import { llmsTxt } from "./llms";
 import { mcp } from "./mcp";
 import { favicon, font, notFound, notice, setTheme } from "./page";
@@ -83,7 +83,9 @@ export default {
         // Dashboard only: an API key publishes docs, it doesn't change how the app treats everyone's uploads.
         if (req.method === "GET" && sub === "/api/settings") return getAppSettings(env);
         if (req.method === "PATCH" && sub === "/api/settings") return patchAppSettings(req, env);
-        if (req.method === "GET" && sub === "/api/export") return exportShelf(env, url.searchParams.get("space"));
+        if (req.method === "GET" && sub === "/api/export") return exportShelf(env, url.searchParams.get("space"), url.searchParams.get("passwords") === "1");
+        if (req.method === "POST" && sub === "/api/import/check") return importCheck(req, env);
+        if (req.method === "POST" && sub === "/api/import") return importShelf(req, env);
         return (await docRoutes(req, env, sub, null)) ?? json({ error: "not found" }, 404);
       }
     }

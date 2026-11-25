@@ -694,18 +694,8 @@ describe("dashboard", () => {
     }
   });
 
-  it("exports docs, versions and a manifest as a tar, each blob once", async () => {
-    const space = (await (await dash("/dashboard/api/spaces", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "backup" }) })).json()) as { id: string };
-    const long = `${"deep/".repeat(25)}page.html`; // over ustar's 100 bytes
-    const a = await publish({ "index.html": "<h1>one</h1>", [long]: "x" }, { password: "hunter22" });
-    await publish({ "index.html": "<h1>two</h1>", [long]: "x" }, { ref: a.id });
-    await dash(`/dashboard/api/docs/${a.id}`, { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ space: space.id }) });
-    expect((await dash("/dashboard/api/export?space=nope")).status).toBe(404);
-    const res = await dash(`/dashboard/api/export?space=${space.id}`);
-    expect(res.headers.get("content-disposition")).toMatch(new RegExp(`^attachment; filename="shelf-\\d{4}-\\d\\d-\\d\\d-${space.id}\\.tar"$`));
-    const tar = new Uint8Array(await res.arrayBuffer());
-
-    // Walk the archive: [type, name, link, body] per entry, applying PAX names.
+  /** Walks a tar the export wrote: [type, name, link, body] per entry, with PAX names applied. */
+  function untar(tar: Uint8Array): [string, string, string, string][] {
     const text = (b: Uint8Array) => new TextDecoder().decode(b).replace(/\0.*$/s, "");
     const entries: [string, string, string, string][] = [];
     let pax: Record<string, string> = {};
@@ -721,6 +711,19 @@ describe("dashboard", () => {
       }
       at += 512 + Math.ceil(size / 512) * 512;
     }
+    return entries;
+  }
+
+  it("exports docs, versions and a manifest as a tar, each blob once", async () => {
+    const space = (await (await dash("/dashboard/api/spaces", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "backup" }) })).json()) as { id: string };
+    const long = `${"deep/".repeat(25)}page.html`; // over ustar's 100 bytes
+    const a = await publish({ "index.html": "<h1>one</h1>", [long]: "x" }, { password: "hunter22" });
+    await publish({ "index.html": "<h1>two</h1>", [long]: "x" }, { ref: a.id });
+    await dash(`/dashboard/api/docs/${a.id}`, { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ space: space.id }) });
+    expect((await dash("/dashboard/api/export?space=nope")).status).toBe(404);
+    const res = await dash(`/dashboard/api/export?space=${space.id}`);
+    expect(res.headers.get("content-disposition")).toMatch(new RegExp(`^attachment; filename="shelf-\\d{4}-\\d\\d-\\d\\d-${space.id}\\.tar"$`));
+    const entries = untar(new Uint8Array(await res.arrayBuffer()));
     expect(entries.slice(0, -1)).toEqual([
       ["0", `docs/${a.id}/1/${long}`, "", "x"],
       ["0", `docs/${a.id}/1/index.html`, "", "<h1>one</h1>"],
@@ -731,7 +734,47 @@ describe("dashboard", () => {
     expect(name).toBe("shelf.json");
     const manifest = JSON.parse(json) as { space: string; spaces: { id: string }[]; docs: { id: string; locked: boolean; versions: { n: number; files: { path: string }[] }[] }[]; missing: string[] };
     expect(manifest).toMatchObject({ space: space.id, spaces: [{ id: space.id, keysDelete: true }], docs: [{ id: a.id, locked: true, versions: [{ n: 1 }, { n: 2 }] }], missing: [] });
-    expect(json).not.toContain("password_hash");
+    expect(json).not.toMatch(/password_hash|passwordHash|pbkdf2/);
+  });
+
+  it("imports a backup: same links and passwords with hashes, conflicts skipped or copied, locked docs never public", async () => {
+    const space = (await (await dash("/dashboard/api/spaces", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "restore" }) })).json()) as { id: string };
+    const locked = await publish({ "secret.html": "<p>s</p>" }, { password: "hunter22", slug: "restore-me", title: "Secret" });
+    await publish({ "secret.html": "<p>s2</p>" }, { ref: locked.id, message: "second" });
+    await dash(`/dashboard/api/docs/${locked.id}`, { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ space: space.id, favorite: true }) });
+    const shelfJson = async (query: string) =>
+      JSON.parse(untar(new Uint8Array(await (await dash(`/dashboard/api/export?space=${space.id}${query}`)).arrayBuffer())).at(-1)![3]) as {
+        spaces: object[];
+        keys: object[];
+        docs: { id: string; passwordHash?: string; versions: object[] }[];
+      };
+    const withHashes = await shelfJson("&passwords=1");
+    const without = await shelfJson("");
+    expect(withHashes.docs[0].passwordHash).toMatch(/^pbkdf2\$/);
+    expect(without.docs[0].passwordHash).toBeUndefined();
+    const post = (path: string, body: object) => dash(`/dashboard/api/import${path}`, { method: "POST", headers: sameOrigin, body: JSON.stringify(body) });
+
+    // Gone from the shelf, then back from the backup with its id, slug, password, history and space.
+    await dash(`/dashboard/api/docs/${locked.id}`, { method: "DELETE", headers: sameOrigin });
+    const check = (await (await post("/check", { docs: withHashes.docs })).json()) as { conflicts: string[]; missing: string[] };
+    expect(check).toEqual({ conflicts: [], missing: expect.arrayContaining([await sha256Hex("<p>s</p>"), await sha256Hex("<p>s2</p>")]) });
+    expect((await post("", { ...withHashes, docs: [{ ...withHashes.docs[0], passwordHash: "pbkdf2$9999999$00$00" }] })).status).toBe(400);
+    const restored = (await (await post("", withHashes)).json()) as { imported: string[]; needPassword: string[] };
+    expect(restored).toMatchObject({ imported: [locked.id], needPassword: [] });
+    expect(await (await get("/view/restore-me", { headers: { "x-doc-password": "hunter22" } })).text()).toBe("<p>s2</p>");
+    const back = (await (await dash(`/dashboard/api/docs/${locked.id}`)).json()) as { space: string; favorite: boolean; versions: { n: number; message: string | null }[] };
+    expect(back).toMatchObject({ space: space.id, favorite: true, versions: [{ n: 2, message: "second" }, { n: 1 }] });
+
+    // Already there: skipped unless copied; a copy gets a new id and loses the taken slug.
+    expect(((await (await post("/check", { docs: without.docs })).json()) as { conflicts: string[] }).conflicts).toEqual([locked.id]);
+    expect(await (await post("", without)).json()).toMatchObject({ imported: [], skipped: [locked.id] });
+    const copy = (await (await post("", { ...without, copies: [locked.id] })).json()) as { copied: { from: string; to: string }[]; needPassword: string[] };
+    const to = copy.copied[0].to;
+    expect(copy).toMatchObject({ copied: [{ from: locked.id }], needPassword: [to] });
+    expect(to).not.toBe(locked.id);
+    // Backed up without its hash, the copy stays locked behind a password nobody knows.
+    expect((await get(`/view/${to}`, { headers: { "x-doc-password": "hunter22" } })).status).toBe(401);
+    expect(await (await dash(`/dashboard/api/docs/${to}`)).json()).toMatchObject({ slug: null, locked: true });
   });
 
   it("keeps each key to its own space, with the permissions the owner set", async () => {
