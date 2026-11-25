@@ -40,17 +40,20 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
     setAnchor(n);
   };
   const stopSelecting = () => (setSelecting(false), setPicked(new Set()), setAnchor(null));
-  const setDisabled = async (disabled: boolean) => {
-    const versions = chosen.filter((v) => !!v.disabled !== disabled).map((v) => v.n);
+  /** Turns `versions` off or on; true once saved. */
+  const setDisabled = async (versions: number[], disabled: boolean) => {
     try {
       await api(`/docs/${d!.id}/versions`, { method: "PATCH", json: { versions, disabled } });
-      toast.success(`${disabled ? "Turned off" : "Turned on"} ${plural(versions.length, "version")}`);
-      stopSelecting();
+      toast.success(`${disabled ? "Turned off" : "Turned on"} ${versions.length === 1 ? `version ${versions[0]}` : plural(versions.length, "version")}`);
+      return true;
     } catch (e) {
       toast.error(errorText(e));
+      return false;
+    } finally {
+      reload();
     }
-    reload();
   };
+  const setChosen = async (disabled: boolean) => (await setDisabled(chosen.filter((v) => !!v.disabled !== disabled).map((v) => v.n), disabled)) && stopSelecting();
 
   return (
     <div className="mx-auto grid max-w-[60rem] grid-cols-1 gap-7 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
@@ -181,14 +184,22 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                         </>
                       }
                       actions={
-                        // A turned-off version answers its link with "turned off", so there is nothing to open.
-                        !v.disabled && (
-                          <Button variant="outline" size="sm" className="max-sm:h-9 max-sm:px-3" asChild>
-                            <a href={openUrl(d, v.n)} target="_blank" rel="noopener noreferrer" aria-label={`Open version ${v.n} in a new tab`}>
-                              <ExternalLink /> Open this version
-                            </a>
-                          </Button>
-                        )
+                        <div className="flex flex-wrap gap-1.5 sm:justify-end">
+                          {/* The current version can't be turned off, so the doc's own link always works. */}
+                          {v.n !== d.latest && (
+                            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground max-sm:h-9 max-sm:px-3" aria-label={`${v.disabled ? "Turn on" : "Turn off"} version ${v.n}`} onClick={() => setDisabled([v.n], !v.disabled)}>
+                              {v.disabled ? <Power /> : <PowerOff />} {v.disabled ? "Turn on" : "Turn off"}
+                            </Button>
+                          )}
+                          {/* A turned-off version answers its link with "turned off", so there is nothing to open. */}
+                          {!v.disabled && (
+                            <Button variant="outline" size="sm" className="max-sm:h-9 max-sm:px-3" asChild>
+                              <a href={openUrl(d, v.n)} target="_blank" rel="noopener noreferrer" aria-label={`Open version ${v.n} in a new tab`}>
+                                <ExternalLink /> Open this version
+                              </a>
+                            </Button>
+                          )}
+                        </div>
                       }
                     />
                   ))}
@@ -203,10 +214,10 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                 <Button variant="ghost" size="sm" onClick={() => setPicked(new Set(picked.size === older.length ? [] : older))}>
                   {picked.size === older.length ? "Clear" : `Select all ${older.length} older`}
                 </Button>
-                <Button variant="outline" size="sm" disabled={!chosen.some((v) => !v.disabled)} onClick={() => setDisabled(true)}>
+                <Button variant="outline" size="sm" disabled={!chosen.some((v) => !v.disabled)} onClick={() => setChosen(true)}>
                   <PowerOff /> Turn off
                 </Button>
-                <Button variant="outline" size="sm" disabled={!chosen.some((v) => v.disabled)} onClick={() => setDisabled(false)}>
+                <Button variant="outline" size="sm" disabled={!chosen.some((v) => v.disabled)} onClick={() => setChosen(false)}>
                   <Power /> Turn on
                 </Button>
                 <Button variant="outline" size="sm" onClick={stopSelecting}>
