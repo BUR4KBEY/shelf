@@ -1,5 +1,8 @@
-/** Set by vite's `define` from dashboard/build-info.ts. Dates are ISO strings; any field is null when the build couldn't tell. */
-declare const __BUILD__: { commit: string | null; commitDate: string | null; builtAt: string; node: string; compatibilityDate: string | null };
+/**
+ * Set by vite's `define` from dashboard/build-info.ts. Dates are ISO strings; any field is null when the build couldn't tell.
+ * `cleanupCron`: the cleanup's schedule from wrangler.jsonc.
+ */
+declare const __BUILD__: { commit: string | null; commitDate: string | null; builtAt: string; node: string; compatibilityDate: string | null; cleanupCron: string | null };
 export const BUILD = __BUILD__;
 
 export const REPO = "BUR4KBEY/shelf";

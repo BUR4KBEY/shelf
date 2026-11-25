@@ -12,6 +12,13 @@ export const timeLeft = (t: number) => (t <= Date.now() ? null : (span(t - Date.
 export const fullDate = (t: number) => new Date(t).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 /** Always 24-hour, so the times in the log line up in one narrow column. */
 export const clock = (t: number) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+/** When a daily cron ("M H * * *", UTC, as Cloudflare runs them) next fires after `now`; null for any other schedule. */
+export function nextDaily(cron: string | null, now = Date.now()): number | null {
+  const m = cron?.match(/^(\d{1,2}) (\d{1,2}) \* \* \*$/);
+  if (!m) return null;
+  const t = new Date(now).setUTCHours(Number(m[2]), Number(m[1]), 0, 0);
+  return t > now ? t : t + 86_400_000;
+}
 /** "Today", "Yesterday", then the date; `day` is a local midnight. */
 export function dayName(day: number): string {
   const today = new Date().setHours(0, 0, 0, 0);
