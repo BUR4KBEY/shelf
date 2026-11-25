@@ -57,7 +57,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
   const setChosen = (disabled: boolean) => setDisabled(chosen.filter((v) => !!v.disabled !== disabled).map((v) => v.n), disabled);
 
   return (
-    <div className="mx-auto grid max-w-[60rem] grid-cols-1 gap-7 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
+    <div className="mx-auto flex max-w-[60rem] flex-col gap-7 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
       <a href="#/" className={cn(focusRing, "-ml-1 flex w-fit items-center gap-0.5 text-sm text-muted-foreground hover:text-foreground")}>
         <ChevronLeft className="size-4" aria-hidden />
         All uploads
@@ -140,7 +140,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
             </div>
           </section>
 
-          <section className="grid grid-cols-1 gap-5">
+          <section className="flex flex-col gap-5">
             <div className="flex items-center justify-between gap-3">
               <h2 className={heading}>History</h2>
               {/* Only worth a control once there is a version besides the current one. */}
@@ -153,7 +153,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
             {byDay(d.versions, (v) => String(v.n)).map(({ day, entries }) => (
               <div key={day} className="grid grid-cols-1 gap-2.5">
                 <h3 className={cn(display, "text-2xl leading-none")}>{dayName(day)}</h3>
-                <div className="grid grid-cols-1 gap-2">
+                <div className="flex flex-col gap-2">
                   {entries.map(({ head: v }) => (
                     <Entry
                       key={v.n}

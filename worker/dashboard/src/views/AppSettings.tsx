@@ -713,7 +713,7 @@ export function AppSettingsView({ section, onSpacesChanged }: { section?: string
   useLanding("settings", section, !!s);
 
   return (
-    <div className="mx-auto grid max-w-[60rem] grid-cols-1 gap-7 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
+    <div className="mx-auto flex max-w-[60rem] flex-col gap-7 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
       <a href="#/" className={cn(focusRing, "-ml-1 flex w-fit items-center gap-0.5 text-sm text-muted-foreground hover:text-foreground")}>
         <ChevronLeft className="size-4" aria-hidden />
         All uploads
