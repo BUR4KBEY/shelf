@@ -7,7 +7,7 @@
     "dev": "wrangler d1 migrations apply DB --local && wrangler dev",
     "deploy": "wrangler deploy && wrangler d1 migrations apply DB --remote",
     "types": "wrangler types",
-    "test": "npm run build && vitest run",
+    "test": "pnpm run build && vitest run",
     "typecheck": "tsc",
     "typecheck:dashboard": "tsc -p dashboard",
     "setup:access": "node scripts/setup-access.mjs"
@@ -38,5 +38,6 @@
   },
   "dependencies": {
     "marked": "^18.2.1"
-  }
+  },
+  "packageManager": "pnpm@12.9.0"
 }

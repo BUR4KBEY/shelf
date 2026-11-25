@@ -14,9 +14,9 @@ in
   # Versions match CI (.github/workflows/ci.yml) and cli/go.mod.
   languages.javascript = {
     enable = true;
-    package = pkgs.nodejs_22;
+    package = pkgs.nodejs_26;
     directory = "worker";
-    npm = {
+    pnpm = {
       enable = true;
       install.enable = true;
     };
@@ -48,7 +48,7 @@ in
     worker-typecheck = {
       enable = true;
       name = "worker typecheck";
-      entry = "sh -c 'cd worker && npm run typecheck && npm run typecheck:dashboard'";
+      entry = "sh -c 'cd worker && pnpm run typecheck && pnpm run typecheck:dashboard'";
       files = "^worker/.*\\.(ts|tsx|mts|cts|json|jsonc)$";
       pass_filenames = false;
       language = "system";
@@ -66,7 +66,7 @@ in
   # Each worktree gets its own free port, starting at 8787.
   processes = lib.optionalAttrs (!isTesting) {
     worker = {
-      exec = ''cd "$DEVENV_ROOT/worker" && npm run dev -- --ip 127.0.0.1 --port ${toString workerPort}'';
+      exec = ''cd "$DEVENV_ROOT/worker" && pnpm run dev --ip 127.0.0.1 --port ${toString workerPort}'';
       ports.http.allocate = 8787;
       ready.http.get = {
         port = workerPort;
@@ -80,9 +80,9 @@ in
     "shelf:check-worker".exec = ''
       set -euo pipefail
       cd "$DEVENV_ROOT/worker"
-      npm run typecheck
-      npm run typecheck:dashboard
-      npm test
+      pnpm run typecheck
+      pnpm run typecheck:dashboard
+      pnpm test
     '';
     "shelf:check-cli".exec = ''
       set -euo pipefail
@@ -95,7 +95,7 @@ in
 
   enterTest = ''
     set -euo pipefail
-    node --version | grep -q '^v22\.'
+    node --version | grep -q '^v26\.'
     go version | grep -q ' go1\.27\.'
     ${config.tasks."shelf:check-worker".command}
     ${config.tasks."shelf:check-cli".command}

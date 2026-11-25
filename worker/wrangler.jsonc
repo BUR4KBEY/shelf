@@ -4,7 +4,7 @@
   "main": "src/index.ts",
   // The dashboard is a React app built into src/dashboard.html, which the Worker imports as text.
   // watch_dir keeps `wrangler dev` from rebuilding on its own output in src/.
-  "build": { "command": "npm run build", "watch_dir": "dashboard" },
+  "build": { "command": "pnpm run build", "watch_dir": "dashboard" },
   // The Worker serves the dashboard's font and the favicon to its own pages (src/page.ts).
   "rules": [{ "type": "Data", "globs": ["**/*.woff2"], "fallthrough": true }, { "type": "Text", "globs": ["**/*.svg"], "fallthrough": true }],
   "compatibility_date": "2026-11-20",

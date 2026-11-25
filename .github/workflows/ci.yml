@@ -12,15 +12,18 @@ jobs:
         working-directory: worker
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: worker/package.json
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: worker/package-lock.json
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run typecheck:dashboard
-      - run: npm test
+          node-version: 26
+          cache: pnpm
+          cache-dependency-path: worker/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm run typecheck:dashboard
+      - run: pnpm test
 
   cli:
     runs-on: ubuntu-latest
