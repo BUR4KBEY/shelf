@@ -37,7 +37,8 @@ export function App() {
   const openKey = route.match(/^key\/([^/]+)$/)?.[1];
   const settingsSection = route.match(/^settings(?:\/([^/]+))?$/);
   const settings = !!settingsSection;
-  const analytics = route === "analytics";
+  const analyticsRoute = route.match(/^analytics(?:\/([^/?]+))?(?:\?(.*))?$/);
+  const analytics = !!analyticsRoute;
   const docs = useLoad<Doc[]>("/docs");
   const uploads = useLoad<Activity[]>("/uploads");
   const keys = useLoad<Key[]>("/keys");
@@ -143,7 +144,7 @@ export function App() {
                   ) : settings ? (
                     <AppSettingsView section={settingsSection?.[1]} onSpacesChanged={spacesChanged} />
                   ) : analytics ? (
-                    <AnalyticsView keys={keys.data} docs={docs.data} colorOf={colorOf} />
+                    <AnalyticsView section={analyticsRoute?.[1]} query={analyticsRoute?.[2]} keys={keys.data} docs={docs.data} colorOf={colorOf} />
                   ) : (
                     <FeedView docs={docs.data} uploads={uploads.data} colorOf={colorOf} onChanged={changed} />
                   )}
