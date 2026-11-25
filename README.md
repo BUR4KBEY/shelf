@@ -97,7 +97,15 @@ echo "$KEY"   # shown once; only the hash is stored
 
 ## CLI
 
-Download a binary from [Releases](https://github.com/BUR4KBEY/shelf/releases), or `go install github.com/BUR4KBEY/shelf/cli/cmd/shelf@latest`.
+Download a binary from [Releases](https://github.com/BUR4KBEY/shelf/releases), or install it with one of:
+
+```sh
+go install github.com/BUR4KBEY/shelf/cli/cmd/shelf@latest
+nix profile install github:BUR4KBEY/shelf   # or try it: nix run github:BUR4KBEY/shelf -- version
+yay -S shelf-cli-bin                         # Arch (AUR); shelf-bin is a different tool
+```
+
+Nix and the AUR install the release's prebuilt binary for Linux (x86_64, aarch64, armv7) and, with Nix, macOS (x86_64, aarch64). Each release tag commits the new `nix/package.nix` to `main`, so the flake installs nothing until the first release. It also publishes `shelf-cli-bin` to the AUR when the repo has an `AUR_KEY` secret: the private SSH key of the AUR account that owns the package.
 
 ```sh
 shelf login                                  # server URL + API key, saved to ~/.config/shelf (0600)
