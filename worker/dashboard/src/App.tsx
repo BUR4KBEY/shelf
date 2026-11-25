@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { api, nameOf, type Activity, type Doc, type Key } from "@/lib/api";
 import { NO_KEY, keyColors } from "@/lib/feed";
+import { useFavicon } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { AppSettingsView } from "@/views/AppSettings";
 import { DocView } from "@/views/Doc";
@@ -27,6 +28,7 @@ function useHashPath() {
 /** The sidebar (every doc, every key) beside the log of uploads, one doc's or key's page, or the app's settings. On a narrow screen a button swaps the two. */
 export function App() {
   const route = useHashPath();
+  useFavicon();
   const open = route.match(/^doc\/([^/]+)$/)?.[1];
   const openId = open && decodeURIComponent(open);
   const openKey = route.match(/^key\/([^/]+)$/)?.[1];

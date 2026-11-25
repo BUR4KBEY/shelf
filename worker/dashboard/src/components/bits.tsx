@@ -56,7 +56,7 @@ export const focusRing = "rounded-sm outline-none focus-visible:ring-3 focus-vis
 export const groupName = "text-[0.8125rem] leading-none font-semibold text-muted-foreground";
 /** The narrow, heavy cut for the wordmark and the names of days and docs. */
 export const display = "font-bold tracking-tight font-stretch-[78%]";
-/** The logo, cropped to its shapes. Drawn inline so it follows the theme switch (the favicon, src/favicon.svg, can only follow the system); change both together. */
+/** The logo, cropped to its shapes. Drawn inline so it follows the theme and palette (the favicon, src/favicon.svg, gets them from the Worker); change both together. */
 export function Logo({ className }: { className?: string }) {
   return (
     <svg viewBox="14 34 100 61" className={cn("shrink-0 fill-current", className)} aria-hidden>

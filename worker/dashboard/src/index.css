@@ -26,30 +26,59 @@
  * Light and dark follow the system unless the theme switcher put `data-theme` on <html> (the `theme` cookie; the Worker
  * writes the attribute into the page, see src/page.ts). Every colour is a `light-dark()` pair, so `color-scheme` alone picks the theme.
  * Colour belongs to the keys: an upload is tinted with the colour of the key that made it, and little else is coloured.
+ *
+ * The palette (`data-palette`, the `palette` cookie) sets the hue every colour shares, and how much of each colour's chroma it
+ * keeps. The colours are declared on any `[data-palette]` element too, so a swatch can show another palette than the page's.
+ * The palettes mirror PALETTES in src/page.ts.
  */
 :root {
   color-scheme: light dark;
   --radius: 0.5rem;
-  --background: light-dark(#f4f6fc, #111a3a);
-  --foreground: light-dark(#131a3a, #eef1ff);
-  --sidebar: light-dark(#e7ebf7, #0b1230);
-  --card: light-dark(#fff, #1a2550);
-  --card-foreground: var(--foreground);
-  --popover: light-dark(#fff, #1d2957);
-  --popover-foreground: var(--foreground);
-  --primary: light-dark(#131a3a, #eef1ff);
-  --primary-foreground: light-dark(#fff, #0b1230);
-  --secondary: light-dark(#e7ebf7, #26326a);
-  --secondary-foreground: var(--foreground);
-  --muted: light-dark(#e7ebf7, #26326a);
-  --muted-foreground: light-dark(#58638c, #98a3cf);
-  --accent: light-dark(#e7ebf7, #26326a);
-  --accent-foreground: var(--foreground);
+  --hue: 270;
+  --tint: 1;
   --destructive: light-dark(#c8341b, #ff7a6b);
   --warning: light-dark(#a55d00, #ffb64d);
-  --border: light-dark(#cdd5ea, #2b3769);
-  --input: light-dark(#9aa6c9, #4a5894);
-  --ring: light-dark(#3b55d9, #9db0ff);
+}
+:root,
+[data-palette] {
+  --background: light-dark(oklch(0.973 calc(0.008 * var(--tint)) var(--hue)), oklch(0.23 calc(0.063 * var(--tint)) var(--hue)));
+  --foreground: light-dark(oklch(0.231 calc(0.062 * var(--tint)) var(--hue)), oklch(0.96 calc(0.019 * var(--tint)) var(--hue)));
+  --sidebar: light-dark(oklch(0.941 calc(0.017 * var(--tint)) var(--hue)), oklch(0.196 calc(0.06 * var(--tint)) var(--hue)));
+  --card: light-dark(#fff, oklch(0.281 calc(0.08 * var(--tint)) var(--hue)));
+  --card-foreground: var(--foreground);
+  --popover: light-dark(#fff, oklch(0.298 calc(0.084 * var(--tint)) var(--hue)));
+  --popover-foreground: var(--foreground);
+  --primary: var(--foreground);
+  --primary-foreground: light-dark(#fff, var(--sidebar));
+  --secondary: var(--muted);
+  --secondary-foreground: var(--foreground);
+  --muted: light-dark(oklch(0.941 calc(0.017 * var(--tint)) var(--hue)), oklch(0.34 calc(0.098 * var(--tint)) var(--hue)));
+  --muted-foreground: light-dark(oklch(0.507 calc(0.067 * var(--tint)) var(--hue)), oklch(0.722 calc(0.065 * var(--tint)) var(--hue)));
+  --accent: var(--muted);
+  --accent-foreground: var(--foreground);
+  --border: light-dark(oklch(0.873 calc(0.03 * var(--tint)) var(--hue)), oklch(0.354 calc(0.088 * var(--tint)) var(--hue)));
+  --input: light-dark(oklch(0.728 calc(0.053 * var(--tint)) var(--hue)), oklch(0.477 calc(0.098 * var(--tint)) var(--hue)));
+  --ring: light-dark(oklch(0.513 calc(0.203 * var(--tint)) var(--hue)), oklch(0.773 calc(0.115 * var(--tint)) var(--hue)));
+}
+[data-palette="teal"] {
+  --hue: 200;
+  --tint: 0.42;
+}
+[data-palette="green"] {
+  --hue: 150;
+  --tint: 0.69;
+}
+[data-palette="plum"] {
+  --hue: 325;
+  --tint: 1;
+}
+[data-palette="graphite"] {
+  --hue: 0;
+  --tint: 0;
+}
+[data-palette="indigo"] {
+  --hue: 270;
+  --tint: 1;
 }
 :root[data-theme="light"] {
   color-scheme: light;
