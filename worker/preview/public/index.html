@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>shelf preview</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;display:grid;place-items:center;min-height:100dvh;margin:0;padding:1rem;text-align:center}</style>
+</head>
+<body>
+<p id="status">Loading the preview…</p>
+<script>
+// Starts the service worker that runs the preview, then opens the page that was asked for.
+// GitHub Pages serves this file for / and, as 404.html, for any path the service worker didn't serve.
+(async () => {
+  const status = document.getElementById("status");
+  if (!("serviceWorker" in navigator)) return void (status.textContent = "The preview needs service workers, which this browser (or its private mode) turned off.");
+  // Already running and it still landed here: the path is not one the preview serves.
+  if (navigator.serviceWorker.controller) return void (status.innerHTML = 'Nothing here. <a href="/dashboard">Open the dashboard</a>');
+  try {
+    await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+    location.replace(location.pathname === "/" || location.pathname === "/index.html" ? "/dashboard" : location.href);
+  } catch (e) {
+    status.textContent = `The preview didn't start: ${e.message}`;
+  }
+})();
+</script>
+</body>
+</html>

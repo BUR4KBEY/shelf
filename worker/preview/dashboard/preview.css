@@ -1,0 +1,19 @@
+@import "../../dashboard/src/index.css";
+@source "../../dashboard/src";
+
+/* The banner sits above the dashboard, so its sticky header and sidebar start below it. */
+:root {
+  --banner: 2.5rem;
+}
+#root .min-h-dvh {
+  min-height: calc(100dvh - var(--banner));
+}
+#root header.sticky {
+  top: var(--banner);
+}
+@media (width >= 64rem) {
+  #root aside {
+    top: var(--banner);
+    height: calc(100dvh - var(--banner));
+  }
+}
