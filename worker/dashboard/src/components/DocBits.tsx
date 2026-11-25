@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import { Boxes, Clock, Lock, Star as StarIcon } from "lucide-react";
+import { Boxes, Clock, Folder, Lock, Star as StarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Tip, chip, focusRing } from "@/components/bits";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,16 @@ export function SpaceChip({ d }: { d: Doc }) {
       {spaces.find((s) => s.id === d.space)?.name ?? d.space}
     </span>
   );
+}
+
+/** The doc's project. Nothing when it has none. */
+export function ProjectChip({ d }: { d: Doc }) {
+  return d.project ? (
+    <span className={chip} title="Project">
+      <Folder aria-hidden />
+      {d.project}
+    </span>
+  ) : null;
 }
 
 /** The star next to a doc's name. Favorites lead the list in the sidebar. */

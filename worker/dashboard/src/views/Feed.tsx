@@ -2,7 +2,7 @@ import { useContext, useState } from "react";
 import { Copy, ExternalLink, Search, Settings2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Tip, copy, dashed, display, focusRing } from "@/components/bits";
-import { DocName, Expiry, Locked, SpaceChip, SpacesContext, isExpired } from "@/components/DocBits";
+import { DocName, Expiry, Locked, ProjectChip, SpaceChip, SpacesContext, isExpired } from "@/components/DocBits";
 import { DropZone } from "@/components/DropZone";
 import { Entry } from "@/components/Entry";
 import { Settings } from "@/components/Settings";
@@ -34,13 +34,16 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
   const spaces = useContext(SpacesContext) ?? [];
   const [space, setSpace] = useState("*"); // "*": every space
   const inSpace = (d: Doc) => space === "*" || d.space === space;
+  const [project, setProject] = useState("*"); // "*": every project, and docs in none
+  const inProject = (d: Doc) => project === "*" || d.project === project;
+  const projects = [...new Set(docs.filter(inSpace).flatMap((d) => d.project ?? []))].sort((a, b) => a.localeCompare(b));
   const [open, setOpen] = useState<string | null>(null); // the entry whose settings are open
   const byId = new Map(docs.map((d) => [d.id, d]));
   const keep = FILTERS.find(([value]) => value === filter)![2];
   const q = query.trim().toLowerCase();
   const shown = uploads.filter((u) => {
     const d = byId.get(u.docId);
-    return d && inSpace(d) && keep(d) && [d.title, d.slug, d.id, u.message].some((s) => s?.toLowerCase().includes(q));
+    return d && inSpace(d) && inProject(d) && keep(d) && [d.title, d.slug, d.id, d.project, u.message].some((s) => s?.toLowerCase().includes(q));
   });
 
   return (
@@ -61,7 +64,7 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
         <>
           <div className="flex flex-wrap items-center gap-x-1 gap-y-2">
             {FILTERS.map(([value, label, test]) => {
-              const count = docs.filter((d) => inSpace(d) && test(d)).length;
+              const count = docs.filter((d) => inSpace(d) && inProject(d) && test(d)).length;
               // "Expired" only shows up when there is something expired to look at.
               if (value === "expired" && !count && filter !== value) return null;
               return (
@@ -75,10 +78,32 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                 </button>
               );
             })}
+            {/* Only worth a control once some doc has a project. */}
+            {projects.length > 0 && (
+              <Select value={project} onValueChange={setProject}>
+                <SelectTrigger aria-label="Project" className="sm:ml-auto">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" align="end">
+                  <SelectItem value="*">All projects</SelectItem>
+                  {projects.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {p}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             {/* Only worth a control once there are two spaces to tell apart. */}
             {spaces.length > 1 && (
-              <Select value={space} onValueChange={setSpace}>
-                <SelectTrigger aria-label="Space" className="sm:ml-auto">
+              <Select
+                value={space}
+                onValueChange={(s) => {
+                  setSpace(s);
+                  setProject("*"); // project names are per space
+                }}
+              >
+                <SelectTrigger aria-label="Space" className={cn(!projects.length && "sm:ml-auto")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent position="popper" align="end">
@@ -91,13 +116,13 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                 </SelectContent>
               </Select>
             )}
-            <div className={cn("relative w-full sm:w-60", spaces.length < 2 && "sm:ml-auto")}>
+            <div className={cn("relative w-full sm:w-60", spaces.length < 2 && !projects.length && "sm:ml-auto")}>
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
               <Input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search docs and messages" aria-label="Search docs and messages" autoComplete="off" className="pl-8" />
             </div>
           </div>
 
-          {shown.length === 0 && <p className="pt-4 text-muted-foreground">{q ? `No upload has “${query.trim()}” in its doc's title, slug or id, or in its message.` : "No uploads match this filter."}</p>}
+          {shown.length === 0 && <p className="pt-4 text-muted-foreground">{q ? `No upload has “${query.trim()}” in its doc's title, slug, id or project, or in its message.` : "No uploads match this filter."}</p>}
 
           {byDay(shown, (u) => u.docId).map(({ day, count, entries }) => (
             <section key={day} aria-label={dayName(day)} className="grid grid-cols-1 gap-3">
@@ -126,6 +151,7 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                           <span>
                             {plural(head.files, "file")}, {size(head.size)}
                           </span>
+                          <ProjectChip d={d} />
                           <SpaceChip d={d} />
                           <Locked d={d} />
                           <Expiry d={d} />
@@ -171,7 +197,7 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                             // Clipped only while it slides, so the inputs' focus rings show once it is open.
                             <motion.div initial={{ height: 0, opacity: 0, overflow: "hidden" }} animate={{ height: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }} exit={{ height: 0, opacity: 0, overflow: "hidden" }} transition={{ duration: 0.22, ease: "easeOut" }}>
                               <div data-settings className="mt-3 border-t border-(--k)/30 pt-3.5">
-                                <Settings key={[d.title, d.slug, d.locked, d.expiresAt, d.space].join("\n")} d={d} onChanged={onChanged} onDeleted={() => setOpen(null)} />
+                                <Settings key={[d.title, d.slug, d.locked, d.expiresAt, d.space, d.project].join("\n")} d={d} onChanged={onChanged} onDeleted={() => setOpen(null)} />
                               </div>
                             </motion.div>
                           )}

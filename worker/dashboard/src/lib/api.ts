@@ -10,6 +10,8 @@ export type Doc = {
   updatedAt: number;
   /** Id of the space it belongs to. */
   space: string;
+  /** Groups docs inside a space; null for none. */
+  project: string | null;
   url: string;
 };
 /** `views`: how often readers opened this version while view statistics were on. Absent on uploads in the feed. */

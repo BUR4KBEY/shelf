@@ -65,7 +65,7 @@ export function CommandPalette(props: { open: boolean; onOpenChange: (open: bool
           {props.docs.length > 0 && (
             <CommandGroup heading="Docs">
               {props.docs.map((d) => (
-                <CommandItem key={d.id} value={`doc ${d.id}`} keywords={[nameOf(d), d.slug ?? ""]} onSelect={go(`#/doc/${d.id}`)}>
+                <CommandItem key={d.id} value={`doc ${d.id}`} keywords={[nameOf(d), d.slug ?? "", d.project ?? ""]} onSelect={go(`#/doc/${d.id}`)}>
                   <FileText />
                   <span className="truncate">{nameOf(d)}</span>
                 </CommandItem>
