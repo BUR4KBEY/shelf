@@ -51,6 +51,34 @@ export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; 
   // Expired docs stay out of the list unless asked for; the one that is open is always in it, however far down.
   const listed = props.docs.filter((d) => showExpired || !isExpired(d) || isOpen(d));
   const more = listed.filter((d, i) => i >= LISTED && !isOpen(d)).length;
+  const rows = listed.filter((d, i) => showAll || i < LISTED || isOpen(d));
+  const link = (d: Doc) => {
+    const left = d.expiresAt === null ? null : timeLeft(d.expiresAt);
+    return (
+      <a href={`#/doc/${d.id}`} aria-current={isOpen(d) ? "page" : undefined} className={item}>
+        {d.favorite && (
+          <>
+            <Star className="size-3.5 shrink-0 fill-current text-warning" aria-hidden />
+            <span className="sr-only">favorite</span>
+          </>
+        )}
+        <span className={cn("min-w-0 flex-1 truncate", isExpired(d) && "text-muted-foreground line-through")}>{nameOf(d)}</span>
+        {d.locked && (
+          <>
+            <Lock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="sr-only">password protected</span>
+          </>
+        )}
+        {left && (
+          <span className={cn("flex items-center gap-1 text-xs font-semibold", d.expiresAt! - Date.now() < DAY ? "text-warning" : "text-muted-foreground")}>
+            <Clock className="size-3" aria-hidden />
+            <span className="sr-only">expires in </span>
+            {left}
+          </span>
+        )}
+      </a>
+    );
+  };
   return (
     <div className="flex min-h-full flex-col gap-7 px-4 py-6 lg:px-5">
       <div className="flex items-center justify-between max-lg:hidden">
@@ -98,39 +126,17 @@ export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; 
           On the shelf <span>{props.docs.length - expired}</span>
         </h2>
         <ul className="relative -mx-2.5 grid grid-cols-1 gap-px">
+          {/* Only the first LISTED rows animate (a starred doc sliding up, one fading in): animating every row past "Show more" froze the page for most of a second. */}
           <AnimatePresence initial={false} mode="popLayout">
-            {listed
-              .filter((d, i) => showAll || i < LISTED || isOpen(d))
-              .map((d) => {
-                const left = d.expiresAt === null ? null : timeLeft(d.expiresAt);
-                return (
-                  <motion.li key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
-                    <a href={`#/doc/${d.id}`} aria-current={isOpen(d) ? "page" : undefined} className={item}>
-                      {d.favorite && (
-                        <>
-                          <Star className="size-3.5 shrink-0 fill-current text-warning" aria-hidden />
-                          <span className="sr-only">favorite</span>
-                        </>
-                      )}
-                      <span className={cn("min-w-0 flex-1 truncate", isExpired(d) && "text-muted-foreground line-through")}>{nameOf(d)}</span>
-                      {d.locked && (
-                        <>
-                          <Lock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                          <span className="sr-only">password protected</span>
-                        </>
-                      )}
-                      {left && (
-                        <span className={cn("flex items-center gap-1 text-xs font-semibold", d.expiresAt! - Date.now() < DAY ? "text-warning" : "text-muted-foreground")}>
-                          <Clock className="size-3" aria-hidden />
-                          <span className="sr-only">expires in </span>
-                          {left}
-                        </span>
-                      )}
-                    </a>
-                  </motion.li>
-                );
-              })}
+            {rows.slice(0, LISTED).map((d) => (
+              <motion.li key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+                {link(d)}
+              </motion.li>
+            ))}
           </AnimatePresence>
+          {rows.slice(LISTED).map((d) => (
+            <li key={d.id}>{link(d)}</li>
+          ))}
         </ul>
         {more > 0 && (
           // Not a link: it must not close the phone's menu the way picking a doc does.
