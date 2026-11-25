@@ -3,6 +3,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
+import { buildInfo } from "./build-info.ts";
 
 const NONCE = "__NONCE__"; // the Worker swaps this for a per-request nonce
 
@@ -31,6 +32,7 @@ export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   plugins: [react(), tailwindcss(), viteSingleFile(), workerPage()],
+  define: { __BUILD__: JSON.stringify(buildInfo()) },
   // The page is written into the Worker's source dir, which holds other files: never empty it.
   build: { outDir: "../src", emptyOutDir: false, target: "es2023" },
 });

@@ -11,8 +11,8 @@ export function dashboardPage(req: Request): Response {
     headers: {
       "content-type": "text/html; charset=utf-8",
       // Scripts need the nonce. Styles allow inline because shadcn/Radix inject <style> tags at runtime;
-      // React escapes all user data, so there is no markup injection to abuse it.
-      "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; font-src data:; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      // React escapes all user data, so there is no markup injection to abuse it. GitHub: Settings → About's update check.
+      "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; font-src data:; connect-src 'self' https://api.github.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
       "cache-control": "no-store",
       "referrer-policy": "no-referrer",
       "x-robots-tag": "noindex",

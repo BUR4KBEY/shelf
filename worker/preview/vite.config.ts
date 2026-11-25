@@ -6,6 +6,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
+import { buildInfo } from "../dashboard/build-info.ts";
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -50,6 +51,7 @@ export default defineConfig(({ mode }) =>
         publicDir: here("public"),
         resolve: { alias: { "@": here("../dashboard/src") } },
         plugins: [react(), tailwindcss(), viteSingleFile()],
+        define: { __BUILD__: JSON.stringify(buildInfo()) },
         build: { outDir: here("dist"), emptyOutDir: true, target: "es2023", rollupOptions: { input: here("dashboard/app.html") } },
       },
 );
