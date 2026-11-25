@@ -55,7 +55,7 @@ async function entry(w: WritableStreamDefaultWriter<Uint8Array>, name: string, m
 }
 
 type FileRow = { doc_id: string; n: number; path: string; sha256: string; size: number };
-type VersionRow = { doc_id: string; n: number; message: string | null; size: number; keyId: string | null; createdAt: number };
+type VersionRow = { doc_id: string; n: number; message: string | null; size: number; keyId: string | null; createdAt: number; disabled: number };
 
 /**
  * GET /dashboard/api/export[?space=<id>][&passwords=1]: every doc (expired ones too), every version and its files as a tar,
@@ -70,7 +70,7 @@ export async function exportShelf(env: Env, space: string | null, passwords: boo
   const inSpace = "(?1 IS NULL OR d.space_id = ?1)";
   const [docs, versions, files, spaces, keys] = await env.DB.batch<unknown>([
     env.DB.prepare(`SELECT * FROM docs d WHERE ${inSpace} ORDER BY d.created_at`).bind(space),
-    env.DB.prepare(`SELECT v.doc_id, v.n, v.message, v.size, v.key_id AS keyId, v.created_at AS createdAt FROM versions v JOIN docs d ON d.id = v.doc_id WHERE ${inSpace} ORDER BY v.doc_id, v.n`).bind(space),
+    env.DB.prepare(`SELECT v.doc_id, v.n, v.message, v.size, v.key_id AS keyId, v.created_at AS createdAt, v.disabled FROM versions v JOIN docs d ON d.id = v.doc_id WHERE ${inSpace} ORDER BY v.doc_id, v.n`).bind(space),
     env.DB.prepare(`SELECT f.doc_id, f.n, f.path, f.sha256, f.size FROM files f JOIN docs d ON d.id = f.doc_id WHERE ${inSpace} ORDER BY f.doc_id, f.n, f.path`).bind(space),
     env.DB.prepare("SELECT id, name, keys_delete AS keysDelete, keys_read_locked AS keysReadLocked, created_at AS createdAt FROM spaces WHERE ?1 IS NULL OR id = ?1 ORDER BY created_at").bind(space),
     env.DB.prepare(
@@ -99,7 +99,7 @@ export async function exportShelf(env: Env, space: string | null, passwords: boo
       space: d.space_id,
       project: d.project,
       latest: d.latest,
-      versions: (versionsOf.get(d.id) ?? []).map(({ doc_id: _, ...v }) => ({ ...v, files: (filesOf.get(`${d.id}@${v.n}`) ?? []).map(({ path, sha256, size }) => ({ path, sha256, size })) })),
+      versions: (versionsOf.get(d.id) ?? []).map(({ doc_id: _, disabled, ...v }) => ({ ...v, disabled: disabled === 1, files: (filesOf.get(`${d.id}@${v.n}`) ?? []).map(({ path, sha256, size }) => ({ path, sha256, size })) })),
     }));
     for (const d of manifest) {
       for (const v of d.versions) {
@@ -150,7 +150,8 @@ const IMPORT_DOCS = 50;
 const IMPORT_HEADS = MAX_FILES;
 
 type ImportFile = { path: string; sha256: string };
-type ImportVersion = { n: number; message: string | null; keyId: string | null; createdAt: number; files: ImportFile[] };
+/** `disabled` is missing in backups made before versions could be turned off. */
+type ImportVersion = { n: number; message: string | null; keyId: string | null; createdAt: number; disabled?: boolean; files: ImportFile[] };
 type ImportDoc = {
   id: string;
   slug: string | null;
@@ -196,6 +197,7 @@ function docProblem(d: ImportDoc): string | null {
     if (v.message !== null && !text(v.message, 1000)) return `${at} v${v.n}: bad message`;
     if (v.keyId !== null && !(typeof v.keyId === "string" && KEY_ID.test(v.keyId))) return `${at} v${v.n}: bad key id`;
     if (!time(v.createdAt)) return `${at} v${v.n}: bad time`;
+    if (v.disabled !== undefined && typeof v.disabled !== "boolean") return `${at} v${v.n}: disabled must be a boolean`;
     if (!Array.isArray(v.files) || !v.files.length || v.files.length > MAX_FILES) return `${at} v${v.n}: 1 to ${MAX_FILES} files`;
     const paths = new Set<string>();
     for (const f of v.files) {
@@ -317,13 +319,15 @@ export async function importShelf(req: Request, env: Env): Promise<Response> {
       hash = await hashPassword(randomId(32));
       out.needPassword.push(id);
     }
+    const last = Math.max(...d.versions.map((v) => v.n));
     const versions = await Promise.all(
       [...d.versions]
         .sort((a, b) => a.n - b.n)
         .map(async (v) => {
           const files = v.files.map((f) => ({ n: v.n, path: f.path, sha256: f.sha256, size: sizeOf.get(f.sha256)! }));
           const manifest = await sha256Hex(files.map((f) => `${f.path}\t${f.sha256}`).sort().join("\n"));
-          return { n: v.n, manifest, message: v.message, size: files.reduce((sum, f) => sum + f.size, 0), keyId: v.keyId, createdAt: v.createdAt, files };
+          // The current version is never disabled, so the doc's link keeps working.
+          return { n: v.n, manifest, message: v.message, size: files.reduce((sum, f) => sum + f.size, 0), keyId: v.keyId, createdAt: v.createdAt, disabled: v.disabled === true && v.n !== last ? 1 : 0, files };
         }),
     );
     stmts.push(
@@ -341,7 +345,7 @@ export async function importShelf(req: Request, env: Env): Promise<Response> {
         d.project ?? null,
       ),
       env.DB.prepare(
-        "INSERT INTO versions (doc_id, n, manifest_hash, message, size, key_id, created_at) SELECT ?1, value->>'n', value->>'manifest', value->>'message', value->>'size', value->>'keyId', value->>'createdAt' FROM json_each(?2)",
+        "INSERT INTO versions (doc_id, n, manifest_hash, message, size, key_id, created_at, disabled) SELECT ?1, value->>'n', value->>'manifest', value->>'message', value->>'size', value->>'keyId', value->>'createdAt', value->>'disabled' FROM json_each(?2)",
       ).bind(id, JSON.stringify(versions.map(({ files: _, ...v }) => v))),
       env.DB.prepare("INSERT INTO files (doc_id, n, path, sha256, size) SELECT ?1, value->>'n', value->>'path', value->>'sha256', value->>'size' FROM json_each(?2)").bind(
         id,

@@ -1,5 +1,5 @@
 import { previewAccess } from "./access";
-import { appSettings, bulkDocs, deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, push, putBlob, sweep } from "./api";
+import { appSettings, bulkDocs, deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, patchVersions, push, putBlob, sweep } from "./api";
 import { type Caller, apiKey } from "./auth";
 import { exportShelf, importCheck, importShelf } from "./backup";
 import { createKey, createSpace, dashboardPage, deleteKey, deleteSpace, getAnalytics, getKey, listKeys, listSpaces, patchKey, patchSpace, revokeKey } from "./dashboard";
@@ -23,6 +23,7 @@ async function docRoutes(req: Request, env: Env, path: string, caller: Caller | 
     if (req.method === "PATCH") return patchDoc(req, env, m[1], caller);
     if (req.method === "DELETE") return deleteDoc(env, m[1], caller);
   }
+  if (req.method === "PATCH" && (m = path.match(/^\/api\/docs\/([A-Za-z0-9-]{1,64})\/versions$/))) return patchVersions(req, env, m[1], caller);
 }
 
 export default {

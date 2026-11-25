@@ -376,12 +376,12 @@ export async function getDoc(req: Request, env: Env, ref: string, scope: string 
   const shift = Number.isInteger(tz) && Math.abs(tz) <= 840 ? tz * 60_000 : 0;
   const [versions, views, days] = await env.DB.batch<Record<string, unknown>>([
     env.DB.prepare(
-      "SELECT v.n, v.message, v.size, v.created_at AS createdAt, v.key_id AS keyId, k.name AS keyName, (SELECT COUNT(*) FROM files f WHERE f.doc_id = v.doc_id AND f.n = v.n) AS files, (SELECT COUNT(*) FROM views w WHERE w.doc_id = v.doc_id AND w.n = v.n) AS views FROM versions v LEFT JOIN api_keys k ON k.id = v.key_id WHERE v.doc_id = ? ORDER BY v.n DESC",
+      "SELECT v.n, v.message, v.size, v.created_at AS createdAt, v.key_id AS keyId, k.name AS keyName, v.disabled, (SELECT COUNT(*) FROM files f WHERE f.doc_id = v.doc_id AND f.n = v.n) AS files, (SELECT COUNT(*) FROM views w WHERE w.doc_id = v.doc_id AND w.n = v.n) AS views FROM versions v LEFT JOIN api_keys k ON k.id = v.key_id WHERE v.doc_id = ? ORDER BY v.n DESC",
     ).bind(doc.id),
     env.DB.prepare("SELECT COUNT(*) AS total, COUNT(DISTINCT visitor) AS readers, MAX(at) AS lastAt FROM views WHERE doc_id = ?").bind(doc.id),
     env.DB.prepare("SELECT CAST((at - ?2) / 86400000 AS INTEGER) AS day, COUNT(*) AS views FROM views WHERE doc_id = ?1 AND at >= ?3 GROUP BY 1").bind(doc.id, shift, Date.now() - 31 * DAY),
   ]);
-  return json({ ...docJson(req, doc), views: { ...views.results[0], days: days.results }, versions: versions.results });
+  return json({ ...docJson(req, doc), views: { ...views.results[0], days: days.results }, versions: versions.results.map((v) => ({ ...v, disabled: v.disabled === 1 })) });
 }
 
 /** Columns of one upload, for a `FROM versions v` query. */
@@ -423,6 +423,24 @@ export async function deleteDoc(env: Env, ref: string, caller: Caller | null): P
   if (!doc) return json({ error: "doc not found" }, 404);
   if (caller && !caller.canDelete) return json({ error: "keys in this space can't delete docs; the owner can, from the dashboard" }, 403);
   await env.DB.prepare("DELETE FROM docs WHERE id = ?").bind(doc.id).run();
+  return new Response(null, { status: 204 });
+}
+
+/**
+ * Turns versions of a doc off or back on: `{ "versions": [2, 3], "disabled": true }`. A disabled version keeps its files
+ * but stops answering at its pinned link. The current version can't be disabled, so the doc's own link always serves something.
+ */
+export async function patchVersions(req: Request, env: Env, ref: string, caller: Caller | null): Promise<Response> {
+  const doc = await findDoc(env, ref, caller?.scope);
+  if (!doc) return json({ error: "doc not found" }, 404);
+  const body = (await req.json().catch(() => null)) as { versions?: unknown; disabled?: unknown } | null;
+  const ns = body && Array.isArray(body.versions) && body.versions.every(Number.isSafeInteger) ? [...new Set(body.versions as number[])] : [];
+  if (!ns.length || typeof body?.disabled !== "boolean") return json({ error: "versions: version numbers; disabled: boolean" }, 400);
+  if (body.disabled && ns.includes(doc.latest)) return json({ error: `version ${doc.latest} is the current one and can't be disabled; upload a new version first` }, 400);
+  const list = JSON.stringify(ns);
+  const found = await env.DB.prepare("SELECT COUNT(*) AS c FROM versions WHERE doc_id = ? AND n IN (SELECT value FROM json_each(?))").bind(doc.id, list).first<number>("c");
+  if (found !== ns.length) return json({ error: "version not found" }, 404);
+  await env.DB.prepare("UPDATE versions SET disabled = ? WHERE doc_id = ? AND n IN (SELECT value FROM json_each(?))").bind(body.disabled ? 1 : 0, doc.id, list).run();
   return new Response(null, { status: 204 });
 }
 
