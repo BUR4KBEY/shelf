@@ -14,6 +14,8 @@ node_modules
 .wrangler
 # built from worker/dashboard by `pnpm run build`
 worker/src/dashboard.html
+# built from worker/preview by `pnpm run build:preview`
+worker/preview/dist
 
 # cli
 cli/dist

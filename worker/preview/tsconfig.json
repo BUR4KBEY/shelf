@@ -1,0 +1,16 @@
+{
+  // The preview build of the dashboard. sw.ts runs src/ under browser types, which ../tsconfig.json checks with Workers types instead.
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2024", "dom", "dom.iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["vite/client"],
+    "paths": { "@/*": ["../dashboard/src/*"] }
+  },
+  "include": ["dashboard"]
+}
