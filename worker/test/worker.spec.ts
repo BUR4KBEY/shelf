@@ -434,6 +434,23 @@ describe("dashboard", () => {
     expect((await withKey()).status).toBe(401);
   });
 
+  it("deletes a key only once revoked, and keeps its uploads", async () => {
+    const { id, key } = (await (await dash("/dashboard/api/keys", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "old" }) })).json()) as { id: string; key: string };
+    const auth = { authorization: `Bearer ${key}`, "content-type": "application/json" };
+    const sha = await sha256Hex("by old");
+    await exports.default.fetch(`${BASE}/api/blobs/${sha}`, { method: "PUT", headers: { ...auth, "content-length": "6" }, body: "by old" });
+    const pushed = (await (await exports.default.fetch(`${BASE}/api/push`, { method: "POST", headers: auth, body: JSON.stringify({ files: [{ path: "old.html", sha256: sha }] }) })).json()) as { id: string };
+    const del = () => dash(`/dashboard/api/keys/${id}`, { method: "DELETE", headers: sameOrigin });
+
+    expect((await del()).status).toBe(404); // still active
+    await dash(`/dashboard/api/keys/${id}/revoke`, { method: "POST", headers: sameOrigin });
+    expect((await del()).status).toBe(204);
+    expect((await dash(`/dashboard/api/keys/${id}`)).status).toBe(404);
+    expect(((await (await dash("/dashboard/api/keys")).json()) as { id: string }[]).some((k) => k.id === id)).toBe(false);
+    const detail = (await (await dash(`/dashboard/api/docs/${pushed.id}`)).json()) as { versions: { keyId: string | null; keyName: string | null }[] };
+    expect(detail.versions).toMatchObject([{ keyId: id, keyName: null }]);
+  });
+
   it("shows a key with totals per doc and its uploads", async () => {
     const { id, key } = (await (await dash("/dashboard/api/keys", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "ci" }) })).json()) as { id: string; key: string };
     const auth = { authorization: `Bearer ${key}`, "content-type": "application/json" };

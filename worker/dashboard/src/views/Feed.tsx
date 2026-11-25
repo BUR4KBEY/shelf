@@ -114,7 +114,7 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                       key={key}
                       color={colorOf(head.keyId)}
                       at={head.createdAt}
-                      who={head.keyName ?? "You"}
+                      who={head.keyName ?? (head.keyId ? "A deleted key" : "You")}
                       // A click on the card, off its controls and its open settings, toggles them; the gear button stays for keyboards.
                       // `contains` skips clicks in portals (the expiry menu, the delete dialog), which React still bubbles here.
                       onClick={(e) => e.currentTarget.contains(e.target as Node) && !(e.target as Element).closest("a, button, input, label, select, textarea, [data-settings]") && !getSelection()?.toString() && setOpen(open === key ? null : key)}

@@ -5,7 +5,7 @@ const HUES = [300, 235, 165, 350, 125, 50];
 /** Uploads from the dashboard itself have no key and stay grey. */
 export const NO_KEY = "var(--muted-foreground)";
 
-/** Keys keep their colour: the nth key ever created gets the nth hue. Keys are revoked, never deleted, so the order holds. */
+/** The nth oldest key gets the nth hue. Deleting a revoked key shifts the hues of keys made after it. */
 export function keyColors(keys: { id: string; createdAt: number }[]): Map<string, string> {
   const oldestFirst = [...keys].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   // Darker on light, paler on dark, at a chroma that makes every key equally loud in either theme.

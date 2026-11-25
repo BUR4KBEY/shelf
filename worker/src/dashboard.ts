@@ -69,6 +69,12 @@ export async function revokeKey(env: Env, id: string): Promise<Response> {
   return meta.changes ? new Response(null, { status: 204 }) : json({ error: "key not found" }, 404);
 }
 
+/** Deletes a revoked key for good. Its uploads stay, with their key_id pointing at nothing; the dashboard shows them as a deleted key's. */
+export async function deleteKey(env: Env, id: string): Promise<Response> {
+  const { meta } = await env.DB.prepare("DELETE FROM api_keys WHERE id = ? AND revoked_at IS NOT NULL").bind(id).run();
+  return meta.changes ? new Response(null, { status: 204 }) : json({ error: "no revoked key with this id; revoke it first" }, 404);
+}
+
 type SpaceRow = { id: string; name: string; keysDelete: number; keysReadLocked: number; createdAt: number; docs: number; keys: number };
 const spaceJson = (s: SpaceRow) => ({ ...s, keysDelete: s.keysDelete === 1, keysReadLocked: s.keysReadLocked === 1 });
 const SPACE_SELECT =
