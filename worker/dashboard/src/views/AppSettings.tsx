@@ -1,6 +1,7 @@
 import { useContext, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronLeft, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { About } from "@/components/About";
 import { Loading, Logo, Problem, code, display, focusRing, useLoad } from "@/components/bits";
 import { SpacesContext } from "@/components/DocBits";
 import { DurationInput, Field, Hint, SpaceSelect } from "@/components/Settings";
@@ -583,6 +584,10 @@ export function AppSettingsView({ onSpacesChanged }: { onSpacesChanged: () => vo
           </section>
         </>
       )}
+      <section className="grid grid-cols-1 gap-2.5">
+        <h2 className="text-base leading-none font-bold">About</h2>
+        <About />
+      </section>
     </div>
   );
 }

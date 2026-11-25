@@ -132,7 +132,7 @@ async function handle(req: Request, url: URL, keepAlive: (p: Promise<unknown>) =
     return new Response(page.replace("<html", `<html${themeAttr(wreq)}`).replace("<head>", `<head>${darkReaderScript()}`), {
       headers: {
         "content-type": "text/html; charset=utf-8",
-        "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data:; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data:; connect-src 'self' https://api.github.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
         "cache-control": "no-store",
       },
     });
