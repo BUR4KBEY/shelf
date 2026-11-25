@@ -14,8 +14,11 @@ export type Doc = {
   project: string | null;
   url: string;
 };
-/** `views`: how often readers opened this version while view statistics were on. Absent on uploads in the feed. */
-export type Version = { n: number; message: string | null; size: number; createdAt: number; keyId: string | null; keyName: string | null; files: number; views?: number };
+/**
+ * `views`: how often readers opened this version while view statistics were on. `disabled`: turned off, so its pinned link answers 410.
+ * Both are absent on uploads in the feed.
+ */
+export type Version = { n: number; message: string | null; size: number; createdAt: number; keyId: string | null; keyName: string | null; files: number; views?: number; disabled?: boolean };
 /** One upload in the feed: a version, with the doc it belongs to. */
 export type Activity = Version & { docId: string };
 /** `views.readers` counts each reader once a day; `lastAt` is null before the first view; `days`: views per local day (days since 1970) over the last 30. */
