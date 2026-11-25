@@ -45,12 +45,22 @@ const durationMs = (v: unknown) => {
 /**
  * App-wide settings, set from the dashboard. `defaultExpires` is the expiry a new doc gets when its push doesn't name one
  * (null: never); `maxExpires` is the longest expiry any doc may be given; `isolateSpaces` keeps each API key to its own space's docs;
- * `maxSlugLength` is the longest slug any doc may be given.
+ * `maxSlugLength` is the longest slug any doc may be given; `viewStats` counts readers opening docs; `linkPreviews` lets chat apps
+ * (Slack, Discord, iMessage…) fetch a doc to show a card for its link. Search engines never index anything either way.
  */
-async function appSettings(env: Env): Promise<{ defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean; maxSlugLength: number }> {
+export type AppSettings = { defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean; maxSlugLength: number; viewStats: boolean; linkPreviews: boolean };
+
+export async function appSettings(env: Env): Promise<AppSettings> {
   const { results } = await env.DB.prepare("SELECT key, value FROM settings").all<{ key: string; value: string }>();
   const s = Object.fromEntries(results.map((r) => [r.key, r.value]));
-  return { defaultExpires: s.default_expires ?? null, maxExpires: s.max_expires ?? "30d", isolateSpaces: s.isolate_spaces !== "0", maxSlugLength: Number(s.max_slug_length ?? 48) };
+  return {
+    defaultExpires: s.default_expires ?? null,
+    maxExpires: s.max_expires ?? "30d",
+    isolateSpaces: s.isolate_spaces !== "0",
+    maxSlugLength: Number(s.max_slug_length ?? 48),
+    viewStats: s.view_stats === "1",
+    linkPreviews: s.link_previews === "1",
+  };
 }
 
 export async function getAppSettings(env: Env): Promise<Response> {
@@ -58,14 +68,16 @@ export async function getAppSettings(env: Env): Promise<Response> {
 }
 
 export async function patchAppSettings(req: Request, env: Env): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { defaultExpires?: unknown; maxExpires?: unknown; isolateSpaces?: unknown; maxSlugLength?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { [K in keyof AppSettings]?: unknown } | null;
   if (!body || typeof body !== "object") return json({ error: "JSON object required" }, 400);
-  const { defaultExpires: d, maxExpires: max, isolateSpaces: iso, maxSlugLength: slugMax } = body;
+  const { defaultExpires: d, maxExpires: max, isolateSpaces: iso, maxSlugLength: slugMax, viewStats: stats, linkPreviews: previews } = body;
   if (d !== undefined && !isOpt(d, (v) => durationMs(v) >= 0)) {
     return json({ error: "defaultExpires: a duration like 30m, 12h, 7d or 2w; 0 or null for never" }, 400);
   }
   if (max !== undefined && !(durationMs(max) > 0)) return json({ error: "maxExpires: a duration like 30m, 12h, 7d or 2w" }, 400);
   if (iso !== undefined && typeof iso !== "boolean") return json({ error: "isolateSpaces: boolean" }, 400);
+  if (stats !== undefined && typeof stats !== "boolean") return json({ error: "viewStats: boolean" }, 400);
+  if (previews !== undefined && typeof previews !== "boolean") return json({ error: "linkPreviews: boolean" }, 400);
   if (slugMax !== undefined && !(Number.isInteger(slugMax) && (slugMax as number) >= 3 && (slugMax as number) <= SLUG_LIMIT)) {
     return json({ error: `maxSlugLength: a whole number from 3 to ${SLUG_LIMIT}` }, 400);
   }
@@ -74,6 +86,8 @@ export async function patchAppSettings(req: Request, env: Env): Promise<Response
   if (max !== undefined) next.maxExpires = max as string;
   if (iso !== undefined) next.isolateSpaces = iso;
   if (slugMax !== undefined) next.maxSlugLength = slugMax as number;
+  if (stats !== undefined) next.viewStats = stats;
+  if (previews !== undefined) next.linkPreviews = previews;
   if (next.defaultExpires !== null && durationMs(next.defaultExpires) > durationMs(next.maxExpires)) {
     return json({ error: `the default expiry (${next.defaultExpires}) can't be longer than the longest allowed (${next.maxExpires})` }, 400);
   }
@@ -83,6 +97,8 @@ export async function patchAppSettings(req: Request, env: Env): Promise<Response
     upsert.bind("max_expires", next.maxExpires),
     upsert.bind("isolate_spaces", next.isolateSpaces ? "1" : "0"),
     upsert.bind("max_slug_length", String(next.maxSlugLength)),
+    upsert.bind("view_stats", next.viewStats ? "1" : "0"),
+    upsert.bind("link_previews", next.linkPreviews ? "1" : "0"),
   ]);
   return json(next);
 }
@@ -332,15 +348,17 @@ export async function listDocs(req: Request, env: Env, scope: string | null): Pr
   return json(results.map((d) => docJson(req, d)));
 }
 
+/** A doc and its version history. `views`: how often readers opened it (see view.ts), counted only while view statistics are on. */
 export async function getDoc(req: Request, env: Env, ref: string, scope: string | null): Promise<Response> {
   const doc = await findDoc(env, ref, scope);
   if (!doc) return json({ error: "doc not found" }, 404);
-  const { results } = await env.DB.prepare(
-    "SELECT v.n, v.message, v.size, v.created_at AS createdAt, v.key_id AS keyId, k.name AS keyName, (SELECT COUNT(*) FROM files f WHERE f.doc_id = v.doc_id AND f.n = v.n) AS files FROM versions v LEFT JOIN api_keys k ON k.id = v.key_id WHERE v.doc_id = ? ORDER BY v.n DESC",
-  )
-    .bind(doc.id)
-    .all();
-  return json({ ...docJson(req, doc), versions: results });
+  const [versions, views] = await env.DB.batch([
+    env.DB.prepare(
+      "SELECT v.n, v.message, v.size, v.created_at AS createdAt, v.key_id AS keyId, k.name AS keyName, (SELECT COUNT(*) FROM files f WHERE f.doc_id = v.doc_id AND f.n = v.n) AS files, (SELECT COUNT(*) FROM views w WHERE w.doc_id = v.doc_id AND w.n = v.n) AS views FROM versions v LEFT JOIN api_keys k ON k.id = v.key_id WHERE v.doc_id = ? ORDER BY v.n DESC",
+    ).bind(doc.id),
+    env.DB.prepare("SELECT COUNT(*) AS total, COUNT(DISTINCT visitor) AS readers, MAX(at) AS lastAt FROM views WHERE doc_id = ?").bind(doc.id),
+  ]);
+  return json({ ...docJson(req, doc), views: views.results[0], versions: versions.results });
 }
 
 /** Columns of one upload, for a `FROM versions v` query. */

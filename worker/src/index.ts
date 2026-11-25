@@ -1,12 +1,13 @@
 import { previewAccess } from "./access";
-import { deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, push, putBlob, sweep } from "./api";
+import { appSettings, deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, push, putBlob, sweep } from "./api";
 import { type Caller, apiKey } from "./auth";
 import { createKey, createSpace, dashboardPage, deleteKey, deleteSpace, getAnalytics, getKey, listKeys, listSpaces, patchKey, patchSpace, revokeKey } from "./dashboard";
+import { exportShelf } from "./export";
 import { llmsTxt } from "./llms";
 import { mcp } from "./mcp";
 import { favicon, font, notFound, notice, setTheme } from "./page";
 import { json } from "./util";
-import { ownerOpen, unlock, view } from "./view";
+import { PREVIEW_BOTS, ownerOpen, unlock, view } from "./view";
 
 /** Doc routes shared by /api (API key) and /dashboard/api (Cloudflare Access). `caller` is null for the dashboard, which sees every space. */
 async function docRoutes(req: Request, env: Env, path: string, caller: Caller | null): Promise<Response | undefined> {
@@ -32,13 +33,19 @@ export default {
     if ((m = path.match(/^\/view\/([A-Za-z0-9-]{1,64})(?:@(\d{1,9}))?(\/.*)?$/))) {
       const [, ref, pin, rest] = m;
       if (req.method === "POST" && rest === "/unlock" && !pin) return unlock(req, env, ref);
-      if (req.method === "GET" || req.method === "HEAD") return view(req, env, ref, pin ? Number(pin) : undefined, rest);
+      if (req.method === "GET" || req.method === "HEAD") return view(req, env, ctx, ref, pin ? Number(pin) : undefined, rest);
     }
 
     if (req.method === "GET" && path === "/favicon.svg") return favicon(url);
     if (req.method === "GET" && (m = path.match(/^\/font\/([a-z-]+)\.woff2$/))) return font(m[1]) ?? notFound(req);
     if (req.method === "GET" && (m = path.match(/^\/theme\/([a-z]+)$/))) return setTheme(url, m[1]) ?? notFound(req);
     if (req.method === "GET" && path === "/llms.txt") return new Response(llmsTxt(url.origin), { headers: { "content-type": "text/plain; charset=utf-8" } });
+    if (req.method === "GET" && path === "/robots.txt") {
+      // Search engines never crawl anything; chat apps' link-preview crawlers may read /view only while link previews are on.
+      // Every /view response also carries `x-robots-tag: noindex`.
+      const previews = (await appSettings(env)).linkPreviews ? `${PREVIEW_BOTS.map((b) => `User-agent: ${b}`).join("\n")}\nAllow: /view/\nDisallow: /\n\n` : "";
+      return new Response(`${previews}User-agent: *\nDisallow: /\n`, { headers: { "content-type": "text/plain; charset=utf-8" } });
+    }
 
     if (path.startsWith("/api/") || path === "/mcp") {
       const caller = await apiKey(req, env, ctx);
@@ -76,6 +83,7 @@ export default {
         // Dashboard only: an API key publishes docs, it doesn't change how the app treats everyone's uploads.
         if (req.method === "GET" && sub === "/api/settings") return getAppSettings(env);
         if (req.method === "PATCH" && sub === "/api/settings") return patchAppSettings(req, env);
+        if (req.method === "GET" && sub === "/api/export") return exportShelf(env, url.searchParams.get("space"));
         return (await docRoutes(req, env, sub, null)) ?? json({ error: "not found" }, 404);
       }
     }

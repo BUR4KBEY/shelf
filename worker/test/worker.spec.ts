@@ -572,11 +572,11 @@ describe("dashboard", () => {
 
   it("gives new docs the default expiry unless the push names one", async () => {
     const setDefault = (defaultExpires: string | null) => dash("/dashboard/api/settings", { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ defaultExpires }) });
-    expect(await (await dash("/dashboard/api/settings")).json()).toEqual({ defaultExpires: null, maxExpires: "30d", isolateSpaces: true, maxSlugLength: 48 });
+    expect(await (await dash("/dashboard/api/settings")).json()).toEqual({ defaultExpires: null, maxExpires: "30d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false });
     expect((await setDefault("soon")).status).toBe(400);
     expect((await api("/api/settings")).status).toBe(404); // an API key can't change it
     try {
-      expect(await (await setDefault("7d")).json()).toEqual({ defaultExpires: "7d", maxExpires: "30d", isolateSpaces: true, maxSlugLength: 48 });
+      expect(await (await setDefault("7d")).json()).toEqual({ defaultExpires: "7d", maxExpires: "30d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false });
       const before = Date.now();
       expect((await publish({ "d1.html": "default" })).expiresAt).toBeGreaterThanOrEqual(before + 7 * 86_400_000);
       expect((await publish({ "d2.html": "forever" }, { expires: null })).expiresAt).toBeNull();
@@ -595,14 +595,14 @@ describe("dashboard", () => {
     try {
       expect((await publish({ "m1.html": "30d" }, { expires: "30d" })).expiresAt).not.toBeNull();
       for (const bad of [null, "0", "0d", "soon"]) expect((await patchApp({ maxExpires: bad })).status).toBe(400);
-      expect(await (await patchApp({ maxExpires: "90d" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48 });
+      expect(await (await patchApp({ maxExpires: "90d" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false });
       expect((await publish({ "m2.html": "60d" }, { expires: "60d" })).expiresAt).toBeGreaterThan(Date.now() + 59 * 86_400_000);
       expect((await pushManifest({ files: [{ path: "m3.html", sha256: await sha256Hex("91d") }], expires: "91d" })).status).toBe(400);
       // The default can't outgrow the max, from either side.
       expect((await patchApp({ defaultExpires: "14d", maxExpires: "7d" })).status).toBe(400);
-      expect(await (await patchApp({ defaultExpires: "14d" })).json()).toEqual({ defaultExpires: "14d", maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48 });
+      expect(await (await patchApp({ defaultExpires: "14d" })).json()).toEqual({ defaultExpires: "14d", maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false });
       expect((await patchApp({ maxExpires: "7d" })).status).toBe(400);
-      expect(await (await patchApp({ defaultExpires: "0" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48 });
+      expect(await (await patchApp({ defaultExpires: "0" })).json()).toEqual({ defaultExpires: null, maxExpires: "90d", isolateSpaces: true, maxSlugLength: 48, viewStats: false, linkPreviews: false });
       const { id } = await publish({ "m4.html": "patch" });
       await patchApp({ maxExpires: "1d" });
       expect((await api(`/api/docs/${id}`, { method: "PATCH", body: JSON.stringify({ expires: "2d" }) })).status).toBe(400);
@@ -635,8 +635,99 @@ describe("dashboard", () => {
     const res = await dash(`/dashboard/open/${id}@1?raw`);
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe(`/view/${id}@1?raw`);
-    const cookie = res.headers.get("set-cookie")!.split(";")[0];
+    const cookie = res.headers.getSetCookie().find((c) => c.startsWith("u_"))!.split(";")[0];
     expect(await (await get(`/view/${id}`, { headers: { cookie } })).text()).toBe("mine");
+  });
+
+  const patchSettings = (body: object) => dash("/dashboard/api/settings", { method: "PATCH", headers: sameOrigin, body: JSON.stringify(body) });
+  const BROWSER = { "user-agent": "Mozilla/5.0 (X11; Linux x86_64) Chrome/140.0" };
+
+  it("counts readers only while view statistics are on, leaving out bots and the owner", async () => {
+    const { id, url } = await publish({ "read.html": "<p>v1</p>" });
+    const views = async () => ((await (await dash(`/dashboard/api/docs/${id}`)).json()) as { views: { total: number; readers: number }; versions: { n: number; views: number }[] });
+    await get(url, { headers: BROWSER });
+    expect((await views()).views.total).toBe(0); // off by default
+    expect((await patchSettings({ viewStats: "yes" })).status).toBe(400);
+    await patchSettings({ viewStats: true });
+    try {
+      for (const headers of [BROWSER, BROWSER, { ...BROWSER, "cf-connecting-ip": "203.0.113.9" }]) {
+        const ctx = createExecutionContext();
+        await worker.fetch(new Request(url, { headers }) as Parameters<typeof worker.fetch>[0], env, ctx);
+        await waitOnExecutionContext(ctx);
+      }
+      // Not readers: a crawler, a link preview, a video seek, and the owner opening it from the dashboard.
+      for (const headers of [{ "user-agent": "Googlebot/2.1" }, { "user-agent": "curl/8.0" }, { ...BROWSER, range: "bytes=5-" }, { ...BROWSER, cookie: "owner=1" }]) {
+        const ctx = createExecutionContext();
+        await worker.fetch(new Request(url, { headers }) as Parameters<typeof worker.fetch>[0], env, ctx);
+        await waitOnExecutionContext(ctx);
+      }
+      expect((await dash(`/dashboard/open/${id}`)).headers.getSetCookie()).toContainEqual(expect.stringMatching(/^owner=1;/));
+      const v = await views();
+      expect(v.views).toMatchObject({ total: 3, readers: 2 });
+      expect(v.versions).toMatchObject([{ n: 1, views: 3 }]);
+    } finally {
+      await patchSettings({ viewStats: false });
+    }
+  });
+
+  it("keeps search engines out, and lets chat apps preview links only when allowed", async () => {
+    const { url } = await publish({ "card.html": "<html><head><title>Own</title></head><body>hi</body></html>" }, { title: "Q3 plan" });
+    const slack = { "user-agent": "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)" };
+    expect((await get(url)).headers.get("x-robots-tag")).toBe("noindex");
+    expect(await (await get("/robots.txt")).text()).toBe("User-agent: *\nDisallow: /\n");
+    expect((await get(url, { headers: slack })).status).toBe(403);
+    await patchSettings({ linkPreviews: true });
+    try {
+      const robots = await (await get("/robots.txt")).text();
+      expect(robots).toContain("User-agent: Slackbot-LinkExpanding\n");
+      expect(robots).toMatch(/Allow: \/view\/\nDisallow: \/\n\nUser-agent: \*\nDisallow: \/\n$/);
+      const card = await get(url, { headers: slack });
+      expect(card.headers.get("x-robots-tag")).toBe("noindex");
+      expect(await card.text()).toContain('<meta property="og:title" content="Q3 plan"></head>');
+      expect(await (await get(url, { headers: BROWSER })).text()).not.toContain("og:title"); // readers get the doc untouched
+    } finally {
+      await patchSettings({ linkPreviews: false });
+    }
+  });
+
+  it("exports docs, versions and a manifest as a tar, each blob once", async () => {
+    const space = (await (await dash("/dashboard/api/spaces", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "backup" }) })).json()) as { id: string };
+    const long = `${"deep/".repeat(25)}page.html`; // over ustar's 100 bytes
+    const a = await publish({ "index.html": "<h1>one</h1>", [long]: "x" }, { password: "hunter22" });
+    await publish({ "index.html": "<h1>two</h1>", [long]: "x" }, { ref: a.id });
+    await dash(`/dashboard/api/docs/${a.id}`, { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ space: space.id }) });
+    expect((await dash("/dashboard/api/export?space=nope")).status).toBe(404);
+    const res = await dash(`/dashboard/api/export?space=${space.id}`);
+    expect(res.headers.get("content-disposition")).toMatch(new RegExp(`^attachment; filename="shelf-\\d{4}-\\d\\d-\\d\\d-${space.id}\\.tar"$`));
+    const tar = new Uint8Array(await res.arrayBuffer());
+
+    // Walk the archive: [type, name, link, body] per entry, applying PAX names.
+    const text = (b: Uint8Array) => new TextDecoder().decode(b).replace(/\0.*$/s, "");
+    const entries: [string, string, string, string][] = [];
+    let pax: Record<string, string> = {};
+    for (let at = 0; tar[at] !== 0;) {
+      const h = tar.subarray(at, at + 512);
+      const size = parseInt(text(h.subarray(124, 136)), 8);
+      const body = new TextDecoder().decode(tar.subarray(at + 512, at + 512 + size));
+      const type = text(h.subarray(156, 157));
+      if (type === "x") pax = Object.fromEntries([...body.matchAll(/\d+ (\w+)=(.*)\n/g)].map((m) => [m[1], m[2]]));
+      else {
+        entries.push([type, pax.path ?? text(h.subarray(0, 100)), pax.linkpath ?? text(h.subarray(157, 257)), body]);
+        pax = {};
+      }
+      at += 512 + Math.ceil(size / 512) * 512;
+    }
+    expect(entries.slice(0, -1)).toEqual([
+      ["0", `docs/${a.id}/1/${long}`, "", "x"],
+      ["0", `docs/${a.id}/1/index.html`, "", "<h1>one</h1>"],
+      ["1", `docs/${a.id}/2/${long}`, `docs/${a.id}/1/${long}`, ""],
+      ["0", `docs/${a.id}/2/index.html`, "", "<h1>two</h1>"],
+    ]);
+    const [, name, , json] = entries.at(-1)!;
+    expect(name).toBe("shelf.json");
+    const manifest = JSON.parse(json) as { space: string; spaces: { id: string }[]; docs: { id: string; locked: boolean; versions: { n: number; files: { path: string }[] }[] }[]; missing: string[] };
+    expect(manifest).toMatchObject({ space: space.id, spaces: [{ id: space.id, keysDelete: true }], docs: [{ id: a.id, locked: true, versions: [{ n: 1 }, { n: 2 }] }], missing: [] });
+    expect(json).not.toContain("password_hash");
   });
 
   it("keeps each key to its own space, with the permissions the owner set", async () => {

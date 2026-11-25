@@ -1,8 +1,8 @@
 import { marked } from "marked";
-import { type Doc, findDoc } from "./api";
+import { type Doc, appSettings, findDoc } from "./api";
 import { sameString, unlockToken, verifyPassword } from "./auth";
 import { LOCK_ICON, MD_CSS, cardPage, notFound, notice, themeAttr } from "./page";
-import { escapeHtml } from "./util";
+import { escapeHtml, sha256Hex } from "./util";
 
 // Server-side type policy by extension; client-sent types are ignored.
 // Anything not listed is served as a download.
@@ -41,6 +41,24 @@ interface FileRow {
 }
 
 const ip = (req: Request) => req.headers.get("cf-connecting-ip") ?? "local";
+
+/** The crawlers chat apps send to build a card for a pasted link; iMessage borrows the Facebook and Twitter ones. Also in robots.txt (index.ts). */
+export const PREVIEW_BOTS = ["Slackbot-LinkExpanding", "Slackbot", "Twitterbot", "facebookexternalhit", "Facebot", "Discordbot", "TelegramBot", "WhatsApp", "LinkedInBot", "SkypeUriPreview", "Mastodon"];
+const PREVIEW_BOT = new RegExp(PREVIEW_BOTS.join("|"), "i");
+/** Anything automated, so it never counts as a reader. */
+const BOT = /bot|crawl|spider|slurp|preview|fetch|http|curl|wget|python|node|go-http|externalhit|whatsapp|mastodon/i;
+
+/**
+ * Records a reader opening a doc. Not counted: bots, link previews, prefetches, the owner opening it from the dashboard
+ * (ownerOpen's `owner` cookie) and media seeks. `visitor` hashes the IP and browser with the day; neither is stored.
+ */
+async function recordView(req: Request, env: Env, doc: Doc, n: number): Promise<void> {
+  const ua = req.headers.get("user-agent") ?? "";
+  if (req.method !== "GET" || !ua || BOT.test(ua) || req.headers.has("range") || req.headers.has("sec-purpose") || /(?:^|;\s*)owner=1(?:;|$)/.test(req.headers.get("cookie") ?? "")) return;
+  const now = Date.now();
+  const visitor = (await sha256Hex(`${Math.floor(now / 86_400_000)}\n${ip(req)}\n${ua}`)).slice(0, 16);
+  await env.DB.prepare("INSERT INTO views (doc_id, n, at, visitor) VALUES (?, ?, ?, ?)").bind(doc.id, n, now, visitor).run();
+}
 
 /** Our own page, not user content: no sandbox, so the form can submit. */
 function lockedPage(req: Request, status: number, ref: string, next: string, error = ""): Response {
@@ -85,12 +103,14 @@ const unlockCookie = async (doc: Doc) =>
 
 /**
  * GET /dashboard/open/<ref>[@n][/path], behind Cloudflare Access: the signed-in owner skips the password form.
- * Gives a locked doc its unlock cookie, then redirects to the same path under /view.
+ * Gives a locked doc its unlock cookie, then redirects to the same path under /view. The short `owner` cookie keeps
+ * that open out of the view statistics.
  */
 export async function ownerOpen(req: Request, env: Env, ref: string, viewPath: string): Promise<Response> {
   const doc = await findDoc(env, ref);
   const headers = new Headers({ location: `${viewPath}${new URL(req.url).search}`, "cache-control": "no-store" });
-  if (doc?.password_hash) headers.set("set-cookie", await unlockCookie(doc));
+  headers.append("set-cookie", "owner=1; Path=/view; Max-Age=10; HttpOnly; Secure; SameSite=Lax");
+  if (doc?.password_hash) headers.append("set-cookie", await unlockCookie(doc));
   return new Response(null, { status: 302, headers });
 }
 
@@ -98,7 +118,12 @@ export async function ownerOpen(req: Request, env: Env, ref: string, viewPath: s
  * GET /view/<ref>[@n][/path]. A single-file doc is served at the root; a folder serves index.html
  * there and its other files below it, with clean URLs (`/page` → page.html, `/dir/` → dir/index.html).
  */
-export async function view(req: Request, env: Env, ref: string, pin: number | undefined, rest: string | undefined): Promise<Response> {
+export async function view(req: Request, env: Env, ctx: ExecutionContext, ref: string, pin: number | undefined, rest: string | undefined): Promise<Response> {
+  const entry = rest === undefined || rest === "/";
+  const previewBot = PREVIEW_BOT.test(req.headers.get("user-agent") ?? "");
+  // Settings only matter for the page a link opens, and for chat apps' crawlers; a folder's assets skip the query.
+  const settings = entry || previewBot ? await appSettings(env) : null;
+  if (previewBot && !settings!.linkPreviews) return new Response("Link previews are turned off.", { status: 403, headers: { "content-type": "text/plain; charset=utf-8", "x-robots-tag": "noindex" } });
   const doc = await findDoc(env, ref);
   if (!doc) return notFound(req);
   if (doc.expires_at !== null && doc.expires_at <= Date.now()) return notice(req, 410, "This link has expired", "The doc it led to is no longer available. Ask whoever sent it for a new one.");
@@ -135,10 +160,13 @@ export async function view(req: Request, env: Env, ref: string, pin: number | un
     file = results.find((r) => r.path === match);
   }
   if (!file) return notFound(req);
-  return serveFile(req, env, doc, n, pin !== undefined, file);
+  const res = await serveFile(req, env, doc, n, pin !== undefined, file, entry && previewBot);
+  if (entry && settings!.viewStats && res.status === 200) ctx.waitUntil(recordView(req, env, doc, n));
+  return res;
 }
 
-async function serveFile(req: Request, env: Env, doc: Doc, n: number, pinned: boolean, file: FileRow): Promise<Response> {
+/** `card`: a chat app is building a card for the link, so HTML and Markdown get Open Graph tags (the doc's title and the site name). */
+async function serveFile(req: Request, env: Env, doc: Doc, n: number, pinned: boolean, file: FileRow, card: boolean): Promise<Response> {
   const url = new URL(req.url);
   const name = file.path.slice(file.path.lastIndexOf("/") + 1);
   const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
@@ -189,12 +217,14 @@ async function serveFile(req: Request, env: Env, doc: Doc, n: number, pinned: bo
     );
   }
 
+  const og = `<meta property="og:site_name" content="shelf"><meta property="og:type" content="website">`;
   if (markdown) {
     const body = await marked.parse(await obj.text());
+    const title = escapeHtml(doc.title ?? name);
     headers.delete("accept-ranges");
     headers.set("vary", "cookie"); // the page carries the reader's theme
     return new Response(
-      `<!doctype html><html lang="en"${themeAttr(req)}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(doc.title ?? name)}</title><style>${MD_CSS}</style></head><body><main>${body}</main></body></html>`,
+      `<!doctype html><html lang="en"${themeAttr(req)}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>${card ? `${og}<meta property="og:title" content="${title}">` : ""}<style>${MD_CSS}</style></head><body><main>${body}</main></body></html>`,
       { headers },
     );
   }
@@ -204,6 +234,11 @@ async function serveFile(req: Request, env: Env, doc: Doc, n: number, pinned: bo
     const length = r.length ?? obj.size - offset;
     headers.set("content-range", `bytes ${offset}-${offset + length - 1}/${obj.size}`);
     return new Response(obj.body, { status: 206, headers });
+  }
+  if (card && type?.startsWith("text/html")) {
+    // The doc's own <title> stays the fallback when it has no shelf title. The length changes, so no content-length.
+    const tags = og + (doc.title ? `<meta property="og:title" content="${escapeHtml(doc.title)}">` : "");
+    return new HTMLRewriter().on("head", { element: (head) => void head.append(tags, { html: true }) }).transform(new Response(obj.body, { headers }));
   }
   return new Response(obj.body, { headers });
 }

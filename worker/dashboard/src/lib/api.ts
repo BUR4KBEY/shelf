@@ -12,10 +12,12 @@ export type Doc = {
   space: string;
   url: string;
 };
-export type Version = { n: number; message: string | null; size: number; createdAt: number; keyId: string | null; keyName: string | null; files: number };
+/** `views`: how often readers opened this version while view statistics were on. Absent on uploads in the feed. */
+export type Version = { n: number; message: string | null; size: number; createdAt: number; keyId: string | null; keyName: string | null; files: number; views?: number };
 /** One upload in the feed: a version, with the doc it belongs to. */
 export type Activity = Version & { docId: string };
-export type DocDetail = Doc & { versions: Version[] };
+/** `views.readers` counts each reader once a day; `lastAt` is null before the first view. */
+export type DocDetail = Doc & { versions: Version[]; views: { total: number; readers: number; lastAt: number | null } };
 export type PushResult = (Doc & { version: number; versionUrl: string; created: boolean; missing?: undefined }) | { missing: string[] };
 export type Key = { id: string; name: string; space: string; createdAt: number; lastUsedAt: number | null; revokedAt: number | null };
 export type NewKey = { id: string; name: string; space: string; key: string };
@@ -42,8 +44,9 @@ export type KeyDetail = Key & { docs: KeyDoc[]; uploads: Activity[]; times: numb
 /**
  * `defaultExpires`: what a new doc gets when its upload names no expiry; null for never. `maxExpires`: the longest expiry any doc may get.
  * `isolateSpaces`: keys see only their own space. `maxSlugLength`: the longest slug any doc may get.
+ * `viewStats`: count readers opening docs. `linkPreviews`: let chat apps fetch a doc to show a card for its link.
  */
-export type AppSettings = { defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean; maxSlugLength: number };
+export type AppSettings = { defaultExpires: string | null; maxExpires: string; isolateSpaces: boolean; maxSlugLength: number; viewStats: boolean; linkPreviews: boolean };
 
 export async function api<T>(path: string, { method = "GET", json, body }: { method?: string; json?: unknown; body?: Blob } = {}): Promise<T> {
   let res: Response;

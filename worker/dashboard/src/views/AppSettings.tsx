@@ -1,5 +1,5 @@
 import { useContext, useId, useState, type FormEvent, type ReactNode } from "react";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Loading, Logo, Problem, code, display, focusRing, useLoad } from "@/components/bits";
 import { SpacesContext } from "@/components/DocBits";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { api, errorText, type AppSettings, type Space } from "@/lib/api";
 import { plural } from "@/lib/format";
@@ -337,6 +338,69 @@ function Spaces({ settings, onSaved, onChanged }: { settings: AppSettings; onSav
   );
 }
 
+/** Whether readers' opens are counted, and whether chat apps may build a card for a shared link. */
+function Readers({ settings, onSaved }: { settings: AppSettings; onSaved: (s: AppSettings) => void }) {
+  const save = async (json: Partial<AppSettings>) => onSaved(await api<AppSettings>("/settings", { method: "PATCH", json }));
+  return (
+    <div className="grid grid-cols-1 gap-4 rounded-xl border bg-card p-4">
+      <Toggle
+        label="View statistics"
+        subject="View statistics"
+        checked={settings.viewStats}
+        onSave={(viewStats) => save({ viewStats })}
+        on="Each doc's page shows how often it was opened and by how many readers. Bots, link previews and your own opens from the dashboard don't count, and readers' IP addresses aren't stored."
+        off="Opens aren't counted. Counts from before stay on each doc's page."
+      />
+      <Toggle
+        label="Link previews"
+        subject="Link previews"
+        checked={settings.linkPreviews}
+        onSave={(linkPreviews) => save({ linkPreviews })}
+        on="Slack, Discord, WhatsApp, iMessage and other chat apps may open a shared link to show a card with the doc's title. A locked doc's title never shows. Search engines still never index anything."
+        off="Chat apps are turned away, so a shared link shows as plain text. Search engines never index anything either way."
+      />
+    </div>
+  );
+}
+
+/** Downloads every doc, or one space's, as a tar with a shelf.json describing it. */
+function Backup() {
+  const spaces = useContext(SpacesContext);
+  const id = useId();
+  const [space, setSpace] = useState("all");
+  return (
+    <div className="grid grid-cols-1 gap-3">
+      <Hint>
+        One <code className={code}>.tar</code> file with every doc, every version and their files, and <code className={code}>shelf.json</code> listing docs, versions, keys, spaces and these settings. Passwords and keys themselves aren't in it. Open it with any archive tool, or <code className={code}>tar -xf</code>.
+      </Hint>
+      <div className="flex flex-wrap items-end gap-2">
+        {spaces && spaces.length > 1 && (
+          <Field label="Space" htmlFor={id}>
+            <Select value={space} onValueChange={setSpace}>
+              <SelectTrigger id={id} className="w-60">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                <SelectItem value="all">All spaces</SelectItem>
+                {spaces.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        )}
+        <Button variant="outline" asChild>
+          <a href={`/dashboard/api/export${space === "all" ? "" : `?space=${encodeURIComponent(space)}`}`} download>
+            <Download /> Download backup
+          </a>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /** Settings for the whole app, as opposed to one doc's. */
 export function AppSettingsView({ onSpacesChanged }: { onSpacesChanged: () => void }) {
   const { data, error } = useLoad<AppSettings>("/settings");
@@ -369,8 +433,16 @@ export function AppSettingsView({ onSpacesChanged }: { onSpacesChanged: () => vo
             <SlugForm saved={s} onSaved={setSaved} />
           </section>
           <section className="grid grid-cols-1 gap-2.5">
+            <h2 className="text-base leading-none font-bold">Readers</h2>
+            <Readers settings={s} onSaved={setSaved} />
+          </section>
+          <section className="grid grid-cols-1 gap-2.5">
             <h2 className="text-base leading-none font-bold">Spaces</h2>
             <Spaces settings={s} onSaved={setSaved} onChanged={onSpacesChanged} />
+          </section>
+          <section className="grid grid-cols-1 gap-2.5">
+            <h2 className="text-base leading-none font-bold">Backup</h2>
+            <Backup />
           </section>
         </>
       )}

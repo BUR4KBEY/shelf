@@ -1,6 +1,6 @@
 import { useRef } from "react";
-import { ChevronLeft, Copy, ExternalLink, Lock, LockOpen } from "lucide-react";
-import { Loading, Problem, chip, copy, dashed, display, focusRing, useLoad } from "@/components/bits";
+import { ChevronLeft, Copy, ExternalLink, Eye, Lock, LockOpen } from "lucide-react";
+import { Loading, Problem, Time, chip, copy, dashed, display, focusRing, useLoad } from "@/components/bits";
 import { Expiry, SpaceChip, Star } from "@/components/DocBits";
 import { DropZone } from "@/components/DropZone";
 import { Entry } from "@/components/Entry";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { nameOf, openUrl, type DocDetail } from "@/lib/api";
 import { byDay } from "@/lib/feed";
-import { dayName, plural, size } from "@/lib/format";
+import { ago, dayName, plural, size } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** The name of a section of the page. */
@@ -54,6 +54,12 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                 </li>
               )}
               <li className={chip}>{plural(d.versions.length, "version")}</li>
+              {d.views.lastAt !== null && (
+                <li className={chip}>
+                  <Eye aria-hidden />
+                  {plural(d.views.total, "view")} by {plural(d.views.readers, "reader")}, last <Time t={d.views.lastAt}>{ago(d.views.lastAt)}</Time>
+                </li>
+              )}
               <li className="flex empty:hidden">
                 <SpaceChip d={d} />
               </li>
@@ -125,9 +131,12 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                       }
                       message={v.message}
                       meta={
-                        <span>
-                          {plural(v.files, "file")}, {size(v.size)}
-                        </span>
+                        <>
+                          <span>
+                            {plural(v.files, "file")}, {size(v.size)}
+                          </span>
+                          {!!v.views && <span>{plural(v.views, "view")}</span>}
+                        </>
                       }
                       actions={
                         <Button variant="outline" size="sm" className="max-sm:h-9 max-sm:px-3" asChild>
