@@ -1,7 +1,7 @@
 import { marked } from "marked";
 import { type Doc, appSettings, findDoc } from "./api";
 import { sameString, unlockToken, verifyPassword } from "./auth";
-import { LOCK_ICON, MD_CSS, cardPage, darkReaderScript, notFound, notice, themeAttr } from "./page";
+import { CREDIT_BADGE, LOCK_ICON, MD_CSS, cardPage, darkReaderScript, notFound, notice, themeAttr } from "./page";
 import { escapeHtml, sha256Hex } from "./util";
 
 // Server-side type policy by extension; client-sent types are ignored.
@@ -164,13 +164,18 @@ export async function view(req: Request, env: Env, ctx: ExecutionContext, ref: s
     file = results.find((r) => r.path === match);
   }
   if (!file) return notFound(req);
-  const res = await serveFile(req, env, doc, n, pin !== undefined, file, entry && previewBot);
+  // Only a browser opening the page gets the badge: `shelf get`, curl, agents and chat apps' crawlers get the doc's own bytes.
+  const credit = !previewBot && !!settings?.credit && !!req.headers.get("accept")?.includes("text/html");
+  const res = await serveFile(req, env, doc, n, pin !== undefined, file, entry && previewBot, credit);
   if (entry && settings!.viewStats && res.status === 200) ctx.waitUntil(recordView(req, env, doc, n));
   return res;
 }
 
-/** `card`: a chat app is building a card for the link, so HTML and Markdown get Open Graph tags (the doc's title and the site name). */
-async function serveFile(req: Request, env: Env, doc: Doc, n: number, pinned: boolean, file: FileRow, card: boolean): Promise<Response> {
+/**
+ * `card`: a chat app is building a card for the link, so HTML and Markdown get Open Graph tags (the doc's title and the site name).
+ * `credit`: an HTML or Markdown doc gets the "Shared with shelf" badge in its corner. Other files are served as uploaded.
+ */
+async function serveFile(req: Request, env: Env, doc: Doc, n: number, pinned: boolean, file: FileRow, card: boolean, credit: boolean): Promise<Response> {
   const url = new URL(req.url);
   const name = file.path.slice(file.path.lastIndexOf("/") + 1);
   const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
@@ -228,7 +233,7 @@ async function serveFile(req: Request, env: Env, doc: Doc, n: number, pinned: bo
     headers.delete("accept-ranges");
     headers.set("vary", "cookie"); // the page carries the reader's theme
     return new Response(
-      `<!doctype html><html lang="en"${themeAttr(req)}><head><meta charset="utf-8">${darkReaderScript()}<meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>${card ? `${og}<meta property="og:title" content="${title}">` : ""}<style>${MD_CSS}</style></head><body><main>${body}</main></body></html>`,
+      `<!doctype html><html lang="en"${themeAttr(req)}><head><meta charset="utf-8">${darkReaderScript()}<meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>${card ? `${og}<meta property="og:title" content="${title}">` : ""}<style>${MD_CSS}</style></head><body><main>${body}</main>${credit ? CREDIT_BADGE : ""}</body></html>`,
       { headers },
     );
   }
@@ -243,6 +248,11 @@ async function serveFile(req: Request, env: Env, doc: Doc, n: number, pinned: bo
     // The doc's own <title> stays the fallback when it has no shelf title. The length changes, so no content-length.
     const tags = og + (doc.title ? `<meta property="og:title" content="${escapeHtml(doc.title)}">` : "");
     return new HTMLRewriter().on("head", { element: (head) => void head.append(tags, { html: true }) }).transform(new Response(obj.body, { headers }));
+  }
+  if (credit && type?.startsWith("text/html")) {
+    // After the doc's last byte: the parser puts trailing markup in <body> even past </html>. The length changes, so no content-length.
+    const badge = new TextEncoder().encode(CREDIT_BADGE);
+    return new Response(obj.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({ flush: (out) => out.enqueue(badge) })), { headers });
   }
   return new Response(obj.body, { headers });
 }
