@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { KeyList } from "@/views/Keys";
 
 const DAY = 86_400_000;
+/** Docs listed before "Show more". Favorites lead the list, so they and the most recently changed stay in reach; ⌘K finds the rest. */
+const LISTED = 20;
 const item = "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none hover:bg-card/60 focus-visible:ring-3 focus-visible:ring-ring/50 aria-[current=page]:bg-card aria-[current=page]:font-semibold";
 
 /** How the palette's shortcut reads on this machine. */
@@ -39,11 +41,15 @@ export function ThemeSwitch({ className }: { className?: string }) {
   );
 }
 
-/** Every doc and every key, always in reach. The log shows what happened; this shows what there is. */
+/** Every key, and the docs that matter now, always in reach. The log shows what happened; this shows what there is. */
 export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; colorOf: (keyId: string | null) => string; openId?: string; openKey?: string; settings: boolean; analytics: boolean; email: string; onNavigate: () => void; onKeysChanged: () => void; onCollapse: () => void; onSearch: () => void }) {
   const [showExpired, setShowExpired] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const isOpen = (d: Doc) => d.id === props.openId || (d.slug !== null && d.slug === props.openId);
   const expired = props.docs.filter(isExpired).length;
+  // Expired docs stay out of the list unless asked for; the one that is open is always in it, however far down.
+  const listed = props.docs.filter((d) => showExpired || !isExpired(d) || isOpen(d));
+  const more = listed.filter((d, i) => i >= LISTED && !isOpen(d)).length;
   return (
     <div className="flex min-h-full flex-col gap-7 px-4 py-6 lg:px-5">
       <div className="flex items-center justify-between max-lg:hidden">
@@ -82,9 +88,8 @@ export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; 
         </h2>
         <ul className="relative -mx-2.5 grid grid-cols-1 gap-px">
           <AnimatePresence initial={false} mode="popLayout">
-            {/* Expired docs stay out of the list unless asked for; the one that is open is always in it. */}
-            {props.docs
-              .filter((d) => showExpired || !isExpired(d) || isOpen(d))
+            {listed
+              .filter((d, i) => showAll || i < LISTED || isOpen(d))
               .map((d) => {
                 const left = d.expiresAt === null ? null : timeLeft(d.expiresAt);
                 return (
@@ -116,6 +121,12 @@ export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; 
               })}
           </AnimatePresence>
         </ul>
+        {more > 0 && (
+          // Not a link: it must not close the phone's menu the way picking a doc does.
+          <button type="button" aria-pressed={showAll} onClick={(e) => (e.stopPropagation(), setShowAll(!showAll))} className={cn(item, "-mx-2.5 mt-px w-[calc(100%+1.25rem)] text-muted-foreground hover:text-foreground")}>
+            {showAll ? "Show fewer" : `Show ${more} more`}
+          </button>
+        )}
         {expired > 0 && (
           // Not a link: it must not close the phone's menu the way picking a doc does.
           <button type="button" aria-pressed={showExpired} onClick={(e) => (e.stopPropagation(), setShowExpired(!showExpired))} className={cn(item, "-mx-2.5 mt-px w-[calc(100%+1.25rem)] text-muted-foreground hover:text-foreground")}>
