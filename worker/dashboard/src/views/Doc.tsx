@@ -53,7 +53,8 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
       reload();
     }
   };
-  const setChosen = async (disabled: boolean) => (await setDisabled(chosen.filter((v) => !!v.disabled !== disabled).map((v) => v.n), disabled)) && stopSelecting();
+  // The selection stays after an action, as on All uploads, so the next one can follow.
+  const setChosen = (disabled: boolean) => setDisabled(chosen.filter((v) => !!v.disabled !== disabled).map((v) => v.n), disabled);
 
   return (
     <div className="mx-auto grid max-w-[60rem] grid-cols-1 gap-7 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
