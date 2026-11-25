@@ -16,6 +16,8 @@ import { DAY } from "@/views/Key";
 
 /** The name of a section of the page. */
 const heading = "text-base leading-none font-bold";
+/** Versions listed before "Show older"; a doc with thousands would take seconds to lay out. */
+const LISTED = 50;
 
 /** One doc: its link, its settings, a place to add a version, and its whole history as a log. */
 export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyId: string | null) => string; onChanged: () => void }) {
@@ -25,6 +27,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [anchor, setAnchor] = useState<number | null>(null); // the version clicked last, where a shift-click range starts
+  const [showAll, setShowAll] = useState(false);
   const changed = () => {
     reload();
     onChanged();
@@ -150,8 +153,9 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                 </Button>
               )}
             </div>
-            {byDay(d.versions, (v) => String(v.n)).map(({ day, entries }) => (
-              <div key={day} className="grid grid-cols-1 gap-2.5">
+            {byDay(showAll ? d.versions : d.versions.slice(0, LISTED), (v) => String(v.n)).map(({ day, entries }) => (
+              // Days off screen skip layout and paint. The -m-1 p-1 leaves room for a selected entry's ring, which the paint containment would clip.
+              <div key={day} className="-m-1 flex flex-col gap-2.5 p-1 [contain-intrinsic-size:auto_500px] [content-visibility:auto]">
                 <h3 className={cn(display, "text-2xl leading-none")}>{dayName(day)}</h3>
                 <div className="flex flex-col gap-2">
                   {entries.map(({ head: v }) => (
@@ -207,6 +211,11 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                 </div>
               </div>
             ))}
+            {d.versions.length > LISTED && (
+              <Button variant="outline" className="w-fit" aria-pressed={showAll} onClick={() => setShowAll(!showAll)}>
+                {showAll ? "Show fewer" : `Show ${d.versions.length - LISTED} older`}
+              </Button>
+            )}
             {selecting && (
               <div role="toolbar" aria-label="Selected versions" className="sticky bottom-4 z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-card py-2 pr-2 pl-4 shadow-lg">
                 <p aria-live="polite" className="mr-auto text-sm font-semibold">
