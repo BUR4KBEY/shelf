@@ -348,17 +348,23 @@ export async function listDocs(req: Request, env: Env, scope: string | null): Pr
   return json(results.map((d) => docJson(req, d)));
 }
 
-/** A doc and its version history. `views`: how often readers opened it (see view.ts), counted only while view statistics are on. */
+/**
+ * A doc and its version history. `views`: how often readers opened it (see view.ts), counted only while view statistics
+ * are on, with `days`: views per day over the last 30, in the time zone `?tz=` names (getTimezoneOffset() minutes; UTC without it).
+ */
 export async function getDoc(req: Request, env: Env, ref: string, scope: string | null): Promise<Response> {
   const doc = await findDoc(env, ref, scope);
   if (!doc) return json({ error: "doc not found" }, 404);
-  const [versions, views] = await env.DB.batch([
+  const tz = Number(new URL(req.url).searchParams.get("tz") ?? 0);
+  const shift = Number.isInteger(tz) && Math.abs(tz) <= 840 ? tz * 60_000 : 0;
+  const [versions, views, days] = await env.DB.batch<Record<string, unknown>>([
     env.DB.prepare(
       "SELECT v.n, v.message, v.size, v.created_at AS createdAt, v.key_id AS keyId, k.name AS keyName, (SELECT COUNT(*) FROM files f WHERE f.doc_id = v.doc_id AND f.n = v.n) AS files, (SELECT COUNT(*) FROM views w WHERE w.doc_id = v.doc_id AND w.n = v.n) AS views FROM versions v LEFT JOIN api_keys k ON k.id = v.key_id WHERE v.doc_id = ? ORDER BY v.n DESC",
     ).bind(doc.id),
     env.DB.prepare("SELECT COUNT(*) AS total, COUNT(DISTINCT visitor) AS readers, MAX(at) AS lastAt FROM views WHERE doc_id = ?").bind(doc.id),
+    env.DB.prepare("SELECT CAST((at - ?2) / 86400000 AS INTEGER) AS day, COUNT(*) AS views FROM views WHERE doc_id = ?1 AND at >= ?3 GROUP BY 1").bind(doc.id, shift, Date.now() - 31 * DAY),
   ]);
-  return json({ ...docJson(req, doc), views: views.results[0], versions: versions.results });
+  return json({ ...docJson(req, doc), views: { ...views.results[0], days: days.results }, versions: versions.results });
 }
 
 /** Columns of one upload, for a `FROM versions v` query. */

@@ -1,5 +1,5 @@
 import page from "./dashboard.html";
-import { UPLOAD_SELECT } from "./api";
+import { UPLOAD_SELECT, appSettings } from "./api";
 import { themeAttr } from "./page";
 import { json, randomId, sha256Hex } from "./util";
 
@@ -178,17 +178,19 @@ const ANALYTICS_DAYS = 728;
 /**
  * Every key's uploads, for the analytics page. Counts are per key and space, so the page can filter by space; a key
  * that is gone or the dashboard (null) gets rows too. `tz` is the browser's getTimezoneOffset(), so `day` (days since
- * 1970 in the browser's time) lines up with its calendar.
+ * 1970 in the browser's time) lines up with its calendar. `views`: readers opening docs per doc and day, recorded while
+ * `viewStats` is on; `readers` counts each reader once per doc and day.
  * shortcut: one offset for the whole range puts uploads near midnight on the wrong day across a DST change; send the zone and bucket per day if that matters.
  */
 export async function getAnalytics(req: Request, env: Env): Promise<Response> {
   const tz = Number(new URL(req.url).searchParams.get("tz") ?? 0);
   if (!Number.isInteger(tz) || Math.abs(tz) > 840) return json({ error: "tz: minutes from UTC, -840 to 840" }, 400);
   const shift = tz * 60_000;
-  const [days, keys, shared, quotas] = await env.DB.batch<Record<string, unknown>>([
+  const since = Date.now() - (ANALYTICS_DAYS + 1) * 86_400_000;
+  const [days, keys, shared, quotas, views] = await env.DB.batch<Record<string, unknown>>([
     env.DB.prepare(
       "SELECT v.key_id AS keyId, d.space_id AS space, CAST((v.created_at - ?1) / 86400000 AS INTEGER) AS day, COUNT(*) AS uploads FROM versions v JOIN docs d ON d.id = v.doc_id WHERE v.created_at >= ?2 GROUP BY 1, 2, 3",
-    ).bind(shift, Date.now() - (ANALYTICS_DAYS + 1) * 86_400_000),
+    ).bind(shift, since),
     env.DB.prepare(
       "SELECT v.key_id AS keyId, d.space_id AS space, COUNT(*) AS uploads, COUNT(DISTINCT v.doc_id) AS docs, SUM(v.size) AS size, MAX(v.created_at) AS lastAt FROM versions v JOIN docs d ON d.id = v.doc_id GROUP BY 1, 2",
     ),
@@ -197,6 +199,10 @@ export async function getAnalytics(req: Request, env: Env): Promise<Response> {
       "SELECT v.doc_id AS docId, v.key_id AS keyId, COUNT(*) AS uploads, MAX(v.created_at) AS lastAt FROM versions v WHERE v.doc_id IN (SELECT doc_id FROM versions GROUP BY doc_id HAVING COUNT(DISTINCT coalesce(key_id, '')) > 1) GROUP BY 1, 2 ORDER BY lastAt DESC",
     ),
     env.DB.prepare("SELECT id, quota_bytes AS quota FROM api_keys WHERE quota_bytes IS NOT NULL"),
+    env.DB.prepare(
+      "SELECT w.doc_id AS docId, d.space_id AS space, CAST((w.at - ?1) / 86400000 AS INTEGER) AS day, COUNT(*) AS views, COUNT(DISTINCT w.visitor) AS readers FROM views w JOIN docs d ON d.id = w.doc_id WHERE w.at >= ?2 GROUP BY 1, 2, 3",
+    ).bind(shift, since),
   ]);
-  return json({ days: days.results, keys: keys.results, shared: shared.results, quotas: quotas.results });
+  const { viewStats } = await appSettings(env);
+  return json({ days: days.results, keys: keys.results, shared: shared.results, quotas: quotas.results, views: views.results, viewStats });
 }

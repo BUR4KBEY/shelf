@@ -1,5 +1,5 @@
-import { useRef } from "react";
-import { ChevronLeft, Copy, ExternalLink, Eye, Lock, LockOpen } from "lucide-react";
+import { useRef, type ReactNode } from "react";
+import { ChevronLeft, Copy, ExternalLink, Lock, LockOpen } from "lucide-react";
 import { Loading, Problem, Time, chip, copy, dashed, display, focusRing, useLoad } from "@/components/bits";
 import { Expiry, SpaceChip, Star } from "@/components/DocBits";
 import { DropZone } from "@/components/DropZone";
@@ -11,13 +11,14 @@ import { nameOf, openUrl, type DocDetail } from "@/lib/api";
 import { byDay } from "@/lib/feed";
 import { ago, dayName, plural, size } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { DAY } from "@/views/Key";
 
 /** The name of a section of the page. */
 const heading = "text-base leading-none font-bold";
 
 /** One doc: its link, its settings, a place to add a version, and its whole history as a log. */
 export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyId: string | null) => string; onChanged: () => void }) {
-  const { data: d, error, reload } = useLoad<DocDetail>(`/docs/${encodeURIComponent(id)}`);
+  const { data: d, error, reload } = useLoad<DocDetail>(`/docs/${encodeURIComponent(id)}?tz=${new Date().getTimezoneOffset()}`);
   const message = useRef<HTMLInputElement>(null);
   const changed = () => {
     reload();
@@ -54,12 +55,6 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                 </li>
               )}
               <li className={chip}>{plural(d.versions.length, "version")}</li>
-              {d.views.lastAt !== null && (
-                <li className={chip}>
-                  <Eye aria-hidden />
-                  {plural(d.views.total, "view")} by {plural(d.views.readers, "reader")}, last <Time t={d.views.lastAt}>{ago(d.views.lastAt)}</Time>
-                </li>
-              )}
               <li className="flex empty:hidden">
                 <SpaceChip d={d} />
               </li>
@@ -81,6 +76,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                 </Button>
               </div>
             </div>
+            {d.views.lastAt !== null && <ViewsStrip views={d.views} />}
           </div>
 
           <section className="grid grid-cols-1 gap-2.5">
@@ -154,5 +150,49 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
         </>
       )}
     </div>
+  );
+}
+
+/** How many days of views the strip's bars cover, today last. */
+const STRIP_DAYS = 30;
+
+/** A doc's views at a glance: totals, the last open, and a bar per day for the last 30 days. */
+function ViewsStrip({ views }: { views: DocDetail["views"] }) {
+  const now = new Date();
+  const today = Math.floor((now.getTime() - now.getTimezoneOffset() * 60_000) / DAY);
+  const perDay = new Map(views.days.map((d) => [d.day, d.views]));
+  const counts = Array.from({ length: STRIP_DAYS }, (_, i) => perDay.get(today - (STRIP_DAYS - 1) + i) ?? 0);
+  const recent = counts.reduce((a, b) => a + b, 0);
+  const most = Math.max(1, ...counts);
+  const stat = (label: string, value: ReactNode) => (
+    <div className="grid gap-1">
+      <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
+      <dd className="text-xl leading-none font-bold tabular-nums">{value}</dd>
+    </div>
+  );
+  return (
+    <section aria-label="Views" className="flex flex-wrap items-end gap-x-7 gap-y-3 rounded-xl border bg-card px-4 py-3">
+      <dl className="flex flex-wrap gap-x-7 gap-y-3">
+        {stat("Views", views.total)}
+        {stat("Readers", views.readers)}
+        {stat("Last opened", <Time t={views.lastAt!}>{ago(views.lastAt!)}</Time>)}
+      </dl>
+      <div className="ml-auto grid w-full max-w-72 gap-1 max-sm:max-w-none">
+        <div className="flex h-9 items-end gap-[2px]" role="img" aria-label={`${plural(recent, "view")} in the last ${STRIP_DAYS} days`}>
+          {counts.map((c, i) => (
+            <span
+              key={i}
+              title={`${dayName(new Date(now.getFullYear(), now.getMonth(), now.getDate() - (STRIP_DAYS - 1 - i)).getTime())}: ${plural(c, "view")}`}
+              className={cn("flex-1 rounded-[1px]", c ? "bg-ring" : "bg-muted-foreground opacity-20")}
+              style={{ height: c ? `${(c / most) * 100}%` : "8%" }}
+            />
+          ))}
+        </div>
+        <p className="flex justify-between text-[0.6875rem] text-muted-foreground" aria-hidden>
+          <span>{STRIP_DAYS} days ago</span>
+          <span>Today</span>
+        </p>
+      </div>
+    </section>
   );
 }
