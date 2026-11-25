@@ -115,7 +115,7 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                       key={v.n}
                       color={colorOf(v.keyId)}
                       at={v.createdAt}
-                      who={v.keyName ?? "You"}
+                      who={v.keyName ?? (v.keyId ? "A deleted key" : "You")}
                       did="uploaded"
                       title={
                         <p className="flex items-center gap-2 text-xl leading-tight font-bold">

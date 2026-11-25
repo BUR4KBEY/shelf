@@ -192,7 +192,7 @@ function QuotaForm({ k, used, onSaved }: { k: KeyDetail; used: number; onSaved: 
 
 type Props = { docs: Doc[]; colorOf: (keyId: string | null) => string; onChanged: () => void; onKeysChanged: () => void };
 
-/** One key: how much and how often it uploads, the docs it touched, and its uploads as a log. Revoking lives here. */
+/** One key: how much and how often it uploads, the docs it touched, and its uploads as a log. Revoking, then deleting, lives here. */
 export function KeyView({ id, ...props }: Props & { id: string }) {
   const { data: k, error, reload } = useLoad<KeyDetail>(`/keys/${encodeURIComponent(id)}`);
   return (
@@ -208,6 +208,7 @@ export function KeyView({ id, ...props }: Props & { id: string }) {
 
 function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props & { k: KeyDetail; reload: () => void }) {
   const [revoking, setRevoking] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const revoke = () =>
     api(`/keys/${k.id}/revoke`, { method: "POST" }).then(
       () => (toast.success(`Revoked ${k.name}`), reload(), onKeysChanged()),
@@ -216,6 +217,11 @@ function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props &
   const move = (space: string) =>
     api(`/keys/${k.id}`, { method: "PATCH", json: { space } }).then(
       () => (toast.success(`Moved ${k.name}`), reload(), onKeysChanged()),
+      (e) => toast.error(errorText(e)),
+    );
+  const remove = () =>
+    api(`/keys/${k.id}`, { method: "DELETE" }).then(
+      () => (toast.success(`Deleted ${k.name}`), onKeysChanged(), onChanged(), (location.hash = "#/")),
       (e) => toast.error(errorText(e)),
     );
   const byId = new Map(docs.map((d) => [d.id, d]));
@@ -240,7 +246,11 @@ function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props &
         <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
           <i className={cn("size-4 shrink-0 rounded-full", k.revokedAt ? "bg-input" : "bg-(--k)")} aria-hidden />
           <h1 className={cn(display, "min-w-0 flex-1 text-5xl leading-[0.95] [overflow-wrap:anywhere]", k.revokedAt && "text-muted-foreground line-through")}>{k.name}</h1>
-          {!k.revokedAt && (
+          {k.revokedAt ? (
+            <Button variant="outline" className="text-destructive hover:text-destructive" onClick={() => setDeleting(true)}>
+              <Trash2 /> Delete…
+            </Button>
+          ) : (
             <Button variant="outline" className="text-destructive hover:text-destructive" onClick={() => setRevoking(true)}>
               <Trash2 /> Revoke…
             </Button>
@@ -404,6 +414,7 @@ function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props &
         </>
       )}
       <Confirm open={revoking} onOpenChange={setRevoking} title={`Revoke ${k.name}?`} body="Anything using this key stops working right away. This can't be undone." action="Revoke" onConfirm={revoke} />
+      <Confirm open={deleting} onOpenChange={setDeleting} title={`Delete ${k.name}?`} body="The key and its page go for good. Its uploads stay, marked as from a deleted key. This can't be undone." action="Delete" onConfirm={remove} />
     </>
   );
 }
