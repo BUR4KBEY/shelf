@@ -339,10 +339,13 @@ const Upload = memo(function Upload({ id, head, older, d, color, open, checked, 
         )}
         <AnimatePresence initial={false}>
           {open && (
+            // A grid row sliding between 0fr and 1fr: nothing measures the panel, so Safari never snaps the scroll near the end of the page.
             // Clipped only while it slides, so the inputs' focus rings show once it is open.
-            <motion.div initial={{ height: 0, opacity: 0, overflow: "hidden" }} animate={{ height: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }} exit={{ height: 0, opacity: 0, overflow: "hidden" }} transition={{ duration: 0.22, ease: "easeOut" }}>
-              <div data-settings className="mt-3 border-t border-(--k)/30 pt-3.5">
-                <Settings key={[d.title, d.slug, d.locked, d.expiresAt, d.space, d.project].join("\n")} d={d} onChanged={onChanged} onDeleted={() => setOpen(null)} />
+            <motion.div className="grid" initial={{ gridTemplateRows: "0fr", opacity: 0, overflow: "hidden" }} animate={{ gridTemplateRows: "1fr", opacity: 1, transitionEnd: { overflow: "visible" } }} exit={{ gridTemplateRows: "0fr", opacity: 0, overflow: "hidden" }} transition={{ duration: 0.22, ease: "easeOut" }}>
+              <div className="min-h-0">
+                <div data-settings className="mt-3 border-t border-(--k)/30 pt-3.5">
+                  <Settings key={[d.title, d.slug, d.locked, d.expiresAt, d.space, d.project].join("\n")} d={d} onChanged={onChanged} onDeleted={() => setOpen(null)} />
+                </div>
               </div>
             </motion.div>
           )}
