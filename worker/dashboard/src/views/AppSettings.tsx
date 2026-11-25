@@ -386,7 +386,8 @@ function Cleanup({ onDeleted }: { onDeleted: () => void }) {
   const status = ran ?? data;
   const last = status?.runs[0];
   const lastDaily = status?.runs.find((r) => r.trigger === "daily");
-  const next = nextDaily(BUILD.cleanupCron);
+  // The schedule the cron last ran on beats the build's copy of wrangler.jsonc: the trigger may have been changed in Cloudflare.
+  const next = nextDaily(status?.runs.find((r) => r.cron)?.cron ?? BUILD.cleanupCron);
   const run = async () => {
     setAsk((a) => ({ ...a, open: false }));
     setBusy(true);

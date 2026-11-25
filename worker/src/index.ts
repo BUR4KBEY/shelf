@@ -100,8 +100,8 @@ export default {
     return req.headers.get("accept")?.includes("text/html") ? notFound(req) : json({ error: "not found" }, 404);
   },
 
-  async scheduled(_event, env): Promise<void> {
-    const run = await sweep(env);
+  async scheduled(event, env): Promise<void> {
+    const run = await sweep(env, Date.now(), "daily", event.cron);
     if (run.error) throw new Error(`cleanup failed: ${run.error}`); // so the Workers dashboard shows the cron run as failed
   },
 } satisfies ExportedHandler<Env>;
