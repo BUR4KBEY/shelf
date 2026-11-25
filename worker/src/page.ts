@@ -15,10 +15,21 @@ export function font(name: string): Response | undefined {
 }
 
 /**
- * Colour themes: the hue every colour shares, and how much of each colour's chroma it keeps (teal and green leave sRGB at full strength).
+ * Colour themes: the hue every colour shares, and how much of each colour's chroma it keeps (most hues leave sRGB at full strength; sand is a warm grey on purpose).
  * Mirrored in dashboard/src/index.css and dashboard/src/lib/prefs.ts. Indigo is the default, so it never needs the cookie.
  */
-export const PALETTES: Record<string, [hue: number, tint: number]> = { indigo: [270, 1], teal: [200, 0.42], green: [150, 0.69], plum: [325, 1], graphite: [0, 0] };
+export const PALETTES: Record<string, [hue: number, tint: number]> = {
+  indigo: [270, 1],
+  violet: [295, 1],
+  plum: [325, 1],
+  rose: [355, 1],
+  sand: [60, 0.3],
+  olive: [115, 0.57],
+  green: [150, 0.69],
+  teal: [200, 0.42],
+  ocean: [240, 0.57],
+  graphite: [0, 0],
+};
 
 /** An OKLCH colour in the page's palette: lightness and chroma for light, then for dark. */
 const tinted = (l: number, c: number, dl: number, dc: number) => `light-dark(oklch(${l} calc(${c} * var(--tint)) var(--hue)),oklch(${dl} calc(${dc} * var(--tint)) var(--hue)))`;

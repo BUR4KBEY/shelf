@@ -60,25 +60,45 @@
   --input: light-dark(oklch(0.728 calc(0.053 * var(--tint)) var(--hue)), oklch(0.477 calc(0.098 * var(--tint)) var(--hue)));
   --ring: light-dark(oklch(0.513 calc(0.203 * var(--tint)) var(--hue)), oklch(0.773 calc(0.115 * var(--tint)) var(--hue)));
 }
-[data-palette="teal"] {
-  --hue: 200;
-  --tint: 0.42;
+[data-palette="indigo"] {
+  --hue: 270;
+  --tint: 1;
 }
-[data-palette="green"] {
-  --hue: 150;
-  --tint: 0.69;
+[data-palette="violet"] {
+  --hue: 295;
+  --tint: 1;
 }
 [data-palette="plum"] {
   --hue: 325;
   --tint: 1;
 }
+[data-palette="rose"] {
+  --hue: 355;
+  --tint: 1;
+}
+[data-palette="sand"] {
+  --hue: 60;
+  --tint: 0.3;
+}
+[data-palette="olive"] {
+  --hue: 115;
+  --tint: 0.57;
+}
+[data-palette="green"] {
+  --hue: 150;
+  --tint: 0.69;
+}
+[data-palette="teal"] {
+  --hue: 200;
+  --tint: 0.42;
+}
+[data-palette="ocean"] {
+  --hue: 240;
+  --tint: 0.57;
+}
 [data-palette="graphite"] {
   --hue: 0;
   --tint: 0;
-}
-[data-palette="indigo"] {
-  --hue: 270;
-  --tint: 1;
 }
 :root[data-theme="light"] {
   color-scheme: light;
