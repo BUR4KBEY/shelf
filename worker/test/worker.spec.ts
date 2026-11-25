@@ -128,6 +128,24 @@ describe("versions", () => {
     expect(res.headers.get("cache-control")).toContain("immutable");
     expect((await get(`/view/${v1.id}@9`)).status).toBe(404);
   });
+
+  it("disables old versions and turns them back on, but never the current one", async () => {
+    const v1 = await publish({ "off.html": "first" });
+    const v2 = await publish({ "off.html": "second" }, { ref: v1.id });
+    const patch = (body: object) => api(`/api/docs/${v1.id}/versions`, { method: "PATCH", body: JSON.stringify(body) });
+    expect((await patch({ versions: [2], disabled: true })).status).toBe(400);
+    expect((await patch({ versions: [1, 9], disabled: true })).status).toBe(404);
+    expect((await get(v1.versionUrl)).status).toBe(200);
+
+    expect((await patch({ versions: [1], disabled: true })).status).toBe(204);
+    expect((await get(v1.versionUrl)).status).toBe(410);
+    expect(await (await get(v2.url)).text()).toBe("second");
+    const detail = (await (await api(`/api/docs/${v1.id}`)).json()) as { versions: { n: number; disabled: boolean }[] };
+    expect(detail.versions.map((v) => [v.n, v.disabled])).toEqual([[2, false], [1, true]]);
+
+    expect((await patch({ versions: [1], disabled: false })).status).toBe(204);
+    expect(await (await get(v1.versionUrl)).text()).toBe("first");
+  });
 });
 
 describe("folders", () => {
@@ -776,6 +794,7 @@ describe("dashboard", () => {
     const locked = await publish({ "secret.html": "<p>s</p>" }, { password: "hunter22", slug: "restore-me", title: "Secret", project: "vault" });
     await publish({ "secret.html": "<p>s2</p>" }, { ref: locked.id, message: "second" });
     await dash(`/dashboard/api/docs/${locked.id}`, { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ space: space.id, favorite: true }) });
+    await dash(`/dashboard/api/docs/${locked.id}/versions`, { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ versions: [1], disabled: true }) });
     const shelfJson = async (query: string) =>
       JSON.parse(untar(new Uint8Array(await (await dash(`/dashboard/api/export?space=${space.id}${query}`)).arrayBuffer())).at(-1)![3]) as {
         spaces: object[];
@@ -796,8 +815,8 @@ describe("dashboard", () => {
     const restored = (await (await post("", withHashes)).json()) as { imported: string[]; needPassword: string[] };
     expect(restored).toMatchObject({ imported: [locked.id], needPassword: [] });
     expect(await (await get("/view/restore-me", { headers: { "x-doc-password": "hunter22" } })).text()).toBe("<p>s2</p>");
-    const back = (await (await dash(`/dashboard/api/docs/${locked.id}`)).json()) as { space: string; project: string | null; favorite: boolean; versions: { n: number; message: string | null }[] };
-    expect(back).toMatchObject({ space: space.id, project: "vault", favorite: true, versions: [{ n: 2, message: "second" }, { n: 1 }] });
+    const back = (await (await dash(`/dashboard/api/docs/${locked.id}`)).json()) as { space: string; project: string | null; favorite: boolean; versions: { n: number; message: string | null; disabled: boolean }[] };
+    expect(back).toMatchObject({ space: space.id, project: "vault", favorite: true, versions: [{ n: 2, message: "second", disabled: false }, { n: 1, disabled: true }] });
 
     // Already there: skipped unless copied; a copy gets a new id and loses the taken slug.
     expect(((await (await post("/check", { docs: without.docs })).json()) as { conflicts: string[] }).conflicts).toEqual([locked.id]);

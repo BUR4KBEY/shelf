@@ -131,6 +131,10 @@ export async function view(req: Request, env: Env, ctx: ExecutionContext, ref: s
   if (access !== true) return access;
 
   const n = pin ?? doc.latest;
+  // Only a pinned version can be disabled: the current one never is.
+  if (pin !== undefined && (await env.DB.prepare("SELECT disabled FROM versions WHERE doc_id = ? AND n = ?").bind(doc.id, pin).first<number>("disabled"))) {
+    return notice(req, 410, "This version is turned off", "Its owner disabled this version of the doc. Ask whoever sent the link for the current one.");
+  }
   const url = new URL(req.url);
   let file: FileRow | undefined;
 
