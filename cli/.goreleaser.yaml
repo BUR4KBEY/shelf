@@ -26,3 +26,21 @@ checksum:
 release:
   prerelease: auto
   make_latest: '{{ envOrDefault "MAKE_LATEST" "true" }}'
+
+# shelf-bin on the AUR is a different tool (iamd3vil/shelf), so this one is shelf-cli-bin.
+# Publishing needs the AUR_KEY secret: the private SSH key of the AUR account that owns the package.
+# Only the latest release publishes, so a pre-release or a patch to an older line doesn't replace it.
+aurs:
+  - name: shelf-cli-bin
+    homepage: https://github.com/BUR4KBEY/shelf
+    description: CLI for shelf, publish HTML pages and docs and get a link back
+    license: MIT
+    maintainers: ["BUR4KBEY <rectfc@gmail.com>"]
+    # Both install /usr/bin/shelf too.
+    conflicts: [shelf-bin, shelf-git]
+    private_key: '{{ envOrDefault "AUR_KEY" "" }}'
+    git_url: ssh://aur@aur.archlinux.org/shelf-cli-bin.git
+    skip_upload: '{{ if or (eq (envOrDefault "AUR_KEY" "") "") (eq (envOrDefault "MAKE_LATEST" "true") "false") }}true{{ else }}false{{ end }}'
+    commit_author:
+      name: BUR4KBEY
+      email: rectfc@gmail.com
