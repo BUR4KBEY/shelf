@@ -1,5 +1,5 @@
-import { useContext, useId, useState, type FormEvent, type ReactNode } from "react";
-import { ChevronLeft, Download } from "lucide-react";
+import { useContext, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { ChevronLeft, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Loading, Logo, Problem, code, display, focusRing, useLoad } from "@/components/bits";
 import { SpacesContext } from "@/components/DocBits";
@@ -11,8 +11,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { api, errorText, type AppSettings, type Space } from "@/lib/api";
+import { checkBackup, readBackup, restore, type Backup as BackupFile, type BackupDoc } from "@/lib/backup";
 import { plural } from "@/lib/format";
 import { PALETTES, setPref, usePref } from "@/lib/prefs";
+import { PROGRESS } from "@/lib/upload";
 import { cn } from "@/lib/utils";
 import { THEMES } from "@/views/Sidebar";
 
@@ -363,16 +365,29 @@ function Readers({ settings, onSaved }: { settings: AppSettings; onSaved: (s: Ap
   );
 }
 
-/** Downloads every doc, or one space's, as a tar with a shelf.json describing it. */
+/** Downloads every doc, or one space's, as a tar with a shelf.json describing it, with or without password hashes. */
 function Backup() {
   const spaces = useContext(SpacesContext);
   const id = useId();
   const [space, setSpace] = useState("all");
+  const [passwords, setPasswords] = useState(false);
+  const query = new URLSearchParams({ ...(space !== "all" && { space }), ...(passwords && { passwords: "1" }) }).toString();
   return (
     <div className="grid grid-cols-1 gap-3">
       <Hint>
-        One <code className={code}>.tar</code> file with every doc, every version and their files, and <code className={code}>shelf.json</code> listing docs, versions, keys, spaces and these settings. Passwords and keys themselves aren't in it. Open it with any archive tool, or <code className={code}>tar -xf</code>.
+        One <code className={code}>.tar</code> file with every doc, every version and their files, and <code className={code}>shelf.json</code> listing docs, versions, keys, spaces and these settings. Keys themselves are never in it. Open it with any archive tool, or <code className={code}>tar -xf</code>, or import it below.
       </Hint>
+      <div className="grid gap-1">
+        <Label className="text-sm font-semibold">
+          <input type="checkbox" checked={passwords} onChange={(e) => setPasswords(e.target.checked)} aria-describedby={`${id}pw`} className="size-4 accent-primary" />
+          Include password hashes
+        </Label>
+        <p id={`${id}pw`} className="pl-6 text-xs leading-relaxed text-muted-foreground">
+          {passwords
+            ? "Locked docs stay locked, with the same passwords, when you import this file. Anyone who has the file can open those docs without knowing their passwords, so keep it as private as the shelf itself."
+            : "Locked docs come back locked after an import, but you set a new password for each. The file reveals nothing about the passwords."}
+        </p>
+      </div>
       <div className="flex flex-wrap items-end gap-2">
         {spaces && spaces.length > 1 && (
           <Field label="Space" htmlFor={id}>
@@ -392,11 +407,126 @@ function Backup() {
           </Field>
         )}
         <Button variant="outline" asChild>
-          <a href={`/dashboard/api/export${space === "all" ? "" : `?space=${encodeURIComponent(space)}`}`} download>
+          <a href={`/dashboard/api/export${query && `?${query}`}`} download>
             <Download /> Download backup
           </a>
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** "A, B and 3 more": the docs' names for a sentence, the first few and then how many more. */
+const someDocs = (docs: BackupDoc[]) =>
+  new Intl.ListFormat("en").format([...docs.slice(0, 6).map((d) => d.title || d.slug || d.id), ...(docs.length > 6 ? [`${docs.length - 6} more`] : [])]);
+
+/**
+ * Reads a backup, asks what to do with docs already on the shelf, then restores the rest.
+ * Nothing is written until the owner confirms; a conflict-free backup imports at once.
+ */
+function Import({ onImported }: { onImported: () => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [pending, setPending] = useState<{ backup: BackupFile; blobs: Map<string, Uint8Array>; missing: string[]; conflicts: string[] }>();
+  const [copy, setCopy] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const id = useId();
+
+  const run = async (p: NonNullable<typeof pending>, asCopies: boolean) => {
+    setPending(undefined);
+    setBusy(true);
+    try {
+      const r = await restore(p.backup, p.blobs, p.missing, p.conflicts, asCopies);
+      toast.dismiss(PROGRESS);
+      const parts = [plural(r.imported.length + r.copied.length, "doc"), r.copied.length && `${r.copied.length} as copies with new links`, r.skipped.length && `${r.skipped.length} skipped`].filter(Boolean);
+      toast.success(`Imported ${parts.join(", ")}`);
+      if (r.needPassword.length) {
+        toast.warning(`${plural(r.needPassword.length, "locked doc")} came without ${r.needPassword.length === 1 ? "its password" : "their passwords"}`, {
+          description: "They stay locked behind a password nobody knows. Set a new one in each doc's settings.",
+          duration: Infinity,
+        });
+      }
+      onImported();
+    } catch (err) {
+      toast.dismiss(PROGRESS);
+      toast.error(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pick = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const { backup, blobs } = await readBackup(file);
+      const { conflicts, missing } = await checkBackup(backup);
+      setBusy(false);
+      if (conflicts.length) setPending({ backup, blobs, missing, conflicts });
+      else await run({ backup, blobs, missing, conflicts }, false);
+    } catch (err) {
+      setBusy(false);
+      toast.error(errorText(err));
+    }
+  };
+
+  const clashing = pending ? pending.backup.docs.filter((d) => pending.conflicts.includes(d.id)) : [];
+  const others = pending ? pending.backup.docs.length - clashing.length : 0;
+  return (
+    <div className="grid grid-cols-1 gap-3">
+      <Hint>
+        Brings back the docs in a backup with their versions, favorites, expiry and space. Missing spaces are added, and keys come back revoked so their uploads keep their names; mint new keys for your agents. Settings stay as they are.
+      </Hint>
+      <div>
+        <input
+          ref={input}
+          type="file"
+          accept=".tar,application/x-tar"
+          className="hidden"
+          onChange={(e) => {
+            void pick(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+        <Button variant="outline" disabled={busy} onClick={() => input.current?.click()}>
+          <Upload /> {busy ? "Importing…" : "Import backup…"}
+        </Button>
+      </div>
+      <Dialog open={!!pending} onOpenChange={(open) => !open && setPending(undefined)}>
+        <DialogContent className="sm:max-w-md">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (pending) void run(pending, copy);
+            }}
+            className="grid gap-4"
+          >
+            <DialogHeader>
+              <DialogTitle>{plural(clashing.length, "doc")} already on the shelf</DialogTitle>
+              <DialogDescription className="[overflow-wrap:anywhere]">
+                {someDocs(clashing)} {clashing.length === 1 ? "has" : "have"} the same link as a doc you have now.
+                {others === 1 ? " The other doc imports as it is." : others > 1 ? ` The other ${others} docs import as they are.` : ""}
+              </DialogDescription>
+            </DialogHeader>
+            <fieldset className="grid gap-2">
+              <legend className="mb-2 text-sm font-medium">What should happen to {clashing.length === 1 ? "it" : "them"}?</legend>
+              <Label className="font-normal">
+                <input type="radio" name={`${id}copy`} checked={copy} onChange={() => setCopy(true)} className="size-4 accent-primary" />
+                Import as copies, with new links. Your current docs stay as they are.
+              </Label>
+              <Label className="font-normal">
+                <input type="radio" name={`${id}copy`} checked={!copy} onChange={() => setCopy(false)} className="size-4 accent-primary" />
+                Skip {clashing.length === 1 ? "it" : "them"}, and keep only the docs you have now.
+              </Label>
+            </fieldset>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setPending(undefined)}>
+                Cancel
+              </Button>
+              <Button type="submit">Import</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -443,6 +573,10 @@ export function AppSettingsView({ onSpacesChanged }: { onSpacesChanged: () => vo
           <section className="grid grid-cols-1 gap-2.5">
             <h2 className="text-base leading-none font-bold">Backup</h2>
             <Backup />
+          </section>
+          <section className="grid grid-cols-1 gap-2.5">
+            <h2 className="text-base leading-none font-bold">Import</h2>
+            <Import onImported={onSpacesChanged} />
           </section>
         </>
       )}

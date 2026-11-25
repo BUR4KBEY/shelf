@@ -1,10 +1,10 @@
 import { type Caller, hashPassword } from "./auth";
 import { docId, json, sha256Hex } from "./util";
 
-const SHA = /^[0-9a-f]{64}$/;
-const SLUG = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
-const SLUG_LIMIT = 128; // the longest slug length the owner may allow
-const MAX_FILES = 1000;
+export const SHA = /^[0-9a-f]{64}$/;
+export const SLUG = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
+export const SLUG_LIMIT = 128; // the longest slug length the owner may allow
+export const MAX_FILES = 1000;
 const DAY = 86_400_000;
 const UNIT: Record<string, number> = { m: 60_000, h: 3_600_000, d: DAY, w: 7 * DAY };
 
@@ -30,7 +30,7 @@ export const findDoc = (env: Env, ref: string, scope: string | null = null) =>
     .bind(ref.toLowerCase(), scope)
     .first<Doc>();
 
-const validPath = (p: string) =>
+export const validPath = (p: string) =>
   p.length > 0 &&
   p.length <= 512 &&
   p.split("/").every((s) => s !== "" && s !== "." && s !== ".." && !/[\\\x00-\x1f]/.test(s));
