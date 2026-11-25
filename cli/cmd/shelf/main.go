@@ -45,6 +45,8 @@ A ref is a doc id or slug. --expires takes a duration in m, h, d or w, up to the
 owner's limit (30d unless changed in the dashboard); 0 or never means the link never
 expires. --project groups docs inside your key's space (a new version keeps the doc's
 project; --project '' removes it). SHELF_URL and SHELF_KEY override the saved login.
+
+Source, issues and releases: https://github.com/BUR4KBEY/shelf (a star helps others find it)
 `
 
 func main() {
@@ -80,7 +82,7 @@ func run(args []string) error {
 	case "get":
 		return get(args)
 	case "version", "--version":
-		fmt.Println("shelf", version)
+		fmt.Println("shelf", version, "· https://github.com/BUR4KBEY/shelf")
 		return nil
 	case "help", "-h", "--help":
 		return flag.ErrHelp
