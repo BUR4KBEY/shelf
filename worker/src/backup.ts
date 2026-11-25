@@ -97,6 +97,7 @@ export async function exportShelf(env: Env, space: string | null, passwords: boo
       createdAt: d.created_at,
       updatedAt: d.updated_at,
       space: d.space_id,
+      project: d.project,
       latest: d.latest,
       versions: (versionsOf.get(d.id) ?? []).map(({ doc_id: _, ...v }) => ({ ...v, files: (filesOf.get(`${d.id}@${v.n}`) ?? []).map(({ path, sha256, size }) => ({ path, sha256, size })) })),
     }));
@@ -161,6 +162,8 @@ type ImportDoc = {
   createdAt: number;
   updatedAt: number;
   space: string;
+  /** Missing in backups made before projects existed. */
+  project?: string | null;
   versions: ImportVersion[];
 };
 type ImportSpace = { id: string; name: string; keysDelete: boolean; keysReadLocked: boolean; createdAt: number };
@@ -184,6 +187,7 @@ function docProblem(d: ImportDoc): string | null {
   if (d.slug !== null && !d.locked) return `${at}: a slug needs a password`;
   if (!(d.expiresAt === null || time(d.expiresAt)) || !time(d.createdAt) || !time(d.updatedAt)) return `${at}: bad times`;
   if (typeof d.space !== "string" || !SPACE_ID.test(d.space)) return `${at}: bad space`;
+  if (!(d.project === undefined || d.project === null || (text(d.project, 64) && d.project.trim() === d.project && d.project !== ""))) return `${at}: bad project`;
   if (!Array.isArray(d.versions) || !d.versions.length) return `${at}: no versions`;
   const ns = new Set<number>();
   for (const v of d.versions) {
@@ -235,7 +239,7 @@ export async function importCheck(req: Request, env: Env): Promise<Response> {
 
 /**
  * POST /dashboard/api/import {spaces, keys, docs, copies}: restores docs from shelf.json, up to IMPORT_DOCS per request, with
- * their versions, times, favorites, expiry and space. Their blobs must be uploaded first (importCheck lists them).
+ * their versions, times, favorites, expiry, space and project. Their blobs must be uploaded first (importCheck lists them).
  * - A doc whose id or slug is taken is skipped, unless `copies` names it: then it gets a new id, and its slug only if free.
  * - A locked doc without a password hash (a backup made without them) stays locked behind a random password nobody knows,
  *   so it never turns public; `needPassword` lists them for the owner to set a new one.
@@ -323,7 +327,7 @@ export async function importShelf(req: Request, env: Env): Promise<Response> {
         }),
     );
     stmts.push(
-      env.DB.prepare("INSERT INTO docs (id, slug, title, password_hash, favorite, expires_at, latest, created_at, updated_at, space_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(
+      env.DB.prepare("INSERT INTO docs (id, slug, title, password_hash, favorite, expires_at, latest, created_at, updated_at, space_id, project) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(
         id,
         slug,
         d.title,
@@ -334,6 +338,7 @@ export async function importShelf(req: Request, env: Env): Promise<Response> {
         d.createdAt,
         d.updatedAt,
         spaceOf(d.space),
+        d.project ?? null,
       ),
       env.DB.prepare(
         "INSERT INTO versions (doc_id, n, manifest_hash, message, size, key_id, created_at) SELECT ?1, value->>'n', value->>'manifest', value->>'message', value->>'size', value->>'keyId', value->>'createdAt' FROM json_each(?2)",

@@ -474,7 +474,7 @@ function Import({ onImported }: { onImported: () => void }) {
   return (
     <div className="grid grid-cols-1 gap-3">
       <Hint>
-        Brings back the docs in a backup with their versions, favorites, expiry and space. Missing spaces are added, and keys come back revoked so their uploads keep their names; mint new keys for your agents. Settings stay as they are.
+        Brings back the docs in a backup with their versions, favorites, expiry, space and project. Missing spaces are added, and keys come back revoked so their uploads keep their names; mint new keys for your agents. Settings stay as they are.
       </Hint>
       <div>
         <input
