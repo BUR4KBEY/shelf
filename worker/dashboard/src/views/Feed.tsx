@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { Copy, ExternalLink, Search, Settings2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Tip, copy, dashed, display, focusRing } from "@/components/bits";
-import { DocName, Expiry, Locked, SpaceChip, isExpired } from "@/components/DocBits";
+import { DocName, Expiry, Locked, SpaceChip, SpacesContext, isExpired } from "@/components/DocBits";
 import { DropZone } from "@/components/DropZone";
 import { Entry } from "@/components/Entry";
 import { Settings } from "@/components/Settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { nameOf, openUrl, type Activity, type Doc } from "@/lib/api";
 import { byDay } from "@/lib/feed";
 import { clock, dayName, longDate, plural, size } from "@/lib/format";
@@ -30,13 +31,16 @@ const CAP = 200;
 export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; uploads: Activity[]; colorOf: (keyId: string | null) => string; onChanged: () => void }) {
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
+  const spaces = useContext(SpacesContext) ?? [];
+  const [space, setSpace] = useState("*"); // "*": every space
+  const inSpace = (d: Doc) => space === "*" || d.space === space;
   const [open, setOpen] = useState<string | null>(null); // the entry whose settings are open
   const byId = new Map(docs.map((d) => [d.id, d]));
   const keep = FILTERS.find(([value]) => value === filter)![2];
   const q = query.trim().toLowerCase();
   const shown = uploads.filter((u) => {
     const d = byId.get(u.docId);
-    return d && keep(d) && [d.title, d.slug, d.id, u.message].some((s) => s?.toLowerCase().includes(q));
+    return d && inSpace(d) && keep(d) && [d.title, d.slug, d.id, u.message].some((s) => s?.toLowerCase().includes(q));
   });
 
   return (
@@ -57,7 +61,7 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
         <>
           <div className="flex flex-wrap items-center gap-x-1 gap-y-2">
             {FILTERS.map(([value, label, test]) => {
-              const count = docs.filter(test).length;
+              const count = docs.filter((d) => inSpace(d) && test(d)).length;
               // "Expired" only shows up when there is something expired to look at.
               if (value === "expired" && !count && filter !== value) return null;
               return (
@@ -71,7 +75,23 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                 </button>
               );
             })}
-            <div className="relative w-full sm:ml-auto sm:w-60">
+            {/* Only worth a control once there are two spaces to tell apart. */}
+            {spaces.length > 1 && (
+              <Select value={space} onValueChange={setSpace}>
+                <SelectTrigger aria-label="Space" className="sm:ml-auto">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" align="end">
+                  <SelectItem value="*">All spaces</SelectItem>
+                  {spaces.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <div className={cn("relative w-full sm:w-60", spaces.length < 2 && "sm:ml-auto")}>
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
               <Input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search docs and messages" aria-label="Search docs and messages" autoComplete="off" className="pl-8" />
             </div>
