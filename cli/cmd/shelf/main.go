@@ -31,10 +31,10 @@ const usage = `shelf shares files and folders from your own shelf server.
 Usage:
   shelf login
   shelf push <file|dir> [--slug s] [--password p | --password-stdin] [--expires 7d|never]
-                        [--title t] [-m msg] [--new] [--json]
-  shelf ls [--json]
+                        [--title t] [--project p] [-m msg] [--new] [--json]
+  shelf ls [--project p] [--json]
   shelf set <ref> [--slug s | --no-slug] [--password p | --password-stdin | --no-password]
-                  [--expires 7d|never] [--title t] [--fav | --unfav] [--json]
+                  [--expires 7d|never] [--title t] [--project p] [--fav | --unfav] [--json]
   shelf rm <ref>
   shelf open <ref>
   shelf get <url> [-o path] [--password p | --password-stdin]
@@ -43,7 +43,8 @@ Usage:
 
 A ref is a doc id or slug. --expires takes a duration in m, h, d or w, up to the
 owner's limit (30d unless changed in the dashboard); 0 or never means the link never
-expires. SHELF_URL and SHELF_KEY override the saved login.
+expires. --project groups docs inside your key's space (a new version keeps the doc's
+project; --project '' removes it). SHELF_URL and SHELF_KEY override the saved login.
 `
 
 func main() {
@@ -280,6 +281,7 @@ type doc struct {
 	ID        string  `json:"id"`
 	Slug      *string `json:"slug"`
 	Title     *string `json:"title"`
+	Project   *string `json:"project"`
 	Locked    bool    `json:"locked"`
 	Favorite  bool    `json:"favorite"`
 	ExpiresAt *int64  `json:"expiresAt"`
@@ -337,6 +339,7 @@ func push(args []string) error {
 	fl.Bool("password-stdin", false, "")
 	expires := fl.String("expires", "", "")
 	title := fl.String("title", "", "")
+	project := fl.String("project", "", "")
 	msg := fl.String("m", "", "")
 	isNew := fl.Bool("new", false, "")
 	asJSON := fl.Bool("json", false, "")
@@ -372,6 +375,9 @@ func push(args []string) error {
 	}
 	if given["title"] {
 		body["title"] = *title
+	}
+	if given["project"] {
+		body["project"] = *project
 	}
 	if given["m"] {
 		body["message"] = *msg
@@ -431,6 +437,7 @@ func push(args []string) error {
 
 func ls(args []string) error {
 	fl := flag.NewFlagSet("ls", flag.ContinueOnError)
+	project := fl.String("project", "", "")
 	asJSON := fl.Bool("json", false, "")
 	if _, err := parse(fl, args, 0); err != nil {
 		return err
@@ -439,7 +446,11 @@ func ls(args []string) error {
 	if err != nil {
 		return err
 	}
-	raw, err := c.do("GET", "/api/docs", nil)
+	path := "/api/docs"
+	if *project != "" {
+		path += "?project=" + url.QueryEscape(*project)
+	}
+	raw, err := c.do("GET", path, nil)
 	if err != nil {
 		return err
 	}
@@ -458,21 +469,24 @@ func ls(args []string) error {
 		return ""
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "\t\tREF\tVERSION\tUPDATED\tEXPIRES\tTITLE")
+	fmt.Fprintln(tw, "\t\tREF\tVERSION\tUPDATED\tEXPIRES\tPROJECT\tTITLE")
 	for _, d := range docs {
-		ref, exp, title := d.ID, "-", "-"
+		ref, exp, proj, title := d.ID, "-", "-", "-"
 		if d.Slug != nil {
 			ref = *d.Slug
 		}
 		if d.ExpiresAt != nil {
 			exp = time.UnixMilli(*d.ExpiresAt).Format(layout)
 		}
+		if d.Project != nil {
+			proj = *d.Project
+		}
 		if d.Title != nil {
 			title = *d.Title
 		}
 		// The lock emoji is two columns wide but one rune; VS16 makes tabwriter count it as two.
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%s\t%s\n", mark(d.Favorite, "★"), mark(d.Locked, "🔒\ufe0f"), ref, d.Latest,
-			time.UnixMilli(d.UpdatedAt).Format(layout), exp, title)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n", mark(d.Favorite, "★"), mark(d.Locked, "🔒\ufe0f"), ref, d.Latest,
+			time.UnixMilli(d.UpdatedAt).Format(layout), exp, proj, title)
 	}
 	return tw.Flush()
 }
@@ -486,6 +500,7 @@ func set(args []string) error {
 	noPassword := fl.Bool("no-password", false, "")
 	expires := fl.String("expires", "", "")
 	title := fl.String("title", "", "")
+	project := fl.String("project", "", "")
 	fav := fl.Bool("fav", false, "")
 	unfav := fl.Bool("unfav", false, "")
 	asJSON := fl.Bool("json", false, "")
@@ -523,6 +538,9 @@ func set(args []string) error {
 	}
 	if given["title"] {
 		body["title"] = *title
+	}
+	if given["project"] {
+		body["project"] = *project
 	}
 	if *fav || *unfav {
 		body["favorite"] = *fav
