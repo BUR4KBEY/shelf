@@ -756,7 +756,7 @@ describe("dashboard", () => {
 
   it("imports a backup: same links and passwords with hashes, conflicts skipped or copied, locked docs never public", async () => {
     const space = (await (await dash("/dashboard/api/spaces", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "restore" }) })).json()) as { id: string };
-    const locked = await publish({ "secret.html": "<p>s</p>" }, { password: "hunter22", slug: "restore-me", title: "Secret" });
+    const locked = await publish({ "secret.html": "<p>s</p>" }, { password: "hunter22", slug: "restore-me", title: "Secret", project: "vault" });
     await publish({ "secret.html": "<p>s2</p>" }, { ref: locked.id, message: "second" });
     await dash(`/dashboard/api/docs/${locked.id}`, { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ space: space.id, favorite: true }) });
     const shelfJson = async (query: string) =>
@@ -779,8 +779,8 @@ describe("dashboard", () => {
     const restored = (await (await post("", withHashes)).json()) as { imported: string[]; needPassword: string[] };
     expect(restored).toMatchObject({ imported: [locked.id], needPassword: [] });
     expect(await (await get("/view/restore-me", { headers: { "x-doc-password": "hunter22" } })).text()).toBe("<p>s2</p>");
-    const back = (await (await dash(`/dashboard/api/docs/${locked.id}`)).json()) as { space: string; favorite: boolean; versions: { n: number; message: string | null }[] };
-    expect(back).toMatchObject({ space: space.id, favorite: true, versions: [{ n: 2, message: "second" }, { n: 1 }] });
+    const back = (await (await dash(`/dashboard/api/docs/${locked.id}`)).json()) as { space: string; project: string | null; favorite: boolean; versions: { n: number; message: string | null }[] };
+    expect(back).toMatchObject({ space: space.id, project: "vault", favorite: true, versions: [{ n: 2, message: "second" }, { n: 1 }] });
 
     // Already there: skipped unless copied; a copy gets a new id and loses the taken slug.
     expect(((await (await post("/check", { docs: without.docs })).json()) as { conflicts: string[] }).conflicts).toEqual([locked.id]);
