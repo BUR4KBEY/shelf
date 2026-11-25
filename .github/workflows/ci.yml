@@ -23,7 +23,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
       - run: pnpm run typecheck:dashboard
+      - run: pnpm run typecheck:preview
       - run: pnpm test
+      # The preview bundles src/ for the browser: this catches an import in src/ its build can't resolve.
+      - run: pnpm run build:preview
 
   cli:
     runs-on: ubuntu-latest
