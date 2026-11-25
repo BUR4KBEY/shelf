@@ -338,9 +338,11 @@ export async function seed(env: Env) {
   }
 
   const blobs = new Map<string, Uint8Array>();
+  const made: { id: string; uploads: Upload[] }[] = [];
   for (const d of DOCS) {
     const uploads = d.uploads.sort((a, b) => a[1] - b[1]);
     const id = docId();
+    made.push({ id, uploads });
     await run(
       "INSERT INTO docs (id, slug, title, password_hash, favorite, expires_at, latest, created_at, updated_at, space_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       id,
@@ -383,6 +385,24 @@ export async function seed(env: Env) {
   for (const [id] of keys) await run("UPDATE api_keys SET last_used_at = (SELECT MAX(created_at) FROM versions WHERE key_id = ?1) WHERE id = ?1", id);
   // CI near its quota, so the analytics page has a key to warn about.
   await run("UPDATE api_keys SET quota_strategy = 'fifo', quota_bytes = (SELECT CAST(SUM(size) / 0.86 AS INTEGER) FROM versions WHERE key_id = ?1) WHERE id = ?1", CI);
+  // Readers over the last 90 days, so Analytics → Views and each doc's views strip have something to show. Generated after
+  // the docs, so the uploads above stay the same. Every third doc is never opened, for the "Not opened" list.
+  await run("INSERT INTO settings (key, value) VALUES ('view_stats', '1')");
+  for (const [i, { id, uploads }] of made.entries()) {
+    if (i % 3 === 2) continue;
+    const popularity = 0.1 + rand() * 0.5;
+    for (let ago = 90; ago >= 0; ago--) {
+      if (rand() >= popularity) continue;
+      for (let reader = Math.floor(rand() * 4); reader >= 0; reader--) {
+        for (let opens = Math.floor(rand() * 2); opens >= 0; opens--) {
+          const [, time] = at(null, ago, [8, 12]);
+          // The version that was current then; none before the first upload.
+          const n = uploads.filter(([, t]) => t <= time).length;
+          if (n) await run("INSERT INTO views (doc_id, n, at, visitor) VALUES (?, ?, ?, ?)", id, n, time, `seed-${ago}-${reader}`);
+        }
+      }
+    }
+  }
   // One transaction for every blob: one each, through env.BUCKET, takes seconds.
   const uploaded = Date.now();
   await store("blobs", "readwrite", (s) => [...blobs].map(([sha, bytes]) => s.put({ bytes, uploaded }, `docs/${sha}`)).at(-1)!);
