@@ -8,5 +8,6 @@ export default defineConfig(async () => ({
       miniflare: { bindings: { TEST_MIGRATIONS: await readD1Migrations("./migrations") } },
     }),
   ],
-  test: { setupFiles: ["./test/setup.ts"] },
+  // selfhost/ has its own tests, for Bun (`bun test selfhost`).
+  test: { setupFiles: ["./test/setup.ts"], include: ["test/**/*.spec.ts"] },
 }));

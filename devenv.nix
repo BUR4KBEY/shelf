@@ -27,6 +27,8 @@ in
       enable = true;
       install.enable = true;
     };
+    # Runs the Docker image's server (worker/selfhost).
+    bun.enable = true;
     lsp.enable = true;
   };
   languages.go = {

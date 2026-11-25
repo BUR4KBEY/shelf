@@ -16,6 +16,8 @@ node_modules
 worker/src/dashboard.html
 # built from worker/preview by `pnpm run build:preview`
 worker/preview/dist
+# built from worker/selfhost by `bun selfhost/build.ts`
+worker/selfhost/dist
 
 # cli
 cli/dist
