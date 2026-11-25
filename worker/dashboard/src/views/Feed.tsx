@@ -1,4 +1,4 @@
-import { useContext, useState } from "react";
+import { memo, useCallback, useContext, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { toast } from "sonner";
 import { Copy, ExternalLink, ListChecks, Pencil, Search, Settings2, Star, Trash2, TriangleAlert } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -29,8 +29,8 @@ const FOLDED = 3;
 /** The Worker sends this many uploads at most. */
 const CAP = 200;
 
-/** The home screen: what was uploaded and by whom, newest first, a day at a time. */
-export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; uploads: Activity[]; colorOf: (keyId: string | null) => string; onChanged: () => void }) {
+/** The home screen: what was uploaded and by whom, newest first, a day at a time. Memoized, like every page, so folding the sidebar doesn't re-render it. */
+export const FeedView = memo(function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; uploads: Activity[]; colorOf: (keyId: string | null) => string; onChanged: () => void }) {
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   const spaces = useContext(SpacesContext) ?? [];
@@ -40,13 +40,19 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
   const inProject = (d: Doc) => project === "*" || d.project === project;
   const projects = [...new Set(docs.filter(inSpace).flatMap((d) => d.project ?? []))].sort((a, b) => a.localeCompare(b));
   const [open, setOpen] = useState<string | null>(null); // the entry whose settings are open
-  const byId = new Map(docs.map((d) => [d.id, d]));
+  const byId = useMemo(() => new Map(docs.map((d) => [d.id, d])), [docs]);
   const keep = FILTERS.find(([value]) => value === filter)![2];
   const q = query.trim().toLowerCase();
-  const shown = uploads.filter((u) => {
-    const d = byId.get(u.docId);
-    return d && inSpace(d) && inProject(d) && keep(d) && [d.title, d.slug, d.id, d.project, u.message].some((s) => s?.toLowerCase().includes(q));
-  });
+  // Memoized down to each entry's `older` list, so the entries' memo holds across re-renders.
+  const shown = useMemo(
+    () =>
+      uploads.filter((u) => {
+        const d = byId.get(u.docId);
+        return d && (space === "*" || d.space === space) && (project === "*" || d.project === project) && keep(d) && [d.title, d.slug, d.id, d.project, u.message].some((s) => s?.toLowerCase().includes(q));
+      }),
+    [uploads, byId, space, project, keep, q],
+  );
+  const days = useMemo(() => byDay(shown, (u) => u.docId), [shown]);
   // Selection is by doc: deleting removes every version, so all of a doc's entries check together.
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -68,6 +74,10 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
     setAnchor(id);
   };
   const stopSelecting = () => (setSelecting(false), setPicked(new Set()), setAnchor(null));
+  // A stable handle on the latest `toggle`, so memoized entries don't re-render whenever it is recreated.
+  const toggleRef = useRef(toggle);
+  toggleRef.current = toggle;
+  const pick = useCallback((id: string, shift: boolean) => toggleRef.current(id, shift), []);
   /** Sends the picked docs to /docs/bulk, which changes all of them or none; true once it worked. */
   const bulk = async (body: Record<string, unknown>, done: string) => {
     try {
@@ -173,7 +183,7 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
 
           {shown.length === 0 && <p className="pt-4 text-muted-foreground">{q ? `No upload has “${query.trim()}” in its doc's title, slug, id or project, or in its message.` : "No uploads match this filter."}</p>}
 
-          {byDay(shown, (u) => u.docId).map(({ day, count, entries }) => (
+          {days.map(({ day, count, entries }) => (
             <section key={day} aria-label={dayName(day)} className="flex flex-col gap-3">
               <header className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
                 <h2 className={cn(display, "text-4xl leading-none")}>{dayName(day)}</h2>
@@ -183,78 +193,7 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                 {entries.map(({ head, older }) => {
                   const d = byId.get(head.docId)!;
                   const key = `${day}:${d.id}`;
-                  return (
-                    <Entry
-                      key={key}
-                      color={colorOf(head.keyId)}
-                      at={head.createdAt}
-                      who={head.keyName ?? (head.keyId ? "A deleted key" : "You")}
-                      select={selecting ? { checked: picked.has(d.id), label: `Select ${nameOf(d)}`, onToggle: (shift) => toggle(d.id, shift) } : undefined}
-                      // A click on the card, off its controls and its open settings, toggles them (or, while selecting, its checkbox); the gear button stays for keyboards.
-                      // `contains` skips clicks in portals (the expiry menu, the delete dialog), which React still bubbles here.
-                      onClick={(e) => e.currentTarget.contains(e.target as Node) && !(e.target as Element).closest("a, button, input, label, select, textarea, [data-settings]") && !getSelection()?.toString() && (selecting ? toggle(d.id, e.shiftKey) : setOpen(open === key ? null : key))}
-                      did={head.n === 1 ? "uploaded a new doc" : `uploaded version ${head.n} of`}
-                      title={<DocName d={d} onChanged={onChanged} />}
-                      message={head.message}
-                      meta={
-                        <>
-                          <span>
-                            {plural(head.files, "file")}, {size(head.size)}
-                          </span>
-                          <ProjectChip d={d} />
-                          <SpaceChip d={d} />
-                          <Locked d={d} />
-                          <Expiry d={d} />
-                        </>
-                      }
-                      actions={
-                        <div className="grid gap-1.5 sm:justify-items-end">
-                          <div className="flex gap-1">
-                            <Tip label="Settings">
-                              <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground max-sm:size-9" aria-expanded={open === key} aria-label={`Settings for ${nameOf(d)}`} onClick={() => setOpen(open === key ? null : key)}>
-                                <Settings2 />
-                              </Button>
-                            </Tip>
-                            <Button variant="outline" size="sm" className="max-sm:h-9 max-sm:px-3" onClick={() => copy(d.url)}>
-                              <Copy /> Copy link
-                            </Button>
-                          </div>
-                          <a href={openUrl(d)} target="_blank" rel="noopener noreferrer" className={cn(focusRing, "flex max-w-56 items-center gap-1 text-[0.8125rem] text-muted-foreground hover:underline")}>
-                            <span className="truncate">
-                              /view/<span className="font-medium text-foreground">{d.slug ?? d.id}</span>
-                            </span>
-                            <ExternalLink className="size-3 shrink-0" aria-hidden />
-                            <span className="sr-only">(opens in a new tab)</span>
-                          </a>
-                        </div>
-                      }
-                    >
-                      <>
-                        {older.length > 0 && (
-                          <ul className="mt-2 grid gap-0.5 text-[0.8125rem] text-muted-foreground">
-                            {older.slice(0, FOLDED).map((o) => (
-                              <li key={o.n} className="[overflow-wrap:anywhere]">
-                                <b className="mr-2 font-semibold text-foreground tabular-nums">{clock(o.createdAt)}</b>
-                                Version {o.n}
-                                {o.message && `: ${o.message}`}
-                              </li>
-                            ))}
-                            {older.length > FOLDED && <li>and {older.length - FOLDED} earlier that day</li>}
-                          </ul>
-                        )}
-                        <AnimatePresence initial={false}>
-                          {open === key && (
-                            // Clipped only while it slides, so the inputs' focus rings show once it is open.
-                            <motion.div initial={{ height: 0, opacity: 0, overflow: "hidden" }} animate={{ height: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }} exit={{ height: 0, opacity: 0, overflow: "hidden" }} transition={{ duration: 0.22, ease: "easeOut" }}>
-                              <div data-settings className="mt-3 border-t border-(--k)/30 pt-3.5">
-                                <Settings key={[d.title, d.slug, d.locked, d.expiresAt, d.space, d.project].join("\n")} d={d} onChanged={onChanged} onDeleted={() => setOpen(null)} />
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </>
-                    </Entry>
-                  );
+                  return <Upload key={key} id={key} head={head} older={older} d={d} color={colorOf(head.keyId)} open={open === key} checked={selecting ? picked.has(d.id) : undefined} setOpen={setOpen} pick={pick} onChanged={onChanged} />;
                 })}
               </div>
             </section>
@@ -310,4 +249,83 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
       )}
     </div>
   );
-}
+});
+
+/**
+ * One entry in the log. Memoized, with stable props, so opening one entry's settings or checking one re-renders that entry, not all 200.
+ * `checked` is undefined while not selecting.
+ */
+const Upload = memo(function Upload({ id, head, older, d, color, open, checked, setOpen, pick, onChanged }: { id: string; head: Activity; older: Activity[]; d: Doc; color: string; open: boolean; checked?: boolean; setOpen: Dispatch<SetStateAction<string | null>>; pick: (id: string, shift: boolean) => void; onChanged: () => void }) {
+  const toggleOpen = () => setOpen((o) => (o === id ? null : id));
+  return (
+    <Entry
+      color={color}
+      at={head.createdAt}
+      who={head.keyName ?? (head.keyId ? "A deleted key" : "You")}
+      select={checked === undefined ? undefined : { checked, label: `Select ${nameOf(d)}`, onToggle: (shift) => pick(d.id, shift) }}
+      // A click on the card, off its controls and its open settings, toggles them (or, while selecting, its checkbox); the gear button stays for keyboards.
+      // `contains` skips clicks in portals (the expiry menu, the delete dialog), which React still bubbles here.
+      onClick={(e) => e.currentTarget.contains(e.target as Node) && !(e.target as Element).closest("a, button, input, label, select, textarea, [data-settings]") && !getSelection()?.toString() && (checked === undefined ? toggleOpen() : pick(d.id, e.shiftKey))}
+      did={head.n === 1 ? "uploaded a new doc" : `uploaded version ${head.n} of`}
+      title={<DocName d={d} onChanged={onChanged} />}
+      message={head.message}
+      meta={
+        <>
+          <span>
+            {plural(head.files, "file")}, {size(head.size)}
+          </span>
+          <ProjectChip d={d} />
+          <SpaceChip d={d} />
+          <Locked d={d} />
+          <Expiry d={d} />
+        </>
+      }
+      actions={
+        <div className="grid gap-1.5 sm:justify-items-end">
+          <div className="flex gap-1">
+            <Tip label="Settings">
+              <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground max-sm:size-9" aria-expanded={open} aria-label={`Settings for ${nameOf(d)}`} onClick={toggleOpen}>
+                <Settings2 />
+              </Button>
+            </Tip>
+            <Button variant="outline" size="sm" className="max-sm:h-9 max-sm:px-3" onClick={() => copy(d.url)}>
+              <Copy /> Copy link
+            </Button>
+          </div>
+          <a href={openUrl(d)} target="_blank" rel="noopener noreferrer" className={cn(focusRing, "flex max-w-56 items-center gap-1 text-[0.8125rem] text-muted-foreground hover:underline")}>
+            <span className="truncate">
+              /view/<span className="font-medium text-foreground">{d.slug ?? d.id}</span>
+            </span>
+            <ExternalLink className="size-3 shrink-0" aria-hidden />
+            <span className="sr-only">(opens in a new tab)</span>
+          </a>
+        </div>
+      }
+    >
+      <>
+        {older.length > 0 && (
+          <ul className="mt-2 grid gap-0.5 text-[0.8125rem] text-muted-foreground">
+            {older.slice(0, FOLDED).map((o) => (
+              <li key={o.n} className="[overflow-wrap:anywhere]">
+                <b className="mr-2 font-semibold text-foreground tabular-nums">{clock(o.createdAt)}</b>
+                Version {o.n}
+                {o.message && `: ${o.message}`}
+              </li>
+            ))}
+            {older.length > FOLDED && <li>and {older.length - FOLDED} earlier that day</li>}
+          </ul>
+        )}
+        <AnimatePresence initial={false}>
+          {open && (
+            // Clipped only while it slides, so the inputs' focus rings show once it is open.
+            <motion.div initial={{ height: 0, opacity: 0, overflow: "hidden" }} animate={{ height: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }} exit={{ height: 0, opacity: 0, overflow: "hidden" }} transition={{ duration: 0.22, ease: "easeOut" }}>
+              <div data-settings className="mt-3 border-t border-(--k)/30 pt-3.5">
+                <Settings key={[d.title, d.slug, d.locked, d.expiresAt, d.space, d.project].join("\n")} d={d} onChanged={onChanged} onDeleted={() => setOpen(null)} />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </>
+    </Entry>
+  );
+});

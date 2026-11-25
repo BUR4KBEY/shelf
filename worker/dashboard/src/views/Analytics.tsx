@@ -1,4 +1,4 @@
-import { useContext, useState, type CSSProperties } from "react";
+import { memo, useContext, useState, type CSSProperties } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Loading, Problem, Time, display, focusRing, useLoad } from "@/components/bits";
 import { SpacesContext, isExpired } from "@/components/DocBits";
@@ -41,7 +41,7 @@ type Props = { keys: Key[]; docs: Doc[]; colorOf: (keyId: string | null) => stri
  * Every key's uploads side by side: who uploads how much and when, what they keep, which docs they share, and which keys sit idle.
  * `section` (from `#/analytics/<section>`) scrolls to that section once it renders; `query` holds the filters, `space` and `key`.
  */
-export function AnalyticsView({ section, query, ...props }: Props & { section?: string; query?: string }) {
+export const AnalyticsView = memo(function AnalyticsView({ section, query, ...props }: Props & { section?: string; query?: string }) {
   const tz = new Date().getTimezoneOffset();
   const { data, error } = useLoad<Analytics>(`/analytics?tz=${tz}`);
   useLanding("analytics", section, !!data);
@@ -55,7 +55,7 @@ export function AnalyticsView({ section, query, ...props }: Props & { section?: 
       {error ? <Problem error={error} /> : !data ? <Loading /> : <AnalyticsPage a={data} today={Math.floor((Date.now() - tz * 60_000) / DAY)} query={query} {...props} />}
     </div>
   );
-}
+});
 
 function AnalyticsPage({ a, today, query, keys, docs, colorOf }: Props & { a: Analytics; today: number; query?: string }) {
   const spaces = useContext(SpacesContext) ?? [];

@@ -1,4 +1,4 @@
-import { useContext, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { memo, useContext, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronLeft, Download, RefreshCw, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { About } from "@/components/About";
@@ -706,7 +706,7 @@ function Import({ onImported }: { onImported: () => void }) {
 }
 
 /** Settings for the whole app, as opposed to one doc's. `section` (from `#/settings/<section>`) scrolls to that section once it renders. */
-export function AppSettingsView({ section, onSpacesChanged }: { section?: string; onSpacesChanged: () => void }) {
+export const AppSettingsView = memo(function AppSettingsView({ section, onSpacesChanged }: { section?: string; onSpacesChanged: () => void }) {
   const { data, error } = useLoad<AppSettings>("/settings");
   const [saved, setSaved] = useState<AppSettings>();
   const s = saved ?? data;
@@ -756,4 +756,4 @@ export function AppSettingsView({ section, onSpacesChanged }: { section?: string
       </Section>
     </div>
   );
-}
+});
