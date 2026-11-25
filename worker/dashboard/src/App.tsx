@@ -5,7 +5,8 @@ import { Loading, Logo, Problem, Tip, display, focusRing, useLoad, useTitle } fr
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { api, nameOf, type Activity, type Doc, type Key } from "@/lib/api";
+import { api, nameOf, type Activity, type Doc, type Key, type Space } from "@/lib/api";
+import { SpacesContext } from "@/components/DocBits";
 import { NO_KEY, keyColors } from "@/lib/feed";
 import { useFavicon } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,7 @@ export function App() {
   const docs = useLoad<Doc[]>("/docs");
   const uploads = useLoad<Activity[]>("/uploads");
   const keys = useLoad<Key[]>("/keys");
+  const spaces = useLoad<Space[]>("/spaces");
   const [menu, setMenu] = useState(false);
   const reduce = useReducedMotion();
   const asideRef = useRef<HTMLElement>(null);
@@ -72,65 +74,74 @@ export function App() {
   useTitle(openDoc ? nameOf(openDoc) : openKey ? (keys.data?.find((k) => k.id === openKey)?.name ?? "") : settings ? "Settings" : "");
   const colors = useMemo(() => keyColors(keys.data ?? []), [keys.data]);
   const colorOf = (keyId: string | null) => (keyId && colors.get(keyId)) || NO_KEY;
+  // Spaces count their docs, so they reload with them.
   const changed = () => {
     docs.reload();
     uploads.reload();
+    spaces.reload();
+  };
+  // Deleting a space moves its keys too.
+  const spacesChanged = () => {
+    keys.reload();
+    changed();
   };
   const error = docs.error ?? uploads.error ?? keys.error;
 
   return (
     <MotionConfig reducedMotion="user">
-      <TooltipProvider delayDuration={300}>
-        {error ? (
-          <Problem error={error} className="p-8" />
-        ) : !docs.data || !uploads.data || !keys.data ? (
-          <Loading className="p-8" />
-        ) : (
-          <motion.div style={{ "--side": sideWidth } as MotionStyle} className="min-h-dvh lg:grid lg:grid-cols-[var(--side)_minmax(0,1fr)]">
-            <header className="sticky top-0 z-20 flex h-14 items-center border-b bg-sidebar px-4 lg:hidden">
-              <a href="#/" onClick={() => setMenu(false)} className={cn(display, focusRing, "flex items-center gap-2 text-[1.75rem] leading-none")}>
-                <Logo className="h-6" />
-                shelf
-              </a>
-              <Button variant="outline" className="ml-auto" aria-pressed={menu} onClick={() => setMenu(!menu)}>
-                {menu ? <X /> : <Menu />}
-                {menu ? "Back to the log" : "Docs and keys"}
-              </Button>
-            </header>
-            <aside ref={asideRef} className={cn("bg-sidebar max-lg:min-h-[calc(100dvh-3.5rem)] lg:sticky lg:top-0 lg:h-dvh lg:overflow-x-hidden lg:overflow-y-auto lg:border-r", !menu && "max-lg:hidden")}>
-              {/* Full width while the column slides, so the column clips it instead of squeezing it. */}
-              <div className={cn("max-lg:contents lg:h-full lg:w-[calc(19rem-1px)]", !side && "lg:hidden")}>
-                <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} openKey={openKey} settings={settings} email={email} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} onCollapse={toggleSide} />
-              </div>
-              <div className={cn("hidden h-full w-14 flex-col items-center gap-3 pt-5 pb-6", !side && "lg:flex")}>
-                <a href="#/" aria-label="shelf" className={cn(focusRing, "rounded-md p-1")}>
-                  <Logo className="w-8" />
+      <SpacesContext.Provider value={spaces.data}>
+        <TooltipProvider delayDuration={300}>
+          {error ? (
+            <Problem error={error} className="p-8" />
+          ) : !docs.data || !uploads.data || !keys.data ? (
+            <Loading className="p-8" />
+          ) : (
+            <motion.div style={{ "--side": sideWidth } as MotionStyle} className="min-h-dvh lg:grid lg:grid-cols-[var(--side)_minmax(0,1fr)]">
+              <header className="sticky top-0 z-20 flex h-14 items-center border-b bg-sidebar px-4 lg:hidden">
+                <a href="#/" onClick={() => setMenu(false)} className={cn(display, focusRing, "flex items-center gap-2 text-[1.75rem] leading-none")}>
+                  <Logo className="h-6" />
+                  shelf
                 </a>
-                <Tip label="Show sidebar">
-                  <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" aria-label="Show sidebar" onClick={toggleSide}>
-                    <PanelLeftOpen />
-                  </Button>
-                </Tip>
-                <ThemeSwitch className="mt-auto flex-col" />
-              </div>
-            </aside>
-            <main ref={mainRef} className={cn("min-w-0", menu && "max-lg:hidden")}>
-              <motion.div key={openId ?? (openKey ? `#key/${openKey}` : settings ? "#settings" : "")} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: "easeOut" }}>
-                {openId ? (
-                  <DocView key={openId} id={openId} colorOf={colorOf} onChanged={changed} />
-                ) : openKey ? (
-                  <KeyView key={openKey} id={openKey} docs={docs.data} colorOf={colorOf} onChanged={changed} onKeysChanged={keys.reload} />
-                ) : settings ? (
-                  <AppSettingsView />
-                ) : (
-                  <FeedView docs={docs.data} uploads={uploads.data} colorOf={colorOf} onChanged={changed} />
-                )}
-              </motion.div>
-            </main>
-          </motion.div>
-        )}
-        <Toaster position="bottom-center" />
-      </TooltipProvider>
+                <Button variant="outline" className="ml-auto" aria-pressed={menu} onClick={() => setMenu(!menu)}>
+                  {menu ? <X /> : <Menu />}
+                  {menu ? "Back to the log" : "Docs and keys"}
+                </Button>
+              </header>
+              <aside ref={asideRef} className={cn("bg-sidebar max-lg:min-h-[calc(100dvh-3.5rem)] lg:sticky lg:top-0 lg:h-dvh lg:overflow-x-hidden lg:overflow-y-auto lg:border-r", !menu && "max-lg:hidden")}>
+                {/* Full width while the column slides, so the column clips it instead of squeezing it. */}
+                <div className={cn("max-lg:contents lg:h-full lg:w-[calc(19rem-1px)]", !side && "lg:hidden")}>
+                  <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} openKey={openKey} settings={settings} email={email} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} onCollapse={toggleSide} />
+                </div>
+                <div className={cn("hidden h-full w-14 flex-col items-center gap-3 pt-5 pb-6", !side && "lg:flex")}>
+                  <a href="#/" aria-label="shelf" className={cn(focusRing, "rounded-md p-1")}>
+                    <Logo className="w-8" />
+                  </a>
+                  <Tip label="Show sidebar">
+                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" aria-label="Show sidebar" onClick={toggleSide}>
+                      <PanelLeftOpen />
+                    </Button>
+                  </Tip>
+                  <ThemeSwitch className="mt-auto flex-col" />
+                </div>
+              </aside>
+              <main ref={mainRef} className={cn("min-w-0", menu && "max-lg:hidden")}>
+                <motion.div key={openId ?? (openKey ? `#key/${openKey}` : settings ? "#settings" : "")} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: "easeOut" }}>
+                  {openId ? (
+                    <DocView key={openId} id={openId} colorOf={colorOf} onChanged={changed} />
+                  ) : openKey ? (
+                    <KeyView key={openKey} id={openKey} docs={docs.data} colorOf={colorOf} onChanged={changed} onKeysChanged={keys.reload} />
+                  ) : settings ? (
+                    <AppSettingsView onSpacesChanged={spacesChanged} />
+                  ) : (
+                    <FeedView docs={docs.data} uploads={uploads.data} colorOf={colorOf} onChanged={changed} />
+                  )}
+                </motion.div>
+              </main>
+            </motion.div>
+          )}
+          <Toaster position="bottom-center" />
+        </TooltipProvider>
+      </SpacesContext.Provider>
     </MotionConfig>
   );
 }

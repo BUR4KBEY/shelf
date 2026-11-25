@@ -1,9 +1,11 @@
-import { useId, useState, type FormEvent } from "react";
+import { useContext, useId, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
-import { Loading, Logo, Problem, display, focusRing, useLoad } from "@/components/bits";
-import { DurationInput, Field, Hint } from "@/components/Settings";
+import { Loading, Logo, Problem, code, display, focusRing, useLoad } from "@/components/bits";
+import { SpacesContext } from "@/components/DocBits";
+import { DurationInput, Field, Hint, SpaceSelect } from "@/components/Settings";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -103,15 +105,16 @@ function ExpiryForm({ saved, onSaved }: { saved: AppSettings; onSaved: (s: AppSe
 
 /**
  * A switch that flips at once and saves in the background, putting itself back if the save fails.
- * Its hint says what the current position means, so it changes with the switch.
+ * Its hint says what the current position means, so it changes with the switch. `subject` names it in the toast.
  */
-function Toggle({ label, checked, onSave, on, off }: { label: string; checked: boolean; onSave: (v: boolean) => Promise<unknown>; on: string; off: string }) {
+function Toggle({ label, subject, checked, onSave, on, off }: { label: string; subject: string; checked: boolean; onSave: (v: boolean) => Promise<unknown>; on: ReactNode; off: ReactNode }) {
   const id = useId();
   const [value, setValue] = useState(checked);
   const flip = async (v: boolean) => {
     setValue(v);
     try {
       await onSave(v);
+      toast.success(`${subject}: ${v ? "on" : "off"}`);
     } catch (err) {
       setValue(!v);
       toast.error(errorText(err));
@@ -123,25 +126,86 @@ function Toggle({ label, checked, onSave, on, off }: { label: string; checked: b
       <Label htmlFor={id} className="text-sm font-semibold">
         {label}
       </Label>
-      <p id={`${id}hint`} aria-live="polite" className="col-start-2 text-xs leading-relaxed text-muted-foreground">
+      <p id={`${id}hint`} className="col-start-2 text-xs leading-relaxed text-muted-foreground">
         {value ? on : off}
       </p>
     </div>
   );
 }
 
+/** Deletes a space after asking where its keys go, and whether its docs go with them or are deleted. */
+function DeleteSpace({ space, onDeleted }: { space: Space; onDeleted: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [to, setTo] = useState("default");
+  const [docs, setDocs] = useState<"move" | "delete">("move");
+  const id = useId();
+  const remove = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      await api(`/spaces/${space.id}?to=${encodeURIComponent(to)}&docs=${docs}`, { method: "DELETE" });
+      toast.success(`Deleted ${space.name}`);
+      setOpen(false);
+      onDeleted();
+    } catch (err) {
+      toast.error(errorText(err));
+    }
+  };
+  return (
+    <>
+      <Button type="button" variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/15" onClick={() => setOpen(true)}>
+        Delete space…
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <form onSubmit={remove} className="grid gap-4">
+            <DialogHeader>
+              <DialogTitle className="[overflow-wrap:anywhere]">Delete {space.name}?</DialogTitle>
+              <DialogDescription>
+                Its keys move to the space you pick and keep working.{space.docs > 0 && ` Choose what happens to its ${plural(space.docs, "doc")}.`}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-2">
+              <Label htmlFor={`${id}to`}>Move its keys to</Label>
+              <SpaceSelect id={`${id}to`} value={to} onChange={setTo} exclude={space.id} />
+            </div>
+            {space.docs > 0 && (
+              <fieldset className="grid gap-2">
+                <legend className="mb-2 text-sm font-medium">Its {plural(space.docs, "doc")}</legend>
+                <Label className="font-normal">
+                  <input type="radio" name={`${id}docs`} checked={docs === "move"} onChange={() => setDocs("move")} className="size-4 accent-primary" />
+                  Move them there too
+                </Label>
+                <Label className="font-normal">
+                  <input type="radio" name={`${id}docs`} checked={docs === "delete"} onChange={() => setDocs("delete")} className="size-4 accent-destructive" />
+                  Delete them and every version. Their links stop working.
+                </Label>
+              </fieldset>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="destructive">
+                {docs === "delete" ? `Delete space and ${plural(space.docs, "doc")}` : "Delete space"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 /** One space: its name, what's in it, and what its keys may do. Switches save at once; the name saves with its button. */
-function SpaceRow({ space, onSaved }: { space: Space; onSaved: () => void }) {
+function SpaceRow({ space, isolated, onChanged }: { space: Space; isolated: boolean; onChanged: () => void }) {
   const [name, setName] = useState(space.name);
-  const [saved, setSaved] = useState(space.name);
   const patch = (json: Partial<Space>) => api(`/spaces/${space.id}`, { method: "PATCH", json });
   const rename = async (e: FormEvent) => {
     e.preventDefault();
     try {
       await patch({ name: name.trim() });
-      setSaved(name.trim());
       toast.success("Space renamed");
-      onSaved();
+      onChanged();
     } catch (err) {
       toast.error(errorText(err));
     }
@@ -150,7 +214,7 @@ function SpaceRow({ space, onSaved }: { space: Space; onSaved: () => void }) {
     <li className="grid grid-cols-1 gap-4 rounded-xl border bg-card p-4">
       <form onSubmit={rename} className="flex flex-wrap items-center gap-2">
         <Input aria-label="Space name" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required className="max-w-60 font-semibold" />
-        {name.trim() !== saved && (
+        {name.trim() !== space.name && (
           <Button type="submit" variant="outline">
             Rename
           </Button>
@@ -163,33 +227,45 @@ function SpaceRow({ space, onSaved }: { space: Space; onSaved: () => void }) {
         <p className="text-xs font-semibold text-muted-foreground">What its keys may do</p>
         <Toggle
           label="Delete docs"
+          subject={`${space.name}: delete docs`}
           checked={space.keysDelete}
           onSave={(keysDelete) => patch({ keysDelete })}
-          on="They can delete any doc they can see, like you can."
+          on={isolated ? "They can delete docs in this space." : "They can delete any doc, in every space, while spaces aren't kept apart."}
           off="They can publish and edit, but not delete. Only you can, from the dashboard."
         />
         <Toggle
           label="Read locked docs without the password"
+          subject={`${space.name}: read locked docs`}
           checked={space.keysReadLocked}
           onSave={(keysReadLocked) => patch({ keysReadLocked })}
-          on={`They can read this space's password-protected docs through MCP (read_doc) without being given the password.`}
+          on={
+            <>
+              They can read this space's password-protected docs with the MCP tool <code className={code}>read_doc</code>, without being given the password.
+            </>
+          }
           off="They need the password to read a locked doc, like anyone with the link."
         />
       </div>
+      {space.id !== "default" && (
+        <div className="-mb-1 flex justify-end">
+          <DeleteSpace space={space} onDeleted={onChanged} />
+        </div>
+      )}
     </li>
   );
 }
 
 /** What spaces are, isolation for the whole app, every space with its permissions, and a form to add one. */
-function Spaces({ settings, onSaved }: { settings: AppSettings; onSaved: (s: AppSettings) => void }) {
-  const { data: spaces, error, reload } = useLoad<Space[]>("/spaces");
+function Spaces({ settings, onSaved, onChanged }: { settings: AppSettings; onSaved: (s: AppSettings) => void; onChanged: () => void }) {
+  const spaces = useContext(SpacesContext);
   const [name, setName] = useState("");
   const add = async (e: FormEvent) => {
     e.preventDefault();
     try {
       await api("/spaces", { method: "POST", json: { name: name.trim() } });
+      toast.success(`Added ${name.trim()}`);
       setName("");
-      reload();
+      onChanged();
     } catch (err) {
       toast.error(errorText(err));
     }
@@ -197,25 +273,24 @@ function Spaces({ settings, onSaved }: { settings: AppSettings; onSaved: (s: App
   return (
     <div className="grid grid-cols-1 gap-3">
       <Hint>
-        Every key belongs to one space, and what it uploads goes there. Pick a key's space when you make it, or later on its page. A key never reads another space's locked docs without the password. Here, in the dashboard, you see every space.
+        Every key belongs to one space, and what it uploads goes there. Pick a key's space when you make it, or later on its page; move a doc from its settings. A key never reads another space's locked docs without the password. Here, in the dashboard, you see every space.
       </Hint>
       <div className="rounded-xl border bg-card p-4">
         <Toggle
           label="Keep spaces apart"
+          subject="Keep spaces apart"
           checked={settings.isolateSpaces}
           onSave={async (isolateSpaces) => onSaved(await api<AppSettings>("/settings", { method: "PATCH", json: { isolateSpaces } }))}
           on="A key sees only its own space's docs. Docs in other spaces don't exist for it."
-          off="Every key can see, edit and delete docs in every space, as if there were one shelf."
+          off="Every key can see and edit docs in every space, as if there were one shelf."
         />
       </div>
-      {error ? (
-        <Problem error={error} />
-      ) : !spaces ? (
+      {!spaces ? (
         <Loading />
       ) : (
         <ul className="grid grid-cols-1 gap-3">
           {spaces.map((s) => (
-            <SpaceRow key={s.id} space={s} onSaved={reload} />
+            <SpaceRow key={`${s.id}:${s.name}`} space={s} isolated={settings.isolateSpaces} onChanged={onChanged} />
           ))}
         </ul>
       )}
@@ -230,7 +305,7 @@ function Spaces({ settings, onSaved }: { settings: AppSettings; onSaved: (s: App
 }
 
 /** Settings for the whole app, as opposed to one doc's. */
-export function AppSettingsView() {
+export function AppSettingsView({ onSpacesChanged }: { onSpacesChanged: () => void }) {
   const { data, error } = useLoad<AppSettings>("/settings");
   const [saved, setSaved] = useState<AppSettings>();
   const s = saved ?? data;
@@ -258,7 +333,7 @@ export function AppSettingsView() {
           </section>
           <section className="grid grid-cols-1 gap-2.5">
             <h2 className="text-base leading-none font-bold">Spaces</h2>
-            <Spaces settings={s} onSaved={setSaved} />
+            <Spaces settings={s} onSaved={setSaved} onChanged={onSpacesChanged} />
           </section>
         </>
       )}

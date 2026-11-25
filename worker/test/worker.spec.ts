@@ -640,6 +640,32 @@ describe("dashboard", () => {
     expect((await work(`/api/docs/${theirs.id}`)).status).toBe(200);
     expect((await api(`/api/docs/${theirs.id}`)).status).toBe(404);
   });
+
+  it("deletes a space, moving its keys and moving or deleting its docs", async () => {
+    const make = async (name: string) => {
+      const s = (await (await dash("/dashboard/api/spaces", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name }) })).json()) as { id: string };
+      const { id: keyId } = (await (await dash("/dashboard/api/keys", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: `${name}-key`, space: s.id }) })).json()) as { id: string };
+      const doc = await publish({ [`${name}.html`]: name });
+      await dash(`/dashboard/api/docs/${doc.id}`, { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ space: s.id }) });
+      return { space: s.id, keyId, docId: doc.id };
+    };
+    const del = (id: string, query: string) => dash(`/dashboard/api/spaces/${id}?${query}`, { method: "DELETE", headers: { origin: BASE } });
+    const spaceOf = async (path: string) => ((await (await dash(path)).json()) as { space: string }).space;
+
+    expect((await del("default", "to=default")).status).toBe(400);
+    const a = await make("move-me");
+    expect((await del(a.space, `to=${a.space}`)).status).toBe(400);
+    expect((await del(a.space, "to=s_nope")).status).toBe(400);
+    expect((await del(a.space, "to=default")).status).toBe(204);
+    expect(await spaceOf(`/dashboard/api/keys/${a.keyId}`)).toBe("default");
+    expect(await spaceOf(`/dashboard/api/docs/${a.docId}`)).toBe("default");
+    expect((await del(a.space, "to=default")).status).toBe(404);
+
+    const b = await make("drop-me");
+    expect((await del(b.space, "to=default&docs=delete")).status).toBe(204);
+    expect(await spaceOf(`/dashboard/api/keys/${b.keyId}`)).toBe("default");
+    expect((await dash(`/dashboard/api/docs/${b.docId}`)).status).toBe(404);
+  });
 });
 
 describe("agents", () => {

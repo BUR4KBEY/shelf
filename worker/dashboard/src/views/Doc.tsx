@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { ChevronLeft, Copy, ExternalLink, Lock, LockOpen } from "lucide-react";
 import { Loading, Problem, chip, copy, dashed, display, focusRing, useLoad } from "@/components/bits";
-import { Expiry, Star } from "@/components/DocBits";
+import { Expiry, SpaceChip, Star } from "@/components/DocBits";
 import { DropZone } from "@/components/DropZone";
 import { Entry } from "@/components/Entry";
 import { Settings } from "@/components/Settings";
@@ -54,6 +54,9 @@ export function DocView({ id, colorOf, onChanged }: { id: string; colorOf: (keyI
                 </li>
               )}
               <li className={chip}>{plural(d.versions.length, "version")}</li>
+              <li className="flex empty:hidden">
+                <SpaceChip d={d} />
+              </li>
             </ul>
             {/* The link is what this page is for, so it comes before everything you can change. */}
             <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 sm:py-2 sm:pr-2 sm:pl-4">

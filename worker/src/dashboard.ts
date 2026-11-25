@@ -123,6 +123,26 @@ export async function patchSpace(req: Request, env: Env, id: string): Promise<Re
   return row ? json(spaceJson(row)) : json({ error: "space not found" }, 404);
 }
 
+/**
+ * Deletes a space. Its keys, revoked ones too, move to `to`; its docs move there as well, or are deleted with
+ * `docs=delete` (the daily sweep then removes blobs nothing references). Default always stays, so keys always have a home.
+ */
+export async function deleteSpace(req: Request, env: Env, id: string): Promise<Response> {
+  if (id === "default") return json({ error: "the Default space can't be deleted" }, 400);
+  const params = new URL(req.url).searchParams;
+  const to = params.get("to");
+  const docs = params.get("docs") ?? "move";
+  if (docs !== "move" && docs !== "delete") return json({ error: "docs: move or delete" }, 400);
+  if (!(await spaceExists(env, id))) return json({ error: "space not found" }, 404);
+  if (to === id || !(await spaceExists(env, to))) return json({ error: "to: another space for its keys and docs" }, 400);
+  await env.DB.batch([
+    docs === "delete" ? env.DB.prepare("DELETE FROM docs WHERE space_id = ?").bind(id) : env.DB.prepare("UPDATE docs SET space_id = ? WHERE space_id = ?").bind(to, id),
+    env.DB.prepare("UPDATE api_keys SET space_id = ? WHERE space_id = ?").bind(to, id),
+    env.DB.prepare("DELETE FROM spaces WHERE id = ?").bind(id),
+  ]);
+  return new Response(null, { status: 204 });
+}
+
 /** The most uploads a key's page lists. Its per-doc totals always count every upload. */
 const KEY_UPLOADS = 500;
 /** How far back a key's upload times go: the 53 weeks its yearly heatmap shows. */

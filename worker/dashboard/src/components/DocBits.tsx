@@ -1,13 +1,29 @@
-import { Clock, Lock, Star as StarIcon } from "lucide-react";
+import { createContext, useContext } from "react";
+import { Boxes, Clock, Lock, Star as StarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Tip, chip, focusRing } from "@/components/bits";
 import { Button } from "@/components/ui/button";
-import { api, errorText, nameOf, type Doc } from "@/lib/api";
+import { api, errorText, nameOf, type Doc, type Space } from "@/lib/api";
 import { fullDate, timeLeft } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const DAY = 86_400_000;
 export const isExpired = (d: Doc) => d.expiresAt !== null && d.expiresAt <= Date.now();
+
+/** Every space, loaded once by the app; undefined until it arrives. */
+export const SpacesContext = createContext<Space[] | undefined>(undefined);
+
+/** The doc's space, once there is more than one to tell apart. Nothing while everything is in one space. */
+export function SpaceChip({ d }: { d: Doc }) {
+  const spaces = useContext(SpacesContext) ?? [];
+  if (spaces.length < 2) return null;
+  return (
+    <span className={chip} title="Space">
+      <Boxes aria-hidden />
+      {spaces.find((s) => s.id === d.space)?.name ?? d.space}
+    </span>
+  );
+}
 
 /** The star next to a doc's name. Favorites lead the list in the sidebar. */
 export function Star({ d, onChanged }: { d: Doc; onChanged: () => void }) {

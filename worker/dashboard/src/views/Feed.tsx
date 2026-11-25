@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Copy, ExternalLink, Search, Settings2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Tip, copy, dashed, display, focusRing } from "@/components/bits";
-import { DocName, Expiry, Locked, isExpired } from "@/components/DocBits";
+import { DocName, Expiry, Locked, SpaceChip, isExpired } from "@/components/DocBits";
 import { DropZone } from "@/components/DropZone";
 import { Entry } from "@/components/Entry";
 import { Settings } from "@/components/Settings";
@@ -106,6 +106,7 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                           <span>
                             {plural(head.files, "file")}, {size(head.size)}
                           </span>
+                          <SpaceChip d={d} />
                           <Locked d={d} />
                           <Expiry d={d} />
                         </>

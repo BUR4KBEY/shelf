@@ -1,7 +1,7 @@
 import { previewAccess } from "./access";
 import { deleteDoc, getAppSettings, getDoc, listDocs, listUploads, patchAppSettings, patchDoc, push, putBlob, sweep } from "./api";
 import { type Caller, apiKey } from "./auth";
-import { createKey, createSpace, dashboardPage, getKey, listKeys, listSpaces, patchKey, patchSpace, revokeKey } from "./dashboard";
+import { createKey, createSpace, dashboardPage, deleteSpace, getKey, listKeys, listSpaces, patchKey, patchSpace, revokeKey } from "./dashboard";
 import { llmsTxt } from "./llms";
 import { mcp } from "./mcp";
 import { favicon, font, notFound, notice, setTheme } from "./page";
@@ -70,6 +70,7 @@ export default {
         if (req.method === "GET" && sub === "/api/spaces") return listSpaces(env);
         if (req.method === "POST" && sub === "/api/spaces") return createSpace(req, env);
         if (req.method === "PATCH" && (m = sub.match(/^\/api\/spaces\/([A-Za-z0-9_]{1,32})$/))) return patchSpace(req, env, m[1]);
+        if (req.method === "DELETE" && (m = sub.match(/^\/api\/spaces\/([A-Za-z0-9_]{1,32})$/))) return deleteSpace(req, env, m[1]);
         // Dashboard only: an API key publishes docs, it doesn't change how the app treats everyone's uploads.
         if (req.method === "GET" && sub === "/api/settings") return getAppSettings(env);
         if (req.method === "PATCH" && sub === "/api/settings") return patchAppSettings(req, env);
