@@ -76,6 +76,8 @@ export function Logo({ className }: { className?: string }) {
 export const dashed = "rounded-xl border-[1.5px] border-dashed border-input";
 /** A small labelled pill for a doc's state: locked, expiring, current. Add a colour for anything that needs attention. */
 export const chip = "inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-xs leading-4 font-semibold whitespace-nowrap text-muted-foreground [&_svg]:size-3 [&_svg]:shrink-0";
+/** Inline code in running text, like GitHub's: a name the reader types or looks for, such as an MCP tool. */
+export const code = "rounded-[0.3em] border bg-muted px-[0.35em] py-px font-mono text-[0.92em] text-foreground";
 
 export function Confirm(props: { open: boolean; onOpenChange: (open: boolean) => void; title: string; body: string; action: string; onConfirm: () => void }) {
   // Callers clear their subject on close; keep the last open text so it doesn't blank during the fade-out.

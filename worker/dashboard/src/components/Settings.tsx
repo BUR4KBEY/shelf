@@ -1,12 +1,13 @@
-import { useId, useState, type FormEvent, type ReactNode } from "react";
+import { useContext, useId, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Confirm, useLoad } from "@/components/bits";
+import { SpacesContext } from "@/components/DocBits";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { api, errorText, nameOf, type AppSettings, type Doc, type Space } from "@/lib/api";
+import { api, errorText, nameOf, type AppSettings, type Doc } from "@/lib/api";
 import { fullDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -49,9 +50,9 @@ export function DurationInput(props: { id: string; amount: string; unit: string;
   );
 }
 
-/** Picks one of the spaces, which it loads itself. */
-export function SpaceSelect({ id, value, onChange, describedBy }: { id?: string; value: string; onChange: (v: string) => void; describedBy?: string }) {
-  const spaces = useLoad<Space[]>("/spaces").data ?? [];
+/** Picks one of the spaces, all but `exclude`. */
+export function SpaceSelect({ id, value, onChange, describedBy, exclude }: { id?: string; value: string; onChange: (v: string) => void; describedBy?: string; exclude?: string }) {
+  const spaces = (useContext(SpacesContext) ?? []).filter((s) => s.id !== exclude);
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger id={id} aria-describedby={describedBy} className="w-full">
