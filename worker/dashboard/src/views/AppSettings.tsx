@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 import { ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Loading, Logo, Problem, display, focusRing, useLoad } from "@/components/bits";
@@ -101,59 +101,89 @@ function ExpiryForm({ saved, onSaved }: { saved: AppSettings; onSaved: (s: AppSe
   );
 }
 
-/** One space: its name and what its keys may do. Switches save at once; the name saves with its button. */
+/**
+ * A switch that flips at once and saves in the background, putting itself back if the save fails.
+ * Its hint says what the current position means, so it changes with the switch.
+ */
+function Toggle({ label, checked, onSave, on, off }: { label: string; checked: boolean; onSave: (v: boolean) => Promise<unknown>; on: string; off: string }) {
+  const id = useId();
+  const [value, setValue] = useState(checked);
+  const flip = async (v: boolean) => {
+    setValue(v);
+    try {
+      await onSave(v);
+    } catch (err) {
+      setValue(!v);
+      toast.error(errorText(err));
+    }
+  };
+  return (
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1">
+      <Switch id={id} checked={value} onCheckedChange={flip} aria-describedby={`${id}hint`} className="mt-0.5" />
+      <Label htmlFor={id} className="text-sm font-semibold">
+        {label}
+      </Label>
+      <p id={`${id}hint`} aria-live="polite" className="col-start-2 text-xs leading-relaxed text-muted-foreground">
+        {value ? on : off}
+      </p>
+    </div>
+  );
+}
+
+/** One space: its name, what's in it, and what its keys may do. Switches save at once; the name saves with its button. */
 function SpaceRow({ space, onSaved }: { space: Space; onSaved: () => void }) {
   const [name, setName] = useState(space.name);
-  const save = async (patch: Partial<Space>) => {
+  const [saved, setSaved] = useState(space.name);
+  const patch = (json: Partial<Space>) => api(`/spaces/${space.id}`, { method: "PATCH", json });
+  const rename = async (e: FormEvent) => {
+    e.preventDefault();
     try {
-      await api(`/spaces/${space.id}`, { method: "PATCH", json: patch });
-      toast.success("Space saved");
+      await patch({ name: name.trim() });
+      setSaved(name.trim());
+      toast.success("Space renamed");
       onSaved();
     } catch (err) {
       toast.error(errorText(err));
     }
   };
-  const rename = (e: FormEvent) => {
-    e.preventDefault();
-    if (name.trim() !== space.name) save({ name: name.trim() });
-  };
   return (
-    <li className="grid grid-cols-1 gap-3 rounded-xl border bg-card p-4">
+    <li className="grid grid-cols-1 gap-4 rounded-xl border bg-card p-4">
       <form onSubmit={rename} className="flex flex-wrap items-center gap-2">
         <Input aria-label="Space name" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required className="max-w-60 font-semibold" />
-        {name.trim() !== space.name && (
+        {name.trim() !== saved && (
           <Button type="submit" variant="outline">
             Rename
           </Button>
         )}
         <span className="ml-auto text-xs text-muted-foreground">
-          {plural(space.docs, "doc")}, {plural(space.keys, "key")}
+          {plural(space.docs, "doc")} · {plural(space.keys, "key")}
         </span>
       </form>
-      <Label className="font-normal">
-        <Switch checked={space.keysDelete} onCheckedChange={(v) => save({ keysDelete: v })} />
-        Its keys can delete docs
-      </Label>
-      <Label className="font-normal">
-        <Switch checked={space.keysReadLocked} onCheckedChange={(v) => save({ keysReadLocked: v })} />
-        Its keys can read its password-protected docs without the password (MCP read_doc)
-      </Label>
+      <div className="grid gap-3">
+        <p className="text-xs font-semibold text-muted-foreground">What its keys may do</p>
+        <Toggle
+          label="Delete docs"
+          checked={space.keysDelete}
+          onSave={(keysDelete) => patch({ keysDelete })}
+          on="They can delete any doc they can see, like you can."
+          off="They can publish and edit, but not delete. Only you can, from the dashboard."
+        />
+        <Toggle
+          label="Read locked docs without the password"
+          checked={space.keysReadLocked}
+          onSave={(keysReadLocked) => patch({ keysReadLocked })}
+          on={`They can read this space's password-protected docs through MCP (read_doc) without being given the password.`}
+          off="They need the password to read a locked doc, like anyone with the link."
+        />
+      </div>
     </li>
   );
 }
 
-/** Isolation for the whole app, every space with its permissions, and a form to add one. */
+/** What spaces are, isolation for the whole app, every space with its permissions, and a form to add one. */
 function Spaces({ settings, onSaved }: { settings: AppSettings; onSaved: (s: AppSettings) => void }) {
   const { data: spaces, error, reload } = useLoad<Space[]>("/spaces");
   const [name, setName] = useState("");
-  const isolate = async (isolateSpaces: boolean) => {
-    try {
-      onSaved(await api<AppSettings>("/settings", { method: "PATCH", json: { isolateSpaces } }));
-      toast.success("Settings saved");
-    } catch (err) {
-      toast.error(errorText(err));
-    }
-  };
   const add = async (e: FormEvent) => {
     e.preventDefault();
     try {
@@ -166,14 +196,17 @@ function Spaces({ settings, onSaved }: { settings: AppSettings; onSaved: (s: App
   };
   return (
     <div className="grid grid-cols-1 gap-3">
-      <div className="grid gap-1.5 rounded-xl border bg-card p-4">
-        <Label className="font-normal">
-          <Switch checked={settings.isolateSpaces} onCheckedChange={isolate} aria-describedby="f-isolate-hint" />
-          Keys see only their own space
-        </Label>
-        <Hint id="f-isolate-hint">
-          On: a key lists, reads, updates and deletes only the docs in its space. Off: every key reaches every doc, as before spaces existed. Either way a key's uploads land in its own space, and it never skips another space's password. The dashboard always sees everything.
-        </Hint>
+      <Hint>
+        Every key belongs to one space, and what it uploads goes there. Pick a key's space when you make it, or later on its page. A key never reads another space's locked docs without the password. Here, in the dashboard, you see every space.
+      </Hint>
+      <div className="rounded-xl border bg-card p-4">
+        <Toggle
+          label="Keep spaces apart"
+          checked={settings.isolateSpaces}
+          onSave={async (isolateSpaces) => onSaved(await api<AppSettings>("/settings", { method: "PATCH", json: { isolateSpaces } }))}
+          on="A key sees only its own space's docs. Docs in other spaces don't exist for it."
+          off="Every key can see, edit and delete docs in every space, as if there were one shelf."
+        />
       </div>
       {error ? (
         <Problem error={error} />
@@ -182,12 +215,12 @@ function Spaces({ settings, onSaved }: { settings: AppSettings; onSaved: (s: App
       ) : (
         <ul className="grid grid-cols-1 gap-3">
           {spaces.map((s) => (
-            <SpaceRow key={[s.id, s.name, s.keysDelete, s.keysReadLocked].join("\n")} space={s} onSaved={reload} />
+            <SpaceRow key={s.id} space={s} onSaved={reload} />
           ))}
         </ul>
       )}
       <form onSubmit={add} className="flex gap-2">
-        <Input aria-label="New space name" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} placeholder="New space, e.g. work" autoComplete="off" required className="max-w-60" />
+        <Input aria-label="New space name" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} placeholder="New space, e.g. Work" autoComplete="off" required className="max-w-60" />
         <Button type="submit" variant="outline">
           Add space
         </Button>
