@@ -158,18 +158,52 @@
   }
 }
 
-/* The section a link or the command palette jumped to (lib/sections.ts): a ring that fades out. */
+/*
+ * The section a link or the command palette jumped to (lib/sections.ts): a tinted frame with a glow that snaps in,
+ * holds long enough to find, then fades. Outline with an offset, so the frame clears the heading without moving the layout.
+ */
 .landed {
   border-radius: 0.75rem;
-  animation: landed 1.6s ease-out;
+  outline: 2px solid transparent;
+  outline-offset: 10px;
+  animation: landed 2.6s ease-out;
 }
 @keyframes landed {
-  0%,
-  35% {
-    box-shadow: 0 0 0 8px color-mix(in oklab, var(--ring) 30%, transparent);
+  0% {
+    outline-offset: 22px;
+  }
+  12%,
+  55% {
+    outline-color: var(--ring);
+    outline-offset: 10px;
+    background-color: color-mix(in oklab, var(--ring) 9%, transparent);
+    box-shadow:
+      0 0 0 10px color-mix(in oklab, var(--ring) 9%, transparent),
+      0 0 36px 14px color-mix(in oklab, var(--ring) 30%, transparent);
   }
   to {
-    box-shadow: 0 0 0 8px transparent;
+    outline-color: transparent;
+    outline-offset: 10px;
+    background-color: transparent;
+    box-shadow:
+      0 0 0 10px transparent,
+      0 0 36px 14px transparent;
+  }
+}
+/* Without motion: the frame still appears and fades, but doesn't move. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes landed {
+    0%,
+    55% {
+      outline-color: var(--ring);
+      background-color: color-mix(in oklab, var(--ring) 9%, transparent);
+      box-shadow: 0 0 0 10px color-mix(in oklab, var(--ring) 9%, transparent);
+    }
+    to {
+      outline-color: transparent;
+      background-color: transparent;
+      box-shadow: 0 0 0 10px transparent;
+    }
   }
 }
 
