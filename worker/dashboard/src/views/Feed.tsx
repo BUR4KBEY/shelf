@@ -1,9 +1,10 @@
 import { useContext, useState } from "react";
 import { toast } from "sonner";
-import { Copy, ExternalLink, ListChecks, Search, Settings2, Trash2 } from "lucide-react";
+import { Copy, ExternalLink, ListChecks, Pencil, Search, Settings2, Star, Trash2, TriangleAlert } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Confirm, Tip, copy, dashed, display, focusRing } from "@/components/bits";
 import { DocName, Expiry, Locked, ProjectChip, SpaceChip, SpacesContext, isExpired } from "@/components/DocBits";
+import { BulkEdit } from "@/components/BulkEdit";
 import { DropZone } from "@/components/DropZone";
 import { Entry } from "@/components/Entry";
 import { Settings } from "@/components/Settings";
@@ -49,23 +50,46 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
   // Selection is by doc: deleting removes every version, so all of a doc's entries check together.
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [anchor, setAnchor] = useState<string | null>(null); // the doc clicked last, where a shift-click range starts
   const [confirming, setConfirming] = useState(false);
+  const [editing, setEditing] = useState(false);
   const chosen = docs.filter((d) => picked.has(d.id));
   const shownIds = [...new Set(shown.map((u) => u.docId))];
   const allShown = shownIds.length > 0 && shownIds.every((id) => picked.has(id));
-  const toggle = (id: string) => setPicked((p) => (p.has(id) ? new Set([...p].filter((x) => x !== id)) : new Set([...p, id])));
-  const stopSelecting = () => (setSelecting(false), setPicked(new Set()));
-  const removePicked = async () => {
-    const results = await Promise.allSettled(chosen.map((d) => api(`/docs/${d.id}`, { method: "DELETE" }).then(() => d.id)));
-    const done = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
-    const failed = results.flatMap((r) => (r.status === "rejected" ? [r.reason] : []));
-    if (done.length) toast.success(`Deleted ${plural(done.length, "doc")}`);
-    if (failed.length) toast.error(`${plural(failed.length, "doc")} couldn't be deleted: ${errorText(failed[0])}`);
-    // Failures stay checked, so a retry is one click.
-    if (failed.length) setPicked((p) => new Set([...p].filter((id) => !done.includes(id))));
-    else stopSelecting();
-    onChanged();
+  // Picked docs the filters or search now hide: an action still reaches them, so the user must see that.
+  const hidden = chosen.filter((d) => !shownIds.includes(d.id));
+  const allFavorite = chosen.length > 0 && chosen.every((d) => d.favorite);
+  /** Checks or unchecks a doc; with shift, every doc shown between the last one clicked and this one follows it. */
+  const toggle = (id: string, shift: boolean) => {
+    const on = !picked.has(id);
+    const [from, to] = [shownIds.indexOf(anchor ?? ""), shownIds.indexOf(id)];
+    const range = shift && from >= 0 ? shownIds.slice(Math.min(from, to), Math.max(from, to) + 1) : [id];
+    setPicked(new Set(on ? [...picked, ...range] : [...picked].filter((x) => !range.includes(x))));
+    setAnchor(id);
   };
+  const stopSelecting = () => (setSelecting(false), setPicked(new Set()), setAnchor(null));
+  /** Sends the picked docs to /docs/bulk, which changes all of them or none; true once it worked. */
+  const bulk = async (body: Record<string, unknown>, done: string) => {
+    try {
+      await api("/docs/bulk", { method: "POST", json: { ids: chosen.map((d) => d.id), ...body } });
+      toast.success(done);
+      return true;
+    } catch (e) {
+      toast.error(errorText(e));
+      return false;
+    } finally {
+      onChanged();
+    }
+  };
+  const hiddenWarning = hidden.length > 0 && (
+    <p role="alert" className="flex gap-2 rounded-lg bg-warning/15 p-3 text-sm font-semibold text-warning [overflow-wrap:anywhere]">
+      <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <span>
+        {plural(hidden.length, "selected doc")} {hidden.length === 1 ? "is" : "are"} hidden by the current filters or search, and this acts on {hidden.length === 1 ? "it" : "them"} too: {hidden.slice(0, 3).map(nameOf).join(", ")}
+        {hidden.length > 3 && ` and ${hidden.length - 3} more`}.
+      </span>
+    </p>
+  );
 
   return (
     <div className="mx-auto grid max-w-[60rem] grid-cols-1 gap-6 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
@@ -164,10 +188,10 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
                       color={colorOf(head.keyId)}
                       at={head.createdAt}
                       who={head.keyName ?? (head.keyId ? "A deleted key" : "You")}
-                      select={selecting ? { checked: picked.has(d.id), label: `Select ${nameOf(d)}`, onChange: () => toggle(d.id) } : undefined}
+                      select={selecting ? { checked: picked.has(d.id), label: `Select ${nameOf(d)}`, onToggle: (shift) => toggle(d.id, shift) } : undefined}
                       // A click on the card, off its controls and its open settings, toggles them (or, while selecting, its checkbox); the gear button stays for keyboards.
                       // `contains` skips clicks in portals (the expiry menu, the delete dialog), which React still bubbles here.
-                      onClick={(e) => e.currentTarget.contains(e.target as Node) && !(e.target as Element).closest("a, button, input, label, select, textarea, [data-settings]") && !getSelection()?.toString() && (selecting ? toggle(d.id) : setOpen(open === key ? null : key))}
+                      onClick={(e) => e.currentTarget.contains(e.target as Node) && !(e.target as Element).closest("a, button, input, label, select, textarea, [data-settings]") && !getSelection()?.toString() && (selecting ? toggle(d.id, e.shiftKey) : setOpen(open === key ? null : key))}
                       did={head.n === 1 ? "uploaded a new doc" : `uploaded version ${head.n} of`}
                       title={<DocName d={d} onChanged={onChanged} />}
                       message={head.message}
@@ -240,10 +264,25 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
           {selecting && (
             <div role="toolbar" aria-label="Selected docs" className="sticky bottom-4 z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-card py-2 pr-2 pl-4 shadow-lg">
               <p aria-live="polite" className="mr-auto text-sm font-semibold">
-                {chosen.length ? `${plural(chosen.length, "doc")} selected` : "Select docs to act on them"}
+                {chosen.length ? `${plural(chosen.length, "doc")} selected` : "Select docs to act on them. Shift-click selects a range."}
+                {hidden.length > 0 && (
+                  <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-warning/15 px-1.5 py-0.5 text-xs text-warning">
+                    <TriangleAlert className="size-3" aria-hidden />
+                    {hidden.length} hidden by filters
+                    <button type="button" onClick={() => setPicked(new Set(shownIds.filter((id) => picked.has(id))))} className={cn(focusRing, "ml-1 underline underline-offset-2")}>
+                      Unselect
+                    </button>
+                  </span>
+                )}
               </p>
-              <Button variant="ghost" size="sm" disabled={!shownIds.length} onClick={() => setPicked((p) => new Set(allShown ? [...p].filter((id) => !shownIds.includes(id)) : [...p, ...shownIds]))}>
+              <Button variant="ghost" size="sm" disabled={!shownIds.length} onClick={() => setPicked(new Set(allShown ? [...picked].filter((id) => !shownIds.includes(id)) : [...picked, ...shownIds]))}>
                 {allShown ? "Clear shown" : `Select all ${shownIds.length} shown`}
+              </Button>
+              <Button variant="outline" size="sm" disabled={!chosen.length} onClick={() => bulk({ favorite: !allFavorite }, allFavorite ? `Removed ${plural(chosen.length, "doc")} from favorites` : `Added ${plural(chosen.length, "doc")} to favorites`)}>
+                <Star /> {allFavorite ? "Unfavorite" : "Favorite"}
+              </Button>
+              <Button variant="outline" size="sm" disabled={!chosen.length} onClick={() => setEditing(true)}>
+                <Pencil /> Change…
               </Button>
               <Button variant="destructive" size="sm" disabled={!chosen.length} onClick={() => setConfirming(true)}>
                 <Trash2 /> Delete
@@ -253,14 +292,19 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
               </Button>
             </div>
           )}
+          <BulkEdit open={editing} onOpenChange={setEditing} count={chosen.length} onSave={async (body) => (await bulk(body, `Changed ${plural(chosen.length, "doc")}`)) && (setEditing(false), true)}>
+            {hiddenWarning}
+          </BulkEdit>
           <Confirm
             open={confirming}
             onOpenChange={setConfirming}
             title={`Delete ${plural(chosen.length, "doc")}?`}
             body={`This removes ${chosen.slice(0, 3).map(nameOf).join(", ")}${chosen.length > 3 ? ` and ${chosen.length - 3} more` : ""}, with every version of each. Their links stop working. This can't be undone.`}
             action="Delete"
-            onConfirm={removePicked}
-          />
+            onConfirm={async () => (await bulk({ delete: true }, `Deleted ${plural(chosen.length, "doc")}`)) && stopSelecting()}
+          >
+            {hiddenWarning}
+          </Confirm>
         </>
       )}
     </div>

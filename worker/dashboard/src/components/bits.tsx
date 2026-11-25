@@ -79,11 +79,12 @@ export const chip = "inline-flex items-center gap-1 rounded-md bg-muted px-1.5 p
 /** Inline code in running text, like GitHub's: a name the reader types or looks for, such as an MCP tool. */
 export const code = "rounded-[0.3em] border bg-muted px-[0.35em] py-px font-mono text-[0.92em] text-foreground";
 
-export function Confirm(props: { open: boolean; onOpenChange: (open: boolean) => void; title: string; body: string; action: string; onConfirm: () => void }) {
+/** `children` go under the description, for what doesn't fit in a sentence, such as a warning. */
+export function Confirm(props: { open: boolean; onOpenChange: (open: boolean) => void; title: string; body: string; action: string; onConfirm: () => void; children?: ReactNode }) {
   // Callers clear their subject on close; keep the last open text so it doesn't blank during the fade-out.
   const shown = useRef(props);
   if (props.open) shown.current = props;
-  const { title, body, action } = shown.current;
+  const { title, body, action, children } = shown.current;
   return (
     <AlertDialog open={props.open} onOpenChange={props.onOpenChange}>
       <AlertDialogContent>
@@ -91,6 +92,7 @@ export function Confirm(props: { open: boolean; onOpenChange: (open: boolean) =>
           <AlertDialogTitle className="[overflow-wrap:anywhere]">{title}</AlertDialogTitle>
           <AlertDialogDescription>{body}</AlertDialogDescription>
         </AlertDialogHeader>
+        {children}
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction variant="destructive" onClick={props.onConfirm}>
