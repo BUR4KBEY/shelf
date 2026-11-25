@@ -35,7 +35,8 @@ export function App() {
   const open = route.match(/^doc\/([^/]+)$/)?.[1];
   const openId = open && decodeURIComponent(open);
   const openKey = route.match(/^key\/([^/]+)$/)?.[1];
-  const settings = route === "settings";
+  const settingsSection = route.match(/^settings(?:\/([^/]+))?$/);
+  const settings = !!settingsSection;
   const analytics = route === "analytics";
   const docs = useLoad<Doc[]>("/docs");
   const uploads = useLoad<Activity[]>("/uploads");
@@ -140,7 +141,7 @@ export function App() {
                   ) : openKey ? (
                     <KeyView key={openKey} id={openKey} docs={docs.data} colorOf={colorOf} onChanged={changed} onKeysChanged={keys.reload} />
                   ) : settings ? (
-                    <AppSettingsView onSpacesChanged={spacesChanged} />
+                    <AppSettingsView section={settingsSection?.[1]} onSpacesChanged={spacesChanged} />
                   ) : analytics ? (
                     <AnalyticsView keys={keys.data} docs={docs.data} colorOf={colorOf} />
                   ) : (

@@ -1,4 +1,4 @@
-import { useContext, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useContext, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronLeft, Download, RefreshCw, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { About } from "@/components/About";
@@ -21,6 +21,31 @@ import { cn } from "@/lib/utils";
 import { THEMES } from "@/views/Sidebar";
 
 const option = (on: boolean) => cn(focusRing, "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-muted-foreground hover:text-foreground", on && "border-ring bg-background font-semibold text-foreground");
+
+/** The settings page's sections, in page order: id (`#/settings/<id>`), heading, and extra words the command palette matches. */
+export const SETTINGS_SECTIONS = [
+  ["appearance", "Appearance", ["theme", "dark", "light", "palette", "colour", "color"]],
+  ["expiry", "Expiry", ["expire", "expires", "ttl", "lifetime"]],
+  ["slugs", "Slugs", ["slug", "url", "length"]],
+  ["readers", "Readers", ["statistics", "stats", "link previews", "password"]],
+  ["spaces", "Spaces", ["space", "permissions"]],
+  ["backup", "Backup", ["export", "download"]],
+  ["import", "Import", ["restore", "upload"]],
+  ["cleanup", "Cleanup", ["expired", "delete", "purge", "cron"]],
+  ["about", "About", ["version"]],
+] as const;
+type SectionId = (typeof SETTINGS_SECTIONS)[number][0];
+
+export const sectionElementId = (id: string) => `settings-${id}`;
+
+function Section({ id, children }: { id: SectionId; children: ReactNode }) {
+  return (
+    <section id={sectionElementId(id)} className="grid scroll-mt-6 grid-cols-1 gap-2.5">
+      <h2 className="text-base leading-none font-bold">{SETTINGS_SECTIONS.find(([s]) => s === id)![1]}</h2>
+      {children}
+    </section>
+  );
+}
 
 /** Light or dark, and the colour. Applies at once, to this browser only: it is kept in cookies, like the sidebar's switch. */
 function Appearance() {
@@ -681,11 +706,17 @@ function Import({ onImported }: { onImported: () => void }) {
   );
 }
 
-/** Settings for the whole app, as opposed to one doc's. */
-export function AppSettingsView({ onSpacesChanged }: { onSpacesChanged: () => void }) {
+/** Settings for the whole app, as opposed to one doc's. `section` (from `#/settings/<section>`) scrolls to that section once it renders. */
+export function AppSettingsView({ section, onSpacesChanged }: { section?: string; onSpacesChanged: () => void }) {
   const { data, error } = useLoad<AppSettings>("/settings");
   const [saved, setSaved] = useState<AppSettings>();
   const s = saved ?? data;
+  const loaded = !!s;
+
+  // Most sections only render once the settings load, so try again then.
+  useEffect(() => {
+    if (section) document.getElementById(sectionElementId(section))?.scrollIntoView({ block: "start" });
+  }, [section, loaded]);
 
   return (
     <div className="mx-auto grid max-w-[60rem] grid-cols-1 gap-7 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
@@ -694,50 +725,41 @@ export function AppSettingsView({ onSpacesChanged }: { onSpacesChanged: () => vo
         All uploads
       </a>
       <h1 className={cn(display, "text-5xl leading-[0.95]")}>Settings</h1>
-      <section className="grid grid-cols-1 gap-2.5">
-        <h2 className="text-base leading-none font-bold">Appearance</h2>
+      <Section id="appearance">
         <Appearance />
-      </section>
+      </Section>
       {error ? (
         <Problem error={error} />
       ) : !s ? (
         <Loading />
       ) : (
         <>
-          <section className="grid grid-cols-1 gap-2.5">
-            <h2 className="text-base leading-none font-bold">Expiry</h2>
+          <Section id="expiry">
             <ExpiryForm saved={s} onSaved={setSaved} />
-          </section>
-          <section className="grid grid-cols-1 gap-2.5">
-            <h2 className="text-base leading-none font-bold">Slugs</h2>
+          </Section>
+          <Section id="slugs">
             <SlugForm saved={s} onSaved={setSaved} />
-          </section>
-          <section className="grid grid-cols-1 gap-2.5">
-            <h2 className="text-base leading-none font-bold">Readers</h2>
+          </Section>
+          <Section id="readers">
             <Readers settings={s} onSaved={setSaved} />
-          </section>
-          <section className="grid grid-cols-1 gap-2.5">
-            <h2 className="text-base leading-none font-bold">Spaces</h2>
+          </Section>
+          <Section id="spaces">
             <Spaces settings={s} onSaved={setSaved} onChanged={onSpacesChanged} />
-          </section>
-          <section className="grid grid-cols-1 gap-2.5">
-            <h2 className="text-base leading-none font-bold">Backup</h2>
+          </Section>
+          <Section id="backup">
             <Backup />
-          </section>
-          <section className="grid grid-cols-1 gap-2.5">
-            <h2 className="text-base leading-none font-bold">Import</h2>
+          </Section>
+          <Section id="import">
             <Import onImported={onSpacesChanged} />
-          </section>
-          <section className="grid grid-cols-1 gap-2.5">
-            <h2 className="text-base leading-none font-bold">Cleanup</h2>
+          </Section>
+          <Section id="cleanup">
             <Cleanup onDeleted={onSpacesChanged} />
-          </section>
+          </Section>
         </>
       )}
-      <section className="grid grid-cols-1 gap-2.5">
-        <h2 className="text-base leading-none font-bold">About</h2>
+      <Section id="about">
         <About />
-      </section>
+      </Section>
     </div>
   );
 }
