@@ -488,7 +488,8 @@ describe("dashboard", () => {
     };
     expect(a.days.filter((d) => d.keyId === id)).toEqual([{ keyId: id, space: "default", day: Math.floor((at + 840 * 60_000) / 86_400_000), uploads: 1 }]);
     expect(a.keys.filter((k) => k.keyId === id)).toEqual([{ keyId: id, space: "default", uploads: 1, docs: 1, size: 8, lastAt: at }]);
-    expect(a.shared.filter((s) => s.docId === pushed.id).map((s) => [s.keyId, s.uploads]).sort()).toEqual([[id, 1], ["k_test", 1]]);
+    // id is random, so it can sort either side of "k_test": sort both.
+    expect(a.shared.filter((s) => s.docId === pushed.id).map((s) => [s.keyId, s.uploads]).sort()).toEqual([[id, 1], ["k_test", 1]].sort());
     expect((await dash("/dashboard/api/analytics?tz=1.5")).status).toBe(400);
     expect((await api("/api/analytics")).status).toBe(404); // dashboard only
   });
