@@ -1,7 +1,7 @@
-import { memo, useCallback, useContext, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { memo, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { toast } from "sonner";
 import { Copy, ExternalLink, ListChecks, Pencil, Search, Settings2, Star, Trash2, TriangleAlert } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { Confirm, Tip, copy, dashed, display, focusRing } from "@/components/bits";
 import { DocName, Expiry, Locked, ProjectChip, SpaceChip, SpacesContext, isExpired } from "@/components/DocBits";
 import { BulkEdit } from "@/components/BulkEdit";
@@ -337,20 +337,65 @@ const Upload = memo(function Upload({ id, head, older, d, color, open, checked, 
             {older.length > FOLDED && <li>and {older.length - FOLDED} earlier that day</li>}
           </ul>
         )}
-        <AnimatePresence initial={false}>
-          {open && (
-            // A grid row sliding between 0fr and 1fr: nothing measures the panel, so Safari never snaps the scroll near the end of the page.
-            // Clipped only while it slides, so the inputs' focus rings show once it is open.
-            <motion.div className="grid" initial={{ gridTemplateRows: "0fr", opacity: 0, overflow: "hidden" }} animate={{ gridTemplateRows: "1fr", opacity: 1, transitionEnd: { overflow: "visible" } }} exit={{ gridTemplateRows: "0fr", opacity: 0, overflow: "hidden" }} transition={{ duration: 0.22, ease: "easeOut" }}>
-              <div className="min-h-0">
-                <div data-settings className="mt-3 border-t border-(--k)/30 pt-3.5">
-                  <Settings key={[d.title, d.slug, d.locked, d.expiresAt, d.space, d.project].join("\n")} d={d} onChanged={onChanged} onDeleted={() => setOpen(null)} />
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <Slide open={open}>
+          <div data-settings className="mt-3 border-t border-(--k)/30 pt-3.5">
+            <Settings key={[d.title, d.slug, d.locked, d.expiresAt, d.space, d.project].join("\n")} d={d} onChanged={onChanged} onDeleted={() => setOpen(null)} />
+          </div>
+        </Slide>
       </>
     </Entry>
   );
 });
+
+/**
+ * Slides `children` open and shut with a CSS transition, kept mounted until it has shut. Not Motion: its clock started the slide
+ * with two near-still frames and then a lurch, and its measuring of `height: auto` shortened the page for an instant, which made
+ * Safari snap the scroll near the end. Here the browser times the slide, and heights are only read, never set to measure.
+ */
+function Slide({ open, children }: { open: boolean; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const reduce = useReducedMotion();
+  const [mounted, setMounted] = useState(open);
+  if (open && !mounted) setMounted(true);
+  const laidOut = useRef(open); // false while freshly mounted to open, so the slide starts from 0
+  const first = useRef(true);
+  useLayoutEffect(() => {
+    if (first.current) return void (first.current = false); // already open on mount (the log re-rendered): no slide
+    const el = ref.current;
+    if (!el) return;
+    const from = laidOut.current ? el.getBoundingClientRect().height : 0;
+    laidOut.current = true;
+    const to = open ? el.scrollHeight : 0;
+    if (reduce || from === to) {
+      if (open) finish(el);
+      else {
+        laidOut.current = false;
+        setMounted(false);
+      }
+      return;
+    }
+    // Pin the start, commit it, then let the transition run to the end.
+    Object.assign(el.style, { transition: "none", overflow: "hidden", height: `${from}px`, opacity: from ? getComputedStyle(el).opacity : "0" });
+    el.getBoundingClientRect();
+    Object.assign(el.style, { transition: "height 220ms ease-out, opacity 220ms ease-out", height: `${to}px`, opacity: open ? "1" : "0" });
+  }, [open]);
+  if (!mounted) return null;
+  return (
+    <div
+      ref={ref}
+      // Always holds its children's margins, so clipping it for the slide doesn't move them by a margin's height.
+      className="flow-root"
+      onTransitionEnd={(e) => {
+        if (e.target !== e.currentTarget || e.propertyName !== "height") return;
+        if (open) return finish(e.currentTarget);
+        laidOut.current = false;
+        setMounted(false);
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Open: back to its natural height, unclipped, so it follows its content and the inputs' focus rings show. */
+const finish = (el: HTMLElement) => Object.assign(el.style, { transition: "", overflow: "", height: "", opacity: "" });
