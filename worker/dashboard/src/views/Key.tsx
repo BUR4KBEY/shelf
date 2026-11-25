@@ -210,7 +210,7 @@ type Props = { docs: Doc[]; colorOf: (keyId: string | null) => string; onChanged
 export function KeyView({ id, ...props }: Props & { id: string }) {
   const { data: k, error, reload } = useLoad<KeyDetail>(`/keys/${encodeURIComponent(id)}`);
   return (
-    <div style={{ "--k": props.colorOf(id) } as CSSProperties} className="mx-auto grid max-w-[60rem] grid-cols-1 gap-7 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
+    <div style={{ "--k": props.colorOf(id) } as CSSProperties} className="mx-auto flex max-w-[60rem] flex-col gap-7 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
       <a href="#/" className={cn(focusRing, "-ml-1 flex w-fit items-center gap-0.5 text-sm text-muted-foreground hover:text-foreground")}>
         <ChevronLeft className="size-4" aria-hidden />
         All uploads
@@ -369,9 +369,9 @@ function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props &
         <p className="text-muted-foreground">Nothing this key uploaded is on the shelf.{!k.revokedAt && " Use it with shelf login or the API, and its docs and uploads show up here."}</p>
       ) : (
         <>
-          <section className="grid grid-cols-1 gap-2.5">
+          <section className="flex flex-col gap-2.5">
             <h2 className={heading}>Docs</h2>
-            <ul className="grid grid-cols-1 divide-y rounded-xl border bg-card">
+            <ul className="flex flex-col divide-y rounded-xl border bg-card">
               {k.docs.map((s) => {
                 const d = byId.get(s.docId);
                 return (
@@ -389,12 +389,12 @@ function KeyPage({ k, reload, docs, colorOf, onChanged, onKeysChanged }: Props &
             </ul>
           </section>
 
-          <section className="grid grid-cols-1 gap-5">
+          <section className="flex flex-col gap-5">
             <h2 className={heading}>Uploads</h2>
             {byDay(k.uploads, (u) => `${u.docId}@${u.n}`).map(({ day, entries }) => (
-              <div key={day} className="grid grid-cols-1 gap-2.5">
+              <div key={day} className="flex flex-col gap-2.5">
                 <h3 className={cn(display, "text-2xl leading-none")}>{dayName(day)}</h3>
-                <div className="grid grid-cols-1 gap-2">
+                <div className="flex flex-col gap-2">
                   {entries.map(({ head: u }) => {
                     const d = byId.get(u.docId);
                     return (

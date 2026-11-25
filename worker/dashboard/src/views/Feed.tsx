@@ -92,7 +92,8 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
   );
 
   return (
-    <div className="mx-auto grid max-w-[60rem] grid-cols-1 gap-6 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
+    // A flex column, not a grid: Safari lays out a grid of nested grids again on every frame the sidebar slides, which takes seconds on a long log.
+    <div className="mx-auto flex max-w-[60rem] flex-col gap-6 px-4 pt-5 pb-24 sm:px-10 sm:pt-7">
       <div className={cn(dashed, "flex flex-wrap items-center gap-x-4 gap-y-3 py-3 pr-3 pl-4")}>
         <p className="min-w-0 flex-[1_1_14rem] text-muted-foreground">
           <b className="font-semibold text-foreground">Drop a file or folder anywhere</b> to publish it
@@ -173,12 +174,12 @@ export function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; u
           {shown.length === 0 && <p className="pt-4 text-muted-foreground">{q ? `No upload has “${query.trim()}” in its doc's title, slug, id or project, or in its message.` : "No uploads match this filter."}</p>}
 
           {byDay(shown, (u) => u.docId).map(({ day, count, entries }) => (
-            <section key={day} aria-label={dayName(day)} className="grid grid-cols-1 gap-3">
+            <section key={day} aria-label={dayName(day)} className="flex flex-col gap-3">
               <header className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
                 <h2 className={cn(display, "text-4xl leading-none")}>{dayName(day)}</h2>
                 <p className="text-muted-foreground">{[dayName(day) !== longDate(day) && longDate(day), plural(count, "upload")].filter(Boolean).join(", ")}</p>
               </header>
-              <div className="grid grid-cols-1 gap-2">
+              <div className="flex flex-col gap-2">
                 {entries.map(({ head, older }) => {
                   const d = byId.get(head.docId)!;
                   const key = `${day}:${d.id}`;
