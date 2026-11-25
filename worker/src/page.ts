@@ -14,15 +14,39 @@ export function font(name: string): Response | undefined {
   return body && new Response(body, { headers: { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable", "access-control-allow-origin": "*" } });
 }
 
-/** GET /favicon.svg, for the dashboard and these pages. Follows the system theme: an icon can't read the theme cookie. */
-export const favicon = () => new Response(faviconSvg, { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } });
+/**
+ * Colour themes: the hue every colour shares, and how much of each colour's chroma it keeps (teal and green leave sRGB at full strength).
+ * Mirrored in dashboard/src/index.css and dashboard/src/lib/prefs.ts. Indigo is the default, so it never needs the cookie.
+ */
+export const PALETTES: Record<string, [hue: number, tint: number]> = { indigo: [270, 1], teal: [200, 0.42], green: [150, 0.69], plum: [325, 1], graphite: [0, 0] };
+
+/** An OKLCH colour in the page's palette: lightness and chroma for light, then for dark. */
+const tinted = (l: number, c: number, dl: number, dc: number) => `light-dark(oklch(${l} calc(${c} * var(--tint)) var(--hue)),oklch(${dl} calc(${dc} * var(--tint)) var(--hue)))`;
+const INK = [0.231, 0.062, 0.96, 0.019] as const;
+const ACCENT = [0.513, 0.203, 0.773, 0.115] as const;
+
+/**
+ * GET /favicon.svg?palette=<name>&theme=<light|dark>: the logo in that palette and theme; without a theme it follows the system.
+ * Query parameters, not the cookies, so a cached icon is never the wrong one: the pages put their reader's choice in the link.
+ */
+export function favicon(url: URL): Response {
+  const [hue, tint] = PALETTES[pick(url.searchParams.get("palette"), PALETTES)] ?? PALETTES.indigo;
+  const fills = (dark: boolean) => {
+    const ok = ([l, c, dl, dc]: readonly number[]) => (dark ? `oklch(${dl} ${+(dc * tint).toFixed(3)} ${hue})` : `oklch(${l} ${+(c * tint).toFixed(3)} ${hue})`);
+    return `.i{fill:${ok(INK)}}.a{fill:${ok(ACCENT)}}.as{stroke:${ok(ACCENT)}}`;
+  };
+  const theme = url.searchParams.get("theme");
+  const style = theme === "dark" ? fills(true) : theme === "light" ? fills(false) : `${fills(false)}@media (prefers-color-scheme:dark){${fills(true)}}`;
+  return new Response(faviconSvg.replace(/<style>[^<]*<\/style>/, `<style>${style}</style>`), { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } });
+}
 
 const face = (name: string, range: string) =>
   `@font-face{font-family:"Bricolage Grotesque Variable";font-weight:200 800;font-stretch:75% 100%;font-display:swap;src:url(/font/${name}.woff2) format("woff2-variations");unicode-range:${range}}`;
 
 export const BASE_CSS = `${face("latin", "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD")}
 ${face("latin-ext", "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF")}
-:root{color-scheme:light dark;--background:light-dark(#f4f6fc,#111a3a);--foreground:light-dark(#131a3a,#eef1ff);--card:light-dark(#fff,#1a2550);--primary:light-dark(#131a3a,#eef1ff);--primary-foreground:light-dark(#fff,#0b1230);--muted:light-dark(#e7ebf7,#26326a);--muted-foreground:light-dark(#58638c,#98a3cf);--destructive:light-dark(#c8341b,#ff7a6b);--border:light-dark(#cdd5ea,#2b3769);--input:light-dark(#9aa6c9,#4a5894);--ring:light-dark(#3b55d9,#9db0ff)}
+:root{color-scheme:light dark;--hue:270;--tint:1;--background:${tinted(0.973, 0.008, 0.23, 0.063)};--foreground:${tinted(...INK)};--card:${tinted(1, 0, 0.281, 0.08)};--primary:var(--foreground);--primary-foreground:${tinted(1, 0, 0.196, 0.06)};--muted:${tinted(0.941, 0.017, 0.34, 0.098)};--muted-foreground:${tinted(0.507, 0.067, 0.722, 0.065)};--destructive:light-dark(#c8341b,#ff7a6b);--border:${tinted(0.873, 0.03, 0.354, 0.088)};--input:${tinted(0.728, 0.053, 0.477, 0.098)};--ring:${tinted(...ACCENT)}}
+${Object.entries(PALETTES).map(([name, [hue, tint]]) => `:root[data-palette=${name}]{--hue:${hue};--tint:${tint}}`).join("")}
 :root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0;background:var(--background);color:var(--foreground);font:.875rem/1.5 "Bricolage Grotesque Variable",ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
@@ -60,9 +84,13 @@ export const LOCK_ICON = svg('<rect width="18" height="11" x="3" y="11" rx="2" r
 const MISSING_ICON = svg('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m14.5 12.5-5 5"/><path d="m9.5 12.5 5 5"/>');
 
 const THEMES = ["system", "light", "dark"];
-const theme = (req: Request) => req.headers.get("cookie")?.match(/(?:^|;\s*)theme=(light|dark)(?:;|$)/)?.[1] ?? "system";
-/** ` data-theme="dark"` for the <html> tag when the theme cookie picks one, else nothing: the page then follows the system. */
-export const themeAttr = (req: Request) => (theme(req) === "system" ? "" : ` data-theme="${theme(req)}"`);
+/** `value` when it is one of `allowed`'s keys, else "": a cookie or query parameter never reaches the page unchecked. */
+const pick = (value: string | null | undefined, allowed: object) => (value && Object.hasOwn(allowed, value) ? value : "");
+const cookie = (req: Request, name: string) => req.headers.get("cookie")?.match(new RegExp(`(?:^|;\\s*)${name}=([a-z]+)(?:;|$)`))?.[1];
+const theme = (req: Request) => pick(cookie(req, "theme"), { light: 1, dark: 1 }) || "system";
+const palette = (req: Request) => pick(cookie(req, "palette"), PALETTES);
+/** ` data-theme="dark" data-palette="teal"` for the <html> tag, from the cookies; without them the page follows the system, in indigo. */
+export const themeAttr = (req: Request) => (theme(req) === "system" ? "" : ` data-theme="${theme(req)}"`) + (palette(req) ? ` data-palette="${palette(req)}"` : "");
 
 /** GET /theme/<system|light|dark>?next=<path>: remembers the theme in a cookie and goes back. A link, so the pages need no script. */
 export function setTheme(url: URL, value: string): Response | undefined {
@@ -79,7 +107,8 @@ export function setTheme(url: URL, value: string): Response | undefined {
  */
 export function cardPage(req: Request, status: number, title: string, card: string, { foot = "", formAction = "'none'", back = new URL(req.url).pathname } = {}): Response {
   const links = THEMES.map((t) => `<a href="/theme/${t}?next=${encodeURIComponent(back)}"${t === theme(req) ? ' aria-current="true"' : ""}>${t[0].toUpperCase()}${t.slice(1)}</a>`).join("");
-  const html = `<!doctype html><html lang="en"${themeAttr(req)}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><title>${escapeHtml(title)} · shelf</title>
+  const icon = new URLSearchParams({ ...(palette(req) && { palette: palette(req) }), ...(theme(req) !== "system" && { theme: theme(req) }) });
+  const html = `<!doctype html><html lang="en"${themeAttr(req)}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg?${icon}" type="image/svg+xml"><title>${escapeHtml(title)} · shelf</title>
 <style>${BASE_CSS}
 ${CARD_CSS}</style></head>
 <body><main><header><p class="mark">shelf</p><nav class="theme" aria-label="Theme">${links}</nav></header><div class="card">${card}</div>${foot && `<p class="foot">${foot}</p>`}</main></body></html>`;

@@ -34,7 +34,7 @@ export default {
       if (req.method === "GET" || req.method === "HEAD") return view(req, env, ref, pin ? Number(pin) : undefined, rest);
     }
 
-    if (req.method === "GET" && path === "/favicon.svg") return favicon();
+    if (req.method === "GET" && path === "/favicon.svg") return favicon(url);
     if (req.method === "GET" && (m = path.match(/^\/font\/([a-z-]+)\.woff2$/))) return font(m[1]) ?? notFound(req);
     if (req.method === "GET" && (m = path.match(/^\/theme\/([a-z]+)$/))) return setTheme(url, m[1]) ?? notFound(req);
     if (req.method === "GET" && path === "/llms.txt") return new Response(llmsTxt(url.origin), { headers: { "content-type": "text/plain; charset=utf-8" } });
