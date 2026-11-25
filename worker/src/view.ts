@@ -1,7 +1,7 @@
 import { marked } from "marked";
 import { type Doc, appSettings, findDoc } from "./api";
 import { sameString, unlockToken, verifyPassword } from "./auth";
-import { LOCK_ICON, MD_CSS, cardPage, notFound, notice, themeAttr } from "./page";
+import { LOCK_ICON, MD_CSS, cardPage, darkReaderScript, notFound, notice, themeAttr } from "./page";
 import { escapeHtml, sha256Hex } from "./util";
 
 // Server-side type policy by extension; client-sent types are ignored.
@@ -224,7 +224,7 @@ async function serveFile(req: Request, env: Env, doc: Doc, n: number, pinned: bo
     headers.delete("accept-ranges");
     headers.set("vary", "cookie"); // the page carries the reader's theme
     return new Response(
-      `<!doctype html><html lang="en"${themeAttr(req)}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>${card ? `${og}<meta property="og:title" content="${title}">` : ""}<style>${MD_CSS}</style></head><body><main>${body}</main></body></html>`,
+      `<!doctype html><html lang="en"${themeAttr(req)}><head><meta charset="utf-8">${darkReaderScript()}<meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>${card ? `${og}<meta property="og:title" content="${title}">` : ""}<style>${MD_CSS}</style></head><body><main>${body}</main></body></html>`,
       { headers },
     );
   }

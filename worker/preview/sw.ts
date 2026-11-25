@@ -5,7 +5,7 @@ import initSqlJs, { type Database } from "sql.js";
 import wasmUrl from "sql.js/dist/sql-wasm-browser.wasm?url";
 import { sweep } from "../src/api";
 import worker from "../src/index";
-import { themeAttr } from "../src/page";
+import { darkReaderScript, themeAttr } from "../src/page";
 import { seed } from "./seed";
 import { d1, r2, store } from "./shims";
 
@@ -127,9 +127,9 @@ async function handle(req: Request, url: URL, keepAlive: (p: Promise<unknown>) =
   const s = await (state ??= open().catch((e) => ((state = undefined), Promise.reject(e))));
   const wreq = await forWorker(req, s.jar);
   if (url.pathname === "/dashboard" && req.method === "GET") {
-    // The preview's own build of the dashboard, with the banner. Its theme goes on <html> as the Worker does it.
+    // The preview's own build of the dashboard, with the banner. Its theme and Dark Reader's script go in as the Worker does it.
     const page = await (await fetch("/app.html", { cache: "no-cache" })).text();
-    return new Response(page.replace("<html", `<html${themeAttr(wreq)}`), {
+    return new Response(page.replace("<html", `<html${themeAttr(wreq)}`).replace("<head>", `<head>${darkReaderScript()}`), {
       headers: {
         "content-type": "text/html; charset=utf-8",
         "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data:; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
