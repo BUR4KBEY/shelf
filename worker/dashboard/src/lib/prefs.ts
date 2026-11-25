@@ -10,9 +10,14 @@ const DEFAULTS: Record<Pref, string> = { theme: "system", palette: "indigo" };
 /** Mirrors PALETTES in src/page.ts and the `[data-palette]` rules in index.css. */
 export const PALETTES = [
   ["indigo", "Indigo"],
-  ["teal", "Teal"],
-  ["green", "Green"],
+  ["violet", "Violet"],
   ["plum", "Plum"],
+  ["rose", "Rose"],
+  ["sand", "Sand"],
+  ["olive", "Olive"],
+  ["green", "Green"],
+  ["teal", "Teal"],
+  ["ocean", "Ocean"],
   ["graphite", "Graphite"],
 ] as const;
 
