@@ -19,5 +19,6 @@ export function buildInfo() {
     builtAt: new Date().toISOString(),
     node: process.version,
     compatibilityDate: wrangler.match(/"compatibility_date":\s*"([^"]+)"/)?.[1] ?? null,
+    cleanupCron: wrangler.match(/"crons":\s*\[\s*"([^"]+)"/)?.[1] ?? null,
   };
 }

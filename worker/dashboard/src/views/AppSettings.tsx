@@ -1,5 +1,5 @@
 import { useContext, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ChevronLeft, Download, Upload } from "lucide-react";
+import { ChevronLeft, Download, RefreshCw, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { About } from "@/components/About";
 import { Loading, Logo, Problem, code, display, focusRing, useLoad } from "@/components/bits";
@@ -11,9 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { api, errorText, type AppSettings, type Space } from "@/lib/api";
+import { api, errorText, type AppSettings, type Cleanup as CleanupRun, type CleanupStatus, type Space } from "@/lib/api";
 import { checkBackup, readBackup, restore, type Backup as BackupFile, type BackupDoc } from "@/lib/backup";
-import { plural } from "@/lib/format";
+import { BUILD } from "@/lib/build";
+import { ago, fullDate, nextDaily, plural, size } from "@/lib/format";
 import { PALETTES, setPref, usePref } from "@/lib/prefs";
 import { PROGRESS } from "@/lib/upload";
 import { cn } from "@/lib/utils";
@@ -369,6 +370,142 @@ function Readers({ settings, onSaved }: { settings: AppSettings; onSaved: (s: Ap
   );
 }
 
+const OVERDUE = 36 * 3_600_000; // a day and a half: the daily run plus slack for a slow or retried cron
+const took = (ms: number) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
+const deleted = (r: CleanupRun) => `${plural(r.docs, "expired doc")}, ${plural(r.blobs, "unused file")} (${size(r.bytes)})`;
+
+/**
+ * The last cleanup runs, the daily cron's and manual ones, when the next daily one is due, and a button that runs it now.
+ * Run now asks first when expired docs would go: until a cleanup runs, the Expired filter can still bring them back.
+ */
+function Cleanup({ onDeleted }: { onDeleted: () => void }) {
+  const { data, error } = useLoad<CleanupStatus>("/cleanup");
+  const [ran, setRan] = useState<CleanupStatus>();
+  const [busy, setBusy] = useState(false);
+  const [ask, setAsk] = useState({ open: false, docs: 0 }); // `docs` outlives `open` so the closing dialog keeps its title
+  const status = ran ?? data;
+  const last = status?.runs[0];
+  const lastDaily = status?.runs.find((r) => r.trigger === "daily");
+  const next = nextDaily(BUILD.cleanupCron);
+  const run = async () => {
+    setAsk((a) => ({ ...a, open: false }));
+    setBusy(true);
+    try {
+      const s = await api<CleanupStatus>("/cleanup", { method: "POST" });
+      setRan(s);
+      const r = s.runs[0];
+      if (r.docs) onDeleted(); // the sidebar and spaces still count the deleted docs
+      if (r.error) toast.error(`Cleanup failed: ${r.error}`);
+      else toast.success(r.docs || r.blobs ? `Deleted ${deleted(r)}` : "Nothing to clean up");
+    } catch (e) {
+      toast.error(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  /** Counts expired docs now, not at page load, so a doc that expired since still gets asked about. */
+  const start = async () => {
+    setBusy(true);
+    try {
+      const s = await api<CleanupStatus>("/cleanup");
+      setRan(s);
+      if (s.expired) return setAsk({ open: true, docs: s.expired });
+    } catch (e) {
+      return toast.error(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+    await run();
+  };
+  const dt = "text-xs leading-5 font-semibold text-muted-foreground";
+  return (
+    <div className="grid grid-cols-1 gap-4 rounded-xl border bg-card p-4">
+      {error ? (
+        <Problem error={error} />
+      ) : !status ? (
+        <Loading />
+      ) : (
+        <>
+          {lastDaily && Date.now() - lastDaily.at > OVERDUE && (
+            <p role="alert" className="text-sm text-destructive">
+              The daily cleanup last ran {ago(lastDaily.at)}. Check its cron trigger in Cloudflare: Workers &amp; Pages → shelf → Settings → Trigger events.
+            </p>
+          )}
+          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
+            <dt className={dt}>Last run</dt>
+            <dd>
+              {last ? (
+                <>
+                  <span title={fullDate(last.at)}>{ago(last.at)}</span>, {last.trigger === "manual" ? "run by hand" : "daily"} · took {took(last.ms)}
+                </>
+              ) : (
+                "Hasn't run yet"
+              )}
+            </dd>
+            {last && (
+              <>
+                <dt className={dt}>{last.error ? "Failed" : "Deleted"}</dt>
+                <dd className={cn("min-w-0 break-words", last.error && "text-destructive")}>{last.error ? `${last.error}. Deleted ${deleted(last)} before it stopped.` : deleted(last)}</dd>
+              </>
+            )}
+            <dt className={dt}>Expired now</dt>
+            <dd>{status.expired ? `${plural(status.expired, "doc")}, still in the Expired filter until the next run` : "None"}</dd>
+            {next && (
+              <>
+                <dt className={dt}>Next daily run</dt>
+                <dd>{fullDate(next)}</dd>
+              </>
+            )}
+          </dl>
+          {status.runs.length > 1 && (
+            <details className="text-sm">
+              <summary className={cn(focusRing, "w-fit cursor-pointer rounded text-muted-foreground hover:text-foreground")}>Last {status.runs.length} runs</summary>
+              <ul className="mt-2 grid gap-1">
+                {status.runs.map((r) => (
+                  <li key={r.at} className={cn("min-w-0 break-words", r.error && "text-destructive")}>
+                    <span className="text-muted-foreground">
+                      {fullDate(r.at)} · {r.trigger === "manual" ? "by hand" : "daily"} ·
+                    </span>{" "}
+                    {r.error ? `failed: ${r.error}` : deleted(r)}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
+      <div className="grid gap-2">
+        <div>
+          <Button variant="outline" onClick={start} disabled={busy}>
+            <RefreshCw className={cn(busy && "motion-safe:animate-spin")} aria-hidden /> Run now
+          </Button>
+        </div>
+        <Hint>
+          Runs once a day by itself. It deletes docs whose expiry has passed, with their versions, then deletes stored files no version uses any more, such as those of deleted docs. Files uploaded in the last day are kept, so an upload in progress never loses them.
+        </Hint>
+      </div>
+      <Dialog open={ask.open} onOpenChange={(open) => setAsk((a) => ({ ...a, open }))}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete {plural(ask.docs, "expired doc")} for good?</DialogTitle>
+            <DialogDescription>
+              The Expired filter can bring {ask.docs === 1 ? "it" : "them"} back until a cleanup runs. This one deletes {ask.docs === 1 ? "it" : "them"} with every version, and the links stop working for good.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setAsk((a) => ({ ...a, open: false }))}>
+              Cancel
+            </Button>
+            <Button type="button" variant="destructive" onClick={run}>
+              Delete and clean up
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 /** Downloads every doc, or one space's, as a tar with a shelf.json describing it, with or without password hashes. */
 function Backup() {
   const spaces = useContext(SpacesContext);
@@ -565,6 +702,10 @@ export function AppSettingsView({ onSpacesChanged }: { onSpacesChanged: () => vo
           <section className="grid grid-cols-1 gap-2.5">
             <h2 className="text-base leading-none font-bold">Slugs</h2>
             <SlugForm saved={s} onSaved={setSaved} />
+          </section>
+          <section className="grid grid-cols-1 gap-2.5">
+            <h2 className="text-base leading-none font-bold">Cleanup</h2>
+            <Cleanup onDeleted={onSpacesChanged} />
           </section>
           <section className="grid grid-cols-1 gap-2.5">
             <h2 className="text-base leading-none font-bold">Readers</h2>
