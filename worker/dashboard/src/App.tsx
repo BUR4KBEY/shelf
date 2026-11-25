@@ -57,10 +57,13 @@ export function App() {
   // On a wide screen the sidebar folds down to a rail; the choice is remembered.
   const [side, setSide] = useState(() => localStorage.getItem("sidebar") !== "closed");
   const sideWidth = useMotionValue(side ? "19rem" : "3.5rem"); // the sidebar column's width, slid between the full sidebar and the rail
+  const wantSide = useRef(side); // where the slide is heading; `side` swaps the sidebar for the rail only once it has folded
   const toggleSide = () => {
-    localStorage.setItem("sidebar", side ? "closed" : "open");
-    animate(sideWidth, side ? "3.5rem" : "19rem", { duration: reduce ? 0 : 0.25, ease: "easeOut" });
-    setSide(!side);
+    wantSide.current = !wantSide.current;
+    localStorage.setItem("sidebar", wantSide.current ? "open" : "closed");
+    // Unfolding shows the sidebar at once and the widening column uncovers it; folding keeps it until the column has closed over it.
+    if (wantSide.current) setSide(true);
+    animate(sideWidth, wantSide.current ? "19rem" : "3.5rem", { duration: reduce ? 0 : 0.25, ease: "easeOut" }).then(() => setSide(wantSide.current));
   };
   const [palette, setPalette] = useState(false);
   const [email, setEmail] = useState("");
