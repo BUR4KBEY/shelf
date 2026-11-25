@@ -1,7 +1,7 @@
 // shelf in one process, for the Docker image: the Worker (src/) on Bun, with the stand-ins in store.ts for its bindings.
 // A password (SHELF_PASSWORD) signs the owner in to the dashboard, where Cloudflare Access does on Cloudflare.
 import { timingSafeEqual } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import migrations from "shelf:migrations";
 import { sameString } from "../src/auth";
@@ -38,9 +38,14 @@ const env = {
 const signIns = rateLimit(10, 60);
 
 // Sessions are signed with a key kept in the data volume and the password, so changing the password signs everyone out.
-const secretFile = Bun.file(join(DATA, "session.key"));
-if (!(await secretFile.exists())) await Bun.write(secretFile, hex(crypto.getRandomValues(new Uint8Array(32)).buffer), { mode: 0o600 });
-const sessionKey = await crypto.subtle.importKey("raw", new TextEncoder().encode(`${await secretFile.text()}:${PASSWORD}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+const secretPath = join(DATA, "session.key");
+let secret = await readFile(secretPath, "utf8").catch((e) => (e.code === "ENOENT" ? null : Promise.reject(e)));
+if (secret === null) {
+  secret = hex(crypto.getRandomValues(new Uint8Array(32)).buffer);
+  // `wx`: never overwrite a key another process just wrote. writeFile's mode applies on create, unlike Bun.write's.
+  await writeFile(secretPath, secret, { mode: 0o600, flag: "wx" });
+}
+const sessionKey = await crypto.subtle.importKey("raw", new TextEncoder().encode(`${secret}:${PASSWORD}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
 const SESSION_DAYS = 30;
 const sign = async (exp: number) => hex(await crypto.subtle.sign("HMAC", sessionKey, new TextEncoder().encode(`session:${exp}`)));
 

@@ -39,13 +39,19 @@ jobs:
         with:
           bun-version: "1.4"
       - run: bun test selfhost
-      # The image builds, starts and serves: the dashboard sends a visitor to sign in.
+      # The image builds, starts and serves: the dashboard sends a visitor to sign in, and a session outlives a restart.
       - run: docker build --build-arg COMMIT=${{ github.sha }} -t shelf .
       - run: |
-          docker run -d --name shelf -p 8080:8080 -e SHELF_PASSWORD=ci-password-only shelf
-          for _ in $(seq 30); do curl -sf localhost:8080/llms.txt > /dev/null && break; sleep 1; done
+          up() { for _ in $(seq 30); do curl -sf localhost:8080/llms.txt > /dev/null && return; sleep 1; done; return 1; }
+          docker run -d --name shelf -p 8080:8080 -v shelf-data:/data -e SHELF_PASSWORD=ci-password-only shelf
+          up
           test "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -H 'accept: text/html' localhost:8080/dashboard)" = "303 http://localhost:8080/login?next=%2Fdashboard"
-          test "$(curl -s -o /dev/null -w '%{http_code}' -d password=ci-password-only localhost:8080/login)" = 303
+          test "$(curl -s -c jar -o /dev/null -w '%{http_code}' -d password=ci-password-only localhost:8080/login)" = 303
+          test "$(curl -s -b jar -o /dev/null -w '%{http_code}' localhost:8080/dashboard/api/docs)" = 200
+          docker restart shelf
+          up
+          test "$(curl -s -b jar -o /dev/null -w '%{http_code}' localhost:8080/dashboard/api/docs)" = 200
+          test "$(docker exec shelf stat -c %a /data/session.key)" = 600
       - if: failure()
         run: docker logs shelf
 
