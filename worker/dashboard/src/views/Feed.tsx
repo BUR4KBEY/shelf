@@ -28,6 +28,8 @@ const FILTERS: [string, string, (d: Doc) => boolean][] = [
 const FOLDED = 3;
 /** The Worker sends this many uploads at most. */
 const CAP = 200;
+/** Entries listed before "Show older". Building all 200 cards at once stalls a click for a quarter second; filters and search still cover every upload. */
+const LISTED = 50;
 
 /** The home screen: what was uploaded and by whom, newest first, a day at a time. Memoized, like every page, so folding the sidebar doesn't re-render it. */
 export const FeedView = memo(function FeedView({ docs, uploads, colorOf, onChanged }: { docs: Doc[]; uploads: Activity[]; colorOf: (keyId: string | null) => string; onChanged: () => void }) {
@@ -53,6 +55,20 @@ export const FeedView = memo(function FeedView({ docs, uploads, colorOf, onChang
     [uploads, byId, space, project, keep, q],
   );
   const days = useMemo(() => byDay(shown, (u) => u.docId), [shown]);
+  const [showAll, setShowAll] = useState(false);
+  const cards = days.reduce((n, d) => n + d.entries.length, 0);
+  // The first LISTED entries, a day cut short keeping its full count. Entries keep their identity, so their memo holds.
+  const listed = useMemo(() => {
+    if (showAll) return days;
+    let left = LISTED;
+    return days
+      .map((d) => {
+        const entries = d.entries.slice(0, Math.max(left, 0));
+        left -= entries.length;
+        return { ...d, entries };
+      })
+      .filter((d) => d.entries.length);
+  }, [days, showAll]);
   // Selection is by doc: deleting removes every version, so all of a doc's entries check together.
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -183,7 +199,7 @@ export const FeedView = memo(function FeedView({ docs, uploads, colorOf, onChang
 
           {shown.length === 0 && <p className="pt-4 text-muted-foreground">{q ? `No upload has “${query.trim()}” in its doc's title, slug, id or project, or in its message.` : "No uploads match this filter."}</p>}
 
-          {days.map(({ day, count, entries }) => (
+          {listed.map(({ day, count, entries }) => (
             <section key={day} aria-label={dayName(day)} className="flex flex-col gap-3">
               <header className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
                 <h2 className={cn(display, "text-4xl leading-none")}>{dayName(day)}</h2>
@@ -199,7 +215,13 @@ export const FeedView = memo(function FeedView({ docs, uploads, colorOf, onChang
             </section>
           ))}
 
-          {uploads.length >= CAP && <p className="text-sm text-muted-foreground">These are the newest {CAP} uploads. Open a doc from the list to see its whole history.</p>}
+          {cards > LISTED && (
+            <Button variant="outline" className="w-fit" aria-pressed={showAll} onClick={() => setShowAll(!showAll)}>
+              {showAll ? "Show fewer" : `Show ${cards - LISTED} older`}
+            </Button>
+          )}
+
+          {uploads.length >= CAP && (showAll || cards <= LISTED) && <p className="text-sm text-muted-foreground">These are the newest {CAP} uploads. Open a doc from the list to see its whole history.</p>}
 
           {selecting && (
             <div role="toolbar" aria-label="Selected docs" className="sticky bottom-4 z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-card py-2 pr-2 pl-4 shadow-lg">
