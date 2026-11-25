@@ -8,7 +8,7 @@ There are two ways to use it without installing anything:
 - **MCP:** connect to \`${origin}/mcp\` (Streamable HTTP) with the header \`Authorization: Bearer <key>\`. Tools: publish, read_doc, list_docs, get_doc, update_doc, delete_doc.
 - **HTTP:** the API below, with curl or any HTTP client.
 
-If you have no key, ask the user for one. They mint keys in ${origin}/dashboard under Keys. Never put the key in a page you publish.
+Look for the key in \`SHELF_KEY\`: first in the environment, then in a \`.env\` file at the root of the project you're working in. If no key is set, ask the user for one. They mint keys in ${origin}/dashboard under Keys. To keep it, offer to export \`SHELF_URL\` and \`SHELF_KEY\` in their shell profile, and write it only once they approve. Never print the key, and never put it in a page you publish. \`SHELF_URL\` in the same places names the user's server; if it is set to another address, read that server's \`/llms.txt\` and use it instead.
 
 ## Read a link
 
@@ -25,7 +25,7 @@ If you have no key, ask the user for one. They mint keys in ${origin}/dashboard 
 Push a manifest of paths and SHA-256 hashes. If the server lacks any of those files, it answers \`{"missing": [<sha256>...]}\`; upload each one, then send the same manifest again.
 
 \`\`\`sh
-KEY=...                     # the API key
+KEY=\${SHELF_KEY:-$(sed -n 's/^SHELF_KEY=//p' .env)}   # the environment first, then the project's .env
 SHA=$(sha256sum plan.html | cut -d' ' -f1)
 M="{\\"files\\":[{\\"path\\":\\"plan.html\\",\\"sha256\\":\\"$SHA\\"}]}"
 curl -sS -H "Authorization: Bearer $KEY" -d "$M" ${origin}/api/push                               # {"missing":["<sha>"]}

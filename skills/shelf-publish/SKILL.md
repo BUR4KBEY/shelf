@@ -6,11 +6,21 @@ description: Use when the user wants a shareable link for a document, plan, repo
 # Publish with shelf
 
 `shelf` publishes a file or folder to the user's own server and prints a link.
-Run `shelf` if it is on PATH. If it is not, don't ask the user to install it:
-use the server's `shelf` MCP tools if you have them, or else fetch
-`https://<their-domain>/llms.txt` and publish with curl as it describes, with
-the API key the user gives you. Ask the user for the domain and key when you
-don't know them.
+Everyone runs their own server, so never guess its address.
+
+**Find the server and key.** Look for `SHELF_URL` (the server, e.g.
+`https://shelf.example.com`) and `SHELF_KEY` (the API key) in the environment
+first, then in a `.env` file at the root of the project you're working in.
+Check that they are set without printing the key. Ask the user only for what
+neither place has. To keep a key they give you, offer to export both in their
+shell profile (every project and MCP client reads it) and write it only once
+they approve. Never put the key in a page you publish.
+
+**Pick a way to publish.** Run `shelf` if it is on PATH; it reads `SHELF_URL`
+and `SHELF_KEY` from the environment, so export them first when they come
+from `.env`. If it is not on PATH, don't ask the user to install it: use the
+server's `shelf` MCP tools if you have them, or else fetch `$SHELF_URL/llms.txt`
+and publish with curl as it describes.
 
 ## Steps
 
