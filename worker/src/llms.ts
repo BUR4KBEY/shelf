@@ -44,6 +44,7 @@ A folder is a manifest with many paths and an \`index.html\`; pages link to each
 - \`password\`: readers must enter it (8+ characters). \`null\` removes it.
 - \`expires\`: \`30m\`, \`12h\`, \`7d\`, \`2w\`, up to the owner's limit (30 days unless changed); \`0\` or \`null\` for never. Left out, a new doc gets the owner's default.
 - \`title\`, \`message\`: shown in listings and version history.
+- \`project\`: groups docs in your space, e.g. one per thing you build (up to 64 characters). It exists as long as a doc names it, so there is nothing to create first. Reuse a name \`GET /api/docs\` already shows (case doesn't matter; the existing spelling is kept). A new version keeps the doc's project unless you send one; \`""\` or \`null\` removes it.
 
 ## Quota
 
@@ -68,11 +69,11 @@ HTML and SVG are served in a sandbox with an opaque origin:
 Your key belongs to one space, chosen by the owner. It sees and changes only that space's docs: another space's doc answers 404, and a slug another space uses answers 409 ("slug is taken"). The owner may also stop a space's keys from deleting (403).
 
 \`\`\`sh
-curl -sS -H "Authorization: Bearer $KEY" ${origin}/api/docs                 # list, favorites first
+curl -sS -H "Authorization: Bearer $KEY" ${origin}/api/docs                 # list, favorites first; ?project=<name> for one project
 curl -sS -H "Authorization: Bearer $KEY" ${origin}/api/docs/<ref>           # detail and version history
 curl -sS -X PATCH -H "Authorization: Bearer $KEY" -d '{"expires":"7d"}' ${origin}/api/docs/<ref>
 curl -sS -X DELETE -H "Authorization: Bearer $KEY" ${origin}/api/docs/<ref>
 \`\`\`
 
-PATCH takes \`slug\`, \`password\`, \`expires\`, \`title\` and \`favorite\`.
+PATCH takes \`slug\`, \`password\`, \`expires\`, \`title\`, \`project\` and \`favorite\`.
 `;

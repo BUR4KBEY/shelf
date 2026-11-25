@@ -19,6 +19,7 @@ export interface Doc {
   created_at: number;
   updated_at: number;
   space_id: string;
+  project: string | null;
 }
 
 /**
@@ -109,6 +110,8 @@ interface Settings {
   password?: string | null;
   expires?: string | null;
   favorite?: boolean;
+  /** Groups docs inside a space. A name the space already has, in any case, keeps that spelling. */
+  project?: string | null;
   /** Dashboard only: the space the doc belongs to. */
   space?: string;
 }
@@ -133,6 +136,9 @@ async function settingsColumns(env: Env, s: Settings, doc: Doc | null, caller: C
     return json({ error: `expires: a duration up to ${maxExpires || "the owner's limit"} like 30m, 12h, 7d or 2w; 0 or null for never` }, 400);
   }
   if (s.favorite !== undefined && typeof s.favorite !== "boolean") return json({ error: "favorite: boolean" }, 400);
+  if (!isOpt(s.project, (v) => typeof v === "string" && v.trim().length <= 64 && !/[\x00-\x1f]/.test(v))) {
+    return json({ error: "project: up to 64 chars; empty or null for none" }, 400);
+  }
   if (s.space !== undefined) {
     // A key stays in its own space: only the dashboard moves docs between spaces.
     if (caller) return json({ error: "space: only the dashboard can move a doc to another space" }, 403);
@@ -149,6 +155,13 @@ async function settingsColumns(env: Env, s: Settings, doc: Doc | null, caller: C
   if (s.expires !== undefined) cols.expires_at = s.expires === null || expiresMs === 0 ? null : Date.now() + expiresMs;
   if (s.favorite !== undefined) cols.favorite = s.favorite ? 1 : 0;
   if (s.space !== undefined) cols.space_id = s.space;
+  if (s.project !== undefined) {
+    const project = s.project?.trim() || null;
+    // Agents drift in case, so "Billing" joins an existing "billing" instead of starting a second project.
+    const space = (cols.space_id as string | undefined) ?? doc?.space_id ?? caller?.space ?? "default";
+    const known = project && (await env.DB.prepare("SELECT project FROM docs WHERE space_id = ? AND project = ? COLLATE NOCASE LIMIT 1").bind(space, project).first<{ project: string }>());
+    cols.project = known ? known.project : project;
+  }
 
   const slug = "slug" in cols ? cols.slug : (doc?.slug ?? null);
   const hash = "password_hash" in cols ? cols.password_hash : (doc?.password_hash ?? null);
@@ -173,6 +186,7 @@ const docJson = (req: Request, d: Doc) => ({
   createdAt: d.created_at,
   updatedAt: d.updated_at,
   space: d.space_id,
+  project: d.project,
   url: `${new URL(req.url).origin}/view/${d.slug ?? d.id}`,
 });
 
@@ -343,8 +357,11 @@ export async function putBlob(req: Request, env: Env, sha: string, keyId: string
   return new Response(null, { status: 204 });
 }
 
-export async function listDocs(req: Request, env: Env, scope: string | null): Promise<Response> {
-  const { results } = await env.DB.prepare("SELECT * FROM docs WHERE ?1 IS NULL OR space_id = ?1 ORDER BY favorite DESC, updated_at DESC").bind(scope).all<Doc>();
+/** Docs in `scope` (null: every space), favorites first; `?project=` narrows them to one project, in any case. */
+export async function listDocs(req: Request, env: Env, scope: string | null, project = new URL(req.url).searchParams.get("project")): Promise<Response> {
+  const { results } = await env.DB.prepare("SELECT * FROM docs WHERE (?1 IS NULL OR space_id = ?1) AND (?2 IS NULL OR project = ?2 COLLATE NOCASE) ORDER BY favorite DESC, updated_at DESC")
+    .bind(scope, project)
+    .all<Doc>();
   return json(results.map((d) => docJson(req, d)));
 }
 
