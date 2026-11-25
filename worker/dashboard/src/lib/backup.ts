@@ -1,5 +1,5 @@
 import { api } from "./api";
-import { progress } from "./upload";
+import { progress, uploadBlobs } from "./upload";
 
 /** One doc in a backup's shelf.json, as the Worker's export writes it (src/backup.ts). */
 export type BackupDoc = {
@@ -75,12 +75,9 @@ export const checkBackup = (backup: Backup) => api<{ conflicts: string[]; missin
  * or, with `copy`, imported with new links. Spaces and keys go with every chunk; the Worker adds each only once.
  */
 export async function restore(backup: Backup, blobs: Map<string, Uint8Array>, missing: string[], conflicts: string[], copy: boolean): Promise<ImportResult> {
-  for (const [i, sha] of missing.entries()) {
-    progress(`Uploading file ${i + 1} of ${missing.length}…`, i, missing.length);
-    const bytes = blobs.get(sha);
-    if (!bytes) throw new Error("The backup is missing a file shelf.json lists. Nothing was imported.");
-    await api(`/blobs/${sha}`, { method: "PUT", body: new Blob([bytes as BlobPart]) });
-  }
+  if (missing.some((sha) => !blobs.has(sha))) throw new Error("The backup is missing a file shelf.json lists. Nothing was imported.");
+  // Nothing is imported until every blob is in.
+  await uploadBlobs(missing, (sha) => new Blob([blobs.get(sha)! as BlobPart]));
 
   const skip = new Set(copy ? [] : conflicts);
   const docs = backup.docs.filter((d) => !skip.has(d.id));
