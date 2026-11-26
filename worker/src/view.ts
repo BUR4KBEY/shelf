@@ -53,7 +53,7 @@ const BOT = /bot|crawl|spider|slurp|preview|fetch|http|curl|wget|python|node|go-
 /**
  * Records a reader opening a doc. Not counted: bots, link previews, prefetches, the owner opening it from the dashboard
  * (ownerOpen's `owner` cookie) and media seeks. `visitor` hashes the IP and browser with the day; neither is stored.
- * Opens add to one row per visitor and 15-minute slot (migrations/0010_view_counts.sql), so reloads can't grow the table,
+ * Opens add to one row per visitor and 15-minute slot (migrations/0011_view_counts.sql), so reloads can't grow the table,
  * and at most VIEW_LIMIT opens per IP a minute (wrangler.jsonc) count at all.
  */
 async function recordView(req: Request, env: Env, doc: Doc, n: number): Promise<void> {
