@@ -1,4 +1,4 @@
-# Keeps the SHA-pinned actions and digest-pinned base images current.
+# Keeps the SHA-pinned actions, digest-pinned base images and the Worker's npm packages current.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -9,3 +9,11 @@ updates:
     directory: /worker
     schedule:
       interval: weekly
+  # One grouped PR a week for the Worker's packages instead of one per package.
+  - package-ecosystem: npm
+    directory: /worker
+    schedule:
+      interval: weekly
+    groups:
+      worker:
+        patterns: ["*"]
