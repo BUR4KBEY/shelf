@@ -16,19 +16,19 @@ Either click the button above, which creates the Worker, R2 bucket and D1 databa
 cd worker
 pnpm install
 pnpm exec wrangler login
-pnpm run deploy    # deploys (creating the bucket and database on first run), then applies D1 migrations
+pnpm run deploy    # applies D1 migrations, then deploys; the first run deploys once before, to create the bucket and database
 ```
 
 Then, in the Cloudflare dashboard:
 
 1. **Add a custom domain** to the `shelf` Worker (Workers & Pages → shelf → Settings → Domains & Routes).
-2. **Protect the dashboard with Cloudflare Access.** With an API token that has *Access: Apps and Policies → Edit*:
+2. **Protect the dashboard with Cloudflare Access.** With an API token that has *Access: Apps and Policies → Edit* and *Workers Scripts → Edit*:
 
    ```sh
    CLOUDFLARE_API_TOKEN=... pnpm run setup:access -- --domain your-domain --email you@example.com
    ```
 
-   It creates (or updates) an allow-policy for your email and an Access app for `your-domain/dashboard`. Rerun it to change the emails. The Worker refuses `/dashboard` unless Access signed the request in, so `workers.dev` URLs can't reach it.
+   It creates (or updates) an allow-policy for your email and an Access app for `your-domain/dashboard`, then stores that app's audience tag on the Worker as the `ACCESS_AUD` secret. Rerun it to change the emails. The Worker refuses `/dashboard` unless *this* Access app signed the request in: `workers.dev` URLs can't reach it, and neither can people another Access app on the same domain lets in. Until the script has run, the dashboard says to run it.
 
 `/view/*` and `/api/*` stay public. Readers need the link (and the password if you set one), and the API needs a key.
 
@@ -42,7 +42,7 @@ docker run -d --name shelf -p 8080:8080 -v shelf-data:/data \
   ghcr.io/bur4kbey/shelf:latest
 ```
 
-Open `http://localhost:8080/dashboard` and sign in with `SHELF_PASSWORD`; that password is what Cloudflare Access does on Cloudflare. Everything else (the API, the CLI, MCP, `/view`) works as on Cloudflare: point the CLI at your URL.
+Open `http://localhost:8080/dashboard` and sign in with `SHELF_PASSWORD`; that password is what Cloudflare Access does on Cloudflare. **Sign out** (next to your name at the bottom of the sidebar) signs every browser out, including any copy of the cookie someone else holds: it replaces the session key in the data volume. Everything else (the API, the CLI, MCP, `/view`) works as on Cloudflare: point the CLI at your URL.
 
 | Variable | |
 |---|---|
@@ -110,7 +110,7 @@ shelf get https://your-domain/view/q3-plan --password-stdin
 shelf rm q3-plan
 ```
 
-`SHELF_URL` and `SHELF_KEY` override the saved login. `--json` on `push`, `ls` and `set` prints machine-readable output.
+`SHELF_URL` and `SHELF_KEY` override the saved login; a `SHELF_URL` for another server needs its `SHELF_KEY` too, so the saved key is never sent elsewhere. `--json` on `push`, `ls` and `set` prints machine-readable output. `shelf get` saves under the doc's file name, but refuses a dotfile such as `.npmrc` unless you name it with `-o`.
 
 ## Agents
 
@@ -187,7 +187,7 @@ curl -H "Authorization: Bearer $KEY" -d '{"ids":["<ref>","<ref>"],"delete":true}
 | `/view/<ref>/guide` | `guide.html` in a folder; `/docs/` serves `docs/index.html`. |
 | `?raw` | Markdown source instead of the rendered page. |
 
-- HTML, SVG, rendered Markdown and every other type except PDF get a sandbox CSP with an opaque origin. Inline scripts run, but they can't reach cookies, storage, the network, forms or frames.
+- HTML, SVG, rendered Markdown and every other type except PDF get a sandbox CSP with an opaque origin. Inline scripts run, but they can't reach cookies, storage, forms or frames, and can't fetch or connect anywhere. They can still load images from any https URL and open links, so a doc's script can send what it shows to another site: only share docs whose scripts you trust.
 - PDFs, images, audio, video, text, CSS and JS are served inline. Any other type downloads.
 - Range requests work, so video seeking works.
 - Password docs show a password form. The unlock lasts 30 days, until the password changes. Agents send `X-Doc-Password: <password>` instead. Password attempts are limited to 10 per minute per IP and doc.
@@ -212,7 +212,7 @@ Entering the shell installs git hooks that run gofmt, `go vet`, the Worker typec
 
 Each pull request from a branch in this repo gets a [Worker Preview](https://developers.cloudflare.com/workers/previews/) at `https://pr-<number>-shelf.<subdomain>.workers.dev`, commented on the PR and deleted when it closes (`.github/workflows/preview.yml`). Previews use their own `shelf-preview` R2 bucket and D1 database, never production data.
 
-Pull requests from forks never deploy on their own: the preview runs the PR's code with the Cloudflare token. Review the code, then comment `/deploy-preview <sha>` on the PR with the commit you reviewed (7+ characters; only the repo owner's comments count). It deploys only if that commit is still the PR's head, so a push after your review can't slip in. You can also run Actions → preview → **Run workflow** with the PR number and SHA. Push new commits and you have to deploy again. The preview is deleted when the PR closes.
+Pull requests from forks never deploy on their own: the preview runs the PR's code with the Cloudflare token. Review the code, then comment `/deploy-preview <sha>` on the PR with the full 40-character id of the commit you reviewed (a short prefix could match a commit made to share it; only the repo owner's comments count). It deploys only if that commit is still the PR's head, so a push after your review can't slip in. You can also run Actions → preview → **Run workflow** with the PR number and SHA. Push new commits and you have to deploy again. The preview is deleted when the PR closes.
 
 Every deploy sets a `preview` commit status: pending while it deploys, then success with the preview's URL, or failure. Make `preview` a required status check in the `main` ruleset, and fork PRs wait as *Expected* until you deploy them.
 
