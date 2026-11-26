@@ -157,4 +157,14 @@ function scheduleCleanup() {
 }
 scheduleCleanup();
 
+// As PID 1 in Docker, Bun gets no default signal handlers: without these, `docker stop` waits 10 s, then kills.
+// Finishes the requests in flight, then closes the database so its WAL is checkpointed.
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, async () => {
+    await server.stop();
+    db.close();
+    process.exit(0);
+  });
+}
+
 console.log(`shelf listening on ${server.url}, data in ${DATA}`);
