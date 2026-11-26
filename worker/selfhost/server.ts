@@ -115,6 +115,7 @@ function forWorker(req: Request, ip: string): Request {
   return new Request(url, { method: req.method, headers, body: req.body, redirect: "manual" });
 }
 
+let warnedProxy = false;
 const server = Bun.serve({
   port: PORT,
   idleTimeout: 120, // a large backup export can take a while to start streaming
@@ -122,6 +123,11 @@ const server = Bun.serve({
     // The proxy appends the address it saw, so the last entry is the only one a client can't forge.
     const ip = (TRUST_PROXY && raw.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim()) || server.requestIP(raw)?.address || "unknown";
     const req = forWorker(raw, ip);
+    // Seen once: a proxy in front, with SHELF_TRUST_PROXY off. Only a hint in the log; the headers stay ignored.
+    if (!TRUST_PROXY && !warnedProxy && (raw.headers.has("x-forwarded-proto") || raw.headers.has("x-forwarded-for"))) {
+      warnedProxy = true;
+      console.warn("Requests arrive through a proxy, but SHELF_TRUST_PROXY is off: behind HTTPS, links say http:// and the dashboard refuses changes. Set SHELF_TRUST_PROXY=1 if only the proxy can reach this port.");
+    }
     const path = new URL(req.url).pathname;
 
     if (path === "/login") {

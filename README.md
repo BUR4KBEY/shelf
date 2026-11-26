@@ -125,6 +125,8 @@ Setup for each client: [docs/agents.md](docs/agents.md).
 docker run -d --name shelf --restart unless-stopped -p 8080:8080 -v shelf-data:/data -e SHELF_PASSWORD='a long password' ghcr.io/bur4kbey/shelf:latest
 ```
 
+Behind a reverse proxy or tunnel? Add `-e SHELF_TRUST_PROXY=1`.
+
 Full steps for both: [docs/deploy.md](docs/deploy.md).
 
 **CLI:** install it on your machine, then run `shelf login`.

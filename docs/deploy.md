@@ -39,7 +39,7 @@ Open `http://localhost:8080/dashboard` and sign in with `SHELF_PASSWORD`; that p
 | Variable | |
 |---|---|
 | `SHELF_PASSWORD` | Required, 12 characters or more. Signs you in to the dashboard for 30 days; changing it signs every browser out. |
-| `SHELF_TRUST_PROXY` | `1` behind a reverse proxy (Caddy, nginx, Traefik, a Cloudflare Tunnel): the client's IP, scheme and host come from `X-Forwarded-For` (its last entry), `X-Forwarded-Proto` and `X-Forwarded-Host`. Leave it off when the port is reachable without the proxy, or anyone can forge them. |
+| `SHELF_TRUST_PROXY` | `1` behind a reverse proxy (Caddy, nginx, Traefik, a Cloudflare Tunnel): the client's IP, scheme and host come from `X-Forwarded-For` (its last entry), `X-Forwarded-Proto` and `X-Forwarded-Host`. Leave it off when the port is reachable without the proxy, or anyone can forge them. When it's off and a request comes through a proxy anyway, the log says so once. |
 | `SHELF_EMAIL` | Shown in the dashboard's sidebar (`owner` unless set). |
 | `PORT` | `8080` unless set. |
 
