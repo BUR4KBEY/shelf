@@ -53,6 +53,8 @@ aurs:
       email: rectfc@gmail.com
 
 # Prebuilt binaries for the flake: each release commits nix/package.nix to main with the new URLs and hashes.
+# main only takes PRs; NIX_DEPLOY_KEY is a write deploy key, and deploy keys may bypass main's ruleset.
+# Like the AUR, only the latest release updates it.
 nix:
   - name: shelf
     path: nix/package.nix
@@ -60,12 +62,15 @@ nix:
     description: CLI for shelf, publish HTML pages and docs and get a link back
     license: mit
     main_program: shelf
-    formatter: nixfmt
     commit_msg_template: "chore(nix): update shelf to {{ .Tag }}"
+    skip_upload: '{{ if or (eq (envOrDefault "NIX_DEPLOY_KEY" "") "") (eq (envOrDefault "MAKE_LATEST" "true") "false") }}true{{ else }}false{{ end }}'
     repository:
       owner: BUR4KBEY
       name: shelf
       branch: main
+      git:
+        url: git@github.com:BUR4KBEY/shelf.git
+        private_key: '{{ envOrDefault "NIX_DEPLOY_KEY" "" }}'
     commit_author:
       name: BUR4KBEY
       email: rectfc@gmail.com
