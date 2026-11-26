@@ -21,7 +21,8 @@ env:
 jobs:
   # Picks the PR and the exact commit to deploy, and marks the `preview` status pending. Runs no PR code.
   target:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    # Dependabot's runs get no secrets, so its PRs would always fail to deploy; no-preview-status marks them instead.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -111,9 +112,11 @@ jobs:
             gh api "repos/$GH_REPO/statuses/$SHA" -f state=failure -f context=preview -f description="Deploy failed" -f target_url="$RUN_URL" > /dev/null
           fi
 
-  # `preview` is a required check, so fork PRs would wait forever. Marks it done without running their code.
-  fork-status:
-    if: github.event_name == 'pull_request_target' && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name != github.repository
+  # `preview` is a required check, so fork and Dependabot PRs would wait forever. Marks it done without running their code.
+  no-preview-status:
+    if: >-
+      github.event_name == 'pull_request_target' && github.event.action != 'closed' &&
+      (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -121,7 +124,8 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.event.pull_request.head.sha }}
-        run: gh api "repos/$GH_REPO/statuses/$SHA" -f state=success -f context=preview -f description="Fork PRs get no preview" > /dev/null
+          WHO: ${{ github.event.pull_request.user.login == 'dependabot[bot]' && 'Dependabot' || 'Fork' }}
+        run: gh api "repos/$GH_REPO/statuses/$SHA" -f state=success -f context=preview -f description="$WHO PRs get no preview" > /dev/null
 
   cleanup:
     if: github.event_name == 'pull_request_target' && github.event.action == 'closed'
