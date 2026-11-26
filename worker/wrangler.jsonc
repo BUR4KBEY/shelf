@@ -18,7 +18,7 @@
     { "name": "VIEW_LIMIT", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } }
   ],
   // Daily: delete expired docs and blobs nothing references.
-  "triggers": { "crons": ["17 3 * * *"] },
+  "triggers": { "crons": ["0 0 * * *"] },
   // The dashboard trusts ctx.access only for the audience in the ACCESS_AUD secret, which `pnpm run setup:access` stores.
   // Until it runs, a deployed dashboard refuses everyone. `pnpm run dev` and the tests pass "local-dev", as access.dev below.
   // Local `wrangler dev` only: pretend Cloudflare Access signed this user in, so the dashboard works offline.
