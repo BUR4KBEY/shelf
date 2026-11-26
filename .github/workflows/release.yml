@@ -28,10 +28,15 @@ jobs:
           args: release --clean
           workdir: cli
         env:
+          # A rerun also sees the cli/ tag below on this commit; goreleaser must release the v* tag.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAKE_LATEST: ${{ steps.release.outputs.latest }}
           AUR_KEY: ${{ secrets.AUR_KEY }}
           NIX_DEPLOY_KEY: ${{ secrets.NIX_DEPLOY_KEY }}
+      # The Go module is cli/, so `go install …/cli/cmd/shelf@latest` only sees tags named cli/v1.2.3.
+      # After the release, so a failed one doesn't publish a module version: the Go proxy keeps it for good.
+      - run: git push origin "$GITHUB_SHA:refs/tags/cli/$GITHUB_REF_NAME"
 
   # The self-hosted server (worker/Dockerfile) at ghcr.io/<owner>/shelf: v1.2.3 is tagged 1.2.3, 1.2, and latest if it is
   # the highest release.
