@@ -14,14 +14,14 @@ Entering the shell installs git hooks that run gofmt, `go vet`, the Worker typec
 
 Each pull request from a branch in this repo gets a [Worker Preview](https://developers.cloudflare.com/workers/previews/) at `https://pr-<number>-shelf.<subdomain>.workers.dev`, commented on the PR and deleted when it closes (`.github/workflows/preview.yml`). Previews use their own `shelf-preview` R2 bucket and D1 database, never production data.
 
-Pull requests from forks never deploy on their own: the preview runs the PR's code with the Cloudflare token. Review the code, then comment `/deploy-preview <sha>` on the PR with the full 40-character id of the commit you reviewed (a short prefix could match a commit made to share it; only the repo owner's comments count). It deploys only if that commit is still the PR's head, so a push after your review can't slip in. You can also run Actions → preview → **Run workflow** with the PR number and SHA. Push new commits and you have to deploy again. The preview is deleted when the PR closes.
+Pull requests from forks never get a preview: the preview runs the PR's code with the Cloudflare token, which can also change the production Worker and every D1 database in the account. To try a fork's change, check it out and run it locally with `devenv up`.
 
-Every deploy sets a `preview` commit status: pending while it deploys, then success with the preview's URL, or failure. Make `preview` a required status check in the `main` ruleset, and fork PRs wait as *Expected* until you deploy them.
+Every deploy sets a `preview` commit status: pending while it deploys, then success with the preview's URL, or failure. Make `preview` a required status check in the `main` ruleset. Fork PRs get a success status that says they have no preview, without running their code, so they can still merge.
 
 To set it up on your own deployment:
 
 1. Create the bucket and database (`pnpm exec wrangler r2 bucket create shelf-preview`, `pnpm exec wrangler d1 create shelf-preview`) and put the database ID in `previews.d1_databases` in `wrangler.jsonc` and in `wrangler.preview-migrations.jsonc`.
-2. Create an account API token limited to this account with *Workers* → **Editor** scoped to the `shelf` Worker only, and *D1* → **Edit**. It needs no R2 permission: deploying a binding doesn't need access to the bucket. D1 can't be scoped to one database yet, so the token can still edit every D1 database in the account; that is why fork PRs only deploy by hand. Add it and the account ID as repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+2. Create an account API token limited to this account with *Workers* → **Editor** scoped to the `shelf` Worker only, and *D1* → **Edit**. It needs no R2 permission: deploying a binding doesn't need access to the bucket. D1 can't be scoped to one database yet, so the token can still edit every D1 database in the account; that is why fork PRs never deploy. Add it and the account ID as repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 3. For the dashboard to work in previews, protect the Worker's previews with Access: Workers & Pages → shelf → Access → **Protect this Worker behind Access** → *Previews only*. Then set `previews.vars` in `wrangler.jsonc`: `ACCESS_TEAM_DOMAIN` (`<team>.cloudflareaccess.com`) and `ACCESS_AUD` (the Access app's audience tag). Cloudflare doesn't set `ctx.access` on preview URLs, so the Worker checks the Access token itself.
 
 ## Try-it preview
