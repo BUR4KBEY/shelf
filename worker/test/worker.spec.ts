@@ -125,8 +125,44 @@ describe("versions", () => {
     await publish({ "pin.html": "second" }, { ref: v1.id });
     const res = await get(v1.versionUrl);
     expect(await res.text()).toBe("first");
-    expect(res.headers.get("cache-control")).toContain("immutable");
+    expect(res.headers.get("cache-control")).toBe("no-cache");
     expect((await get(`/view/${v1.id}@9`)).status).toBe(404);
+  });
+
+  it("revalidates a pinned version with its ETag, and stops answering 304 once it is withdrawn", async () => {
+    const v1 = await publish({ "etag.html": "etag first" });
+    const v2 = await publish({ "etag.html": "etag second" }, { ref: v1.id });
+    const first = `"${await sha256Hex("etag first")}"`;
+    const second = `"${await sha256Hex("etag second")}"`;
+    const res = await get(v1.versionUrl);
+    expect(res.headers.get("cache-control")).toBe("no-cache");
+    expect(res.headers.get("etag")).toBe(first);
+    const revalidate = (url: string, etag: string) => get(url, { headers: { "if-none-match": etag } });
+    const fresh = await revalidate(v1.versionUrl, first);
+    expect(fresh.status).toBe(304);
+    expect(await fresh.text()).toBe("");
+    expect((await revalidate(v2.url, first)).status).toBe(200); // the current version is another file
+    expect((await revalidate(v2.url, second)).status).toBe(304);
+    // A range answers with the same ETag; an If-Range naming another one gets the whole file.
+    const part = await get(v2.url, { headers: { range: "bytes=0-3" } });
+    expect([part.status, part.headers.get("etag")]).toEqual([206, second]);
+    expect((await get(v2.url, { headers: { range: "bytes=0-3", "if-range": first } })).status).toBe(200);
+
+    expect((await api(`/api/docs/${v1.id}/versions`, { method: "PATCH", body: JSON.stringify({ versions: [1], disabled: true }) })).status).toBe(204);
+    expect((await revalidate(v1.versionUrl, first)).status).toBe(410);
+    await api(`/api/docs/${v1.id}`, { method: "PATCH", body: JSON.stringify({ password: "hunter22" }) });
+    expect((await revalidate(v2.url, second)).status).toBe(401);
+    expect((await api(`/api/docs/${v1.id}`, { method: "DELETE" })).status).toBe(204);
+    expect((await revalidate(`${v1.url}@2`, second)).status).toBe(404);
+  });
+
+  it("never answers 304 for a page the shelf renders, since settings and the build change it, not the file", async () => {
+    const md = await publish({ "notes.md": "# notes" });
+    const tag = `"${await sha256Hex("# notes")}"`;
+    const page = await get(md.url, { headers: { "if-none-match": tag } });
+    expect([page.status, page.headers.get("etag")]).toEqual([200, null]);
+    // The raw file is the uploaded bytes, so it keeps its ETag.
+    expect((await get(`${md.url}?raw`, { headers: { "if-none-match": tag } })).status).toBe(304);
   });
 
   it("disables old versions and turns them back on, but never the current one", async () => {
@@ -459,16 +495,57 @@ describe("dashboard", () => {
   /** Calls the worker as if Cloudflare Access had signed `email` in. */
   async function dash(path: string, init: RequestInit = {}) {
     const ctx = createExecutionContext();
-    Object.defineProperty(ctx, "access", { value: { aud: "test", getIdentity: async () => ({ email: "me@example.com" }) } });
+    Object.defineProperty(ctx, "access", { value: { aud: env.ACCESS_AUD, getIdentity: async () => ({ email: "me@example.com" }) } });
     const res = await worker.fetch(new Request(`${BASE}${path}`, { redirect: "manual", ...init }) as Parameters<typeof worker.fetch>[0], env, ctx);
     await waitOnExecutionContext(ctx);
     return res;
   }
   const sameOrigin = { origin: BASE, "content-type": "application/json" };
+  /** Calls the worker with an API key, passing this file's env so spies on env.DB see the request's queries. */
+  async function asKey(key: string, path: string, init: RequestInit = {}) {
+    const ctx = createExecutionContext();
+    const req = new Request(`${BASE}${path}`, { ...init, headers: { authorization: `Bearer ${key}`, "content-type": "application/json", ...init.headers } });
+    const res = await worker.fetch(req as Parameters<typeof worker.fetch>[0], env, ctx);
+    await waitOnExecutionContext(ctx);
+    return res;
+  }
+  /** Runs `before` right before the next env.DB.batch: something another request commits between a handler's reads and its writes. */
+  function beforeBatch(before: () => Promise<unknown>) {
+    const batch = env.DB.batch.bind(env.DB);
+    return vi.spyOn(env.DB, "batch").mockImplementationOnce(async (stmts) => {
+      await before();
+      return batch(stmts);
+    });
+  }
+  /** A new space and a key in it. */
+  async function spaceKey(name: string) {
+    const { id: space } = (await (await dash("/dashboard/api/spaces", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name }) })).json()) as { id: string };
+    const { id, key } = (await (await dash("/dashboard/api/keys", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name, space }) })).json()) as { id: string; key: string };
+    const upload = async (content: string) => {
+      const sha = await sha256Hex(content);
+      expect((await asKey(key, `/api/blobs/${sha}`, { method: "PUT", headers: { "content-length": String(content.length) }, body: content })).status).toBe(204);
+      return sha;
+    };
+    return { space, id, key, upload };
+  }
 
   it("refuses requests that did not pass Cloudflare Access", async () => {
     expect((await get("/dashboard")).status).toBe(403);
     expect((await get("/dashboard/api/docs")).status).toBe(403);
+  });
+
+  it("accepts Cloudflare Access only for this shelf's own Access app", async () => {
+    const asAud = async (aud: string, e: Env = env) => {
+      const ctx = createExecutionContext();
+      Object.defineProperty(ctx, "access", { value: { aud, getIdentity: async () => ({ email: "someone@other-app.example" }) } });
+      return worker.fetch(new Request(`${BASE}/dashboard/api/docs`) as Parameters<typeof worker.fetch>[0], e, ctx);
+    };
+    expect((await asAud("another-access-app")).status).toBe(403);
+    expect((await asAud(env.ACCESS_AUD!)).status).toBe(200);
+    // Before setup:access stores the secret, no Access app is trusted, and the page says what to run.
+    const unset = await asAud("local-dev", { ...env, ACCESS_AUD: undefined });
+    expect(unset.status).toBe(403);
+    expect(await unset.text()).toContain("setup:access");
   });
 
   it("accepts a valid Access JWT on previews, where ctx.access is unset", async () => {
@@ -488,12 +565,12 @@ describe("dashboard", () => {
     const me = async (token: string) => {
       const ctx = createExecutionContext();
       const req = new Request(`${BASE}/dashboard/api/me`, { headers: { "cf-access-jwt-assertion": token } });
-      return worker.fetch(req as Parameters<typeof worker.fetch>[0], { ...env, ACCESS_TEAM_DOMAIN: team, ACCESS_AUD: aud } as Env, ctx);
+      return worker.fetch(req as Parameters<typeof worker.fetch>[0], { ...env, ACCESS_TEAM_DOMAIN: team, ACCESS_AUD: aud } as unknown as Env, ctx);
     };
     try {
       const ok = await me(await sign(valid));
       expect(ok.status).toBe(200);
-      expect(await ok.json()).toEqual({ email: "me@example.com" });
+      expect(await ok.json()).toEqual({ email: "me@example.com", logout: null });
       for (const bad of [{ aud: ["other-app"] }, { exp: Date.now() / 1000 - 1 }, { iss: "https://evil.cloudflareaccess.com" }]) {
         expect((await me(await sign({ ...valid, ...bad }))).status).toBe(403);
       }
@@ -508,7 +585,7 @@ describe("dashboard", () => {
     const res = await dash("/dashboard");
     const nonce = res.headers.get("content-security-policy")!.match(/'nonce-([^']+)'/)![1];
     expect(await res.text()).toMatch(new RegExp(`<script[^>]*\\snonce="${nonce}"`));
-    expect((await dash("/dashboard/api/me").then((r) => r.json())) as object).toEqual({ email: "me@example.com" });
+    expect((await dash("/dashboard/api/me").then((r) => r.json())) as object).toEqual({ email: "me@example.com", logout: null });
   });
 
   it("refuses cross-origin writes, including from sandboxed docs", async () => {
@@ -595,14 +672,14 @@ describe("dashboard", () => {
     const auth = { authorization: `Bearer ${key}` };
     const push = async (content: string, extra: object = {}) => {
       const body = JSON.stringify({ ...extra, files: [{ path: "q.html", sha256: await sha256Hex(content) }] });
-      const send = () => exports.default.fetch(`${BASE}/api/push`, { method: "POST", headers: auth, body });
+      const send = () => asKey(key, "/api/push", { method: "POST", body });
       const first = await send();
       const { missing } = (await first.clone().json()) as { missing?: string[] };
       if (!missing) return first;
-      const put = await exports.default.fetch(`${BASE}/api/blobs/${missing[0]}`, { method: "PUT", headers: { ...auth, "content-length": String(content.length) }, body: content });
+      const put = await asKey(key, `/api/blobs/${missing[0]}`, { method: "PUT", headers: { "content-length": String(content.length) }, body: content });
       return put.status === 204 ? send() : put;
     };
-    return { id, set, push };
+    return { id, key, set, push };
   }
   const ok = async (res: Response) => {
     expect(res.status).toBe(200);
@@ -766,6 +843,68 @@ describe("dashboard", () => {
     } finally {
       await patchSettings({ viewStats: false });
     }
+  });
+
+  const openAs = async (url: string) => {
+    const ctx = createExecutionContext();
+    await worker.fetch(new Request(url, { headers: BROWSER }) as Parameters<typeof worker.fetch>[0], env, ctx);
+    await waitOnExecutionContext(ctx);
+  };
+  const viewRows = (id: string) => env.DB.prepare("SELECT COUNT(*) AS c FROM views WHERE doc_id = ?").bind(id).first<number>("c");
+
+  it("keeps one counter row per reader when the same doc is opened over and over", async () => {
+    const { id, url } = await publish({ "loop.html": "<p>reloaded</p>" });
+    await patchSettings({ viewStats: true });
+    try {
+      for (let i = 0; i < 50; i++) await openAs(url);
+      console.log(`rows after 50 opens: ${await viewRows(id)}`);
+      expect(await viewRows(id)).toBeLessThanOrEqual(2); // one per 15-minute slot; the loop may straddle a slot boundary
+      const detail = (await (await dash(`/dashboard/api/docs/${id}`)).json()) as { views: { total: number; readers: number }; versions: { views: number }[] };
+      expect(detail.views).toMatchObject({ total: 50, readers: 1 });
+      expect(detail.versions).toMatchObject([{ views: 50 }]);
+      const analytics = (await (await dash("/dashboard/api/analytics")).json()) as { views: { docId: string; views: number; readers: number }[] };
+      expect(analytics.views.filter((r) => r.docId === id).reduce((s, r) => s + r.views, 0)).toBe(50);
+    } finally {
+      await patchSettings({ viewStats: false });
+    }
+  });
+
+  it("counts at most VIEW_LIMIT opens per IP a minute, however often the User-Agent changes", async () => {
+    const { id, url } = await publish({ "rotate.html": "<p>rotating</p>" });
+    await patchSettings({ viewStats: true });
+    try {
+      for (let i = 0; i < 200; i++) {
+        const ctx = createExecutionContext();
+        const headers = { "user-agent": `Mozilla/5.0 (X11; Linux x86_64) Chrome/${i}.0`, "cf-connecting-ip": "198.51.100.7" };
+        const res = await worker.fetch(new Request(url, { headers }) as Parameters<typeof worker.fetch>[0], env, ctx);
+        expect(res.status).toBe(200); // over the limit the doc is still served, only not counted
+        await res.arrayBuffer();
+        await waitOnExecutionContext(ctx);
+      }
+      const rows = await viewRows(id);
+      console.log(`rows after 200 opens with rotating User-Agents: ${rows}`);
+      expect(rows).toBeGreaterThan(0);
+      expect(rows).toBeLessThanOrEqual(120); // 60 a minute; windows align to the clock, so the loop may span two
+    } finally {
+      await patchSettings({ viewStats: false });
+    }
+  });
+
+  it("sweeps view rows older than the analytics window", async () => {
+    const old = await publish({ "old.html": "<p>read long ago</p>" });
+    const recent = await publish({ "recent.html": "<p>read today</p>" });
+    await patchSettings({ viewStats: true });
+    try {
+      await openAs(old.url);
+      await openAs(recent.url);
+    } finally {
+      await patchSettings({ viewStats: false });
+    }
+    await env.DB.prepare("UPDATE views SET at = ? WHERE doc_id = ?").bind(Date.now() - 730 * 86_400_000, old.id).run();
+    await sweep(env);
+    console.log(`after sweep: old doc rows ${await viewRows(old.id)}, recent doc rows ${await viewRows(recent.id)}`);
+    expect(await viewRows(old.id)).toBe(0);
+    expect(await viewRows(recent.id)).toBe(1);
   });
 
   it("keeps search engines out, and lets chat apps preview links only when allowed", async () => {
@@ -955,6 +1094,177 @@ describe("dashboard", () => {
     expect((await del(b.space, "to=default&docs=delete")).status).toBe(204);
     expect(await spaceOf(`/dashboard/api/keys/${b.keyId}`)).toBe("default");
     expect((await dash(`/dashboard/api/docs/${b.docId}`)).status).toBe(404);
+  });
+
+  /** A space whose keys may neither delete docs nor read locked ones, with an open and a locked doc its key pushed before that. */
+  async function lockedDownSpace(name: string) {
+    const { space, key, upload } = await spaceKey(name);
+    const k = (path: string, body: object, method = "PATCH") => asKey(key, path, { method, body: JSON.stringify(body) });
+    const locked = (await (await k("/api/push", { files: [{ path: "l.html", sha256: await upload(`${name} locked`) }], password: "hunter22" }, "POST")).json()) as { id: string };
+    const open = (await (await k("/api/push", { files: [{ path: "o.html", sha256: await upload(`${name} open`) }] }, "POST")).json()) as { id: string };
+    await dash(`/dashboard/api/spaces/${space}`, { method: "PATCH", headers: sameOrigin, body: JSON.stringify({ keysDelete: false, keysReadLocked: false }) });
+    return { k, upload, locked, open };
+  }
+
+  it("keeps a space's keys that can't delete docs from expiring them", async () => {
+    const { k, upload, open } = await lockedDownSpace("no-expire");
+    const expiresAt = async () => ((await (await dash(`/dashboard/api/docs/${open.id}`)).json()) as { expiresAt: number | null }).expiresAt;
+    // An expiry on an existing doc is a delete once the sweep runs.
+    const expire = await k(`/api/docs/${open.id}`, { expires: "1m" });
+    expect(expire.status).toBe(403);
+    expect(await expire.json()).toEqual({ error: "keys in this space can't make docs expire; the owner can, from the dashboard" });
+    expect((await k("/api/docs/bulk", { ids: [open.id], expires: "1m" }, "POST")).status).toBe(403);
+    expect(await expiresAt()).toBeNull();
+    // Clearing an expiry, and a new doc's own expiry, stay allowed.
+    expect((await k(`/api/docs/${open.id}`, { expires: null })).status).toBe(200);
+    expect((await k("/api/docs/bulk", { ids: [open.id], expires: "0" }, "POST")).status).toBe(200);
+    const fresh = await k("/api/push", { files: [{ path: "f.html", sha256: await upload("no-expire fresh") }], expires: "1h" }, "POST");
+    expect(((await fresh.json()) as { expiresAt: number | null }).expiresAt).not.toBeNull();
+  });
+
+  it("keeps a space's keys that can't read locked docs from changing their password", async () => {
+    const { k, locked, open } = await lockedDownSpace("no-repass");
+    // A new password on a locked doc would let the key read it with that password.
+    const repass = await k(`/api/docs/${locked.id}`, { password: "newpass12" });
+    expect(repass.status).toBe(403);
+    expect(await repass.json()).toEqual({ error: "keys in this space can't change a locked doc's password; the owner can, from the dashboard" });
+    expect((await k(`/api/docs/${locked.id}`, { password: null })).status).toBe(403);
+    expect((await get(`/view/${locked.id}`, { headers: { "x-doc-password": "newpass12" } })).status).toBe(401);
+    expect(await (await get(`/view/${locked.id}`, { headers: { "x-doc-password": "hunter22" } })).text()).toBe("no-repass locked");
+    // Locking an open doc stays allowed.
+    expect(await (await k(`/api/docs/${open.id}`, { password: "newpass12" })).json()).toMatchObject({ locked: true });
+  });
+
+  it("counts a key's blobs no doc holds yet against its quota", async () => {
+    const { id, key } = await quotaKey(10, "reject");
+    const put = async (content: string) =>
+      (await asKey(key, `/api/blobs/${await sha256Hex(content)}`, { method: "PUT", headers: { "content-length": String(content.length) }, body: content })).status;
+    expect(await put("pending1")).toBe(204); // 8 of 10 bytes, in no doc yet
+    expect(await put("pending1")).toBe(204); // the same blob again costs nothing more
+    expect(await put("pending-too-big")).toBe(413);
+    // A push takes its blobs off the pending list; the sweep drops what was never pushed.
+    const pending = () => env.DB.prepare("SELECT COUNT(*) AS c FROM uploads WHERE key_id = ?").bind(id).first("c");
+    expect((await asKey(key, "/api/push", { method: "POST", body: JSON.stringify({ files: [{ path: "p.html", sha256: await sha256Hex("pending1") }] }) })).status).toBe(200);
+    expect(await pending()).toBe(0);
+    await env.DB.prepare("INSERT INTO uploads (key_id, sha256, size, at) VALUES (?, 'x', 1, 0)").bind(id).run();
+    await sweep(env);
+    expect(await pending()).toBe(0);
+  });
+
+  it("reclaims a key's oldest unpushed blobs when a new one would not fit, keeping blobs a doc holds", async () => {
+    const { id, key } = await quotaKey(10, "reject");
+    const put = async (k: string, content: string) =>
+      (await asKey(k, `/api/blobs/${await sha256Hex(content)}`, { method: "PUT", headers: { "content-length": String(content.length) }, body: content })).status;
+    const a = await sha256Hex("reclaimA");
+    const b = await sha256Hex("reclaimB");
+    expect(await put(key, "reclaimA")).toBe(204); // 8 of 10 bytes, never pushed
+    expect(await put(key, "reclaimB")).toBe(204);
+    expect(await env.DB.prepare("SELECT sha256 FROM uploads WHERE key_id = ?").bind(id).all().then((r) => r.results)).toEqual([{ sha256: b }]);
+    expect(await env.BUCKET.head(`docs/${a}`)).toBeNull();
+    expect((await asKey(key, "/api/push", { method: "POST", body: JSON.stringify({ files: [{ path: "b.html", sha256: b }] }) })).status).toBe(200);
+
+    // A blob another space's doc holds stays in R2 when the key's own row for it goes.
+    const other = await spaceKey("reclaim-other");
+    const held = await other.upload("reclaimC");
+    expect((await asKey(other.key, "/api/push", { method: "POST", body: JSON.stringify({ files: [{ path: "c.html", sha256: held }] }) })).status).toBe(200);
+    const { key: key2 } = await quotaKey(10, "reject");
+    expect(await put(key2, "reclaimC")).toBe(204);
+    expect(await put(key2, "reclaimD")).toBe(204);
+    expect(await env.BUCKET.head(`docs/${held}`)).not.toBeNull();
+  });
+
+  it("refuses an MCP publish over a key's quota without storing its blobs", async () => {
+    const { key } = await quotaKey(10, "reject");
+    const publish = async (content: string) => {
+      const rpc = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "publish", arguments: { files: [{ path: "m.html", content }] } } };
+      return ((await (await asKey(key, "/mcp", { method: "POST", body: JSON.stringify(rpc) })).json()) as { result: { isError: boolean; content: { text: string }[] } }).result;
+    };
+    const over = await publish("mcp over the quota");
+    expect(over.isError).toBe(true);
+    expect(over.content[0].text).toContain("quota");
+    expect(await env.BUCKET.head(`docs/${await sha256Hex("mcp over the quota")}`)).toBeNull();
+    expect((await publish("mcp-fits")).isError).toBe(false);
+  });
+
+  it("reports a quota error when an MCP publish's files fit only one at a time", async () => {
+    const { key } = await quotaKey(10, "reject");
+    const rpc = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "publish", arguments: { files: [{ path: "index.html", content: "mcp-a1" }, { path: "b.html", content: "mcp-b1" }] } } };
+    const { result } = (await (await asKey(key, "/mcp", { method: "POST", body: JSON.stringify(rpc) })).json()) as { result: { isError: boolean; content: { text: string }[] } };
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("quota");
+  });
+
+  it("treats another space's blob as missing for an isolated key until it uploads the bytes", async () => {
+    await publish({ "a.html": "space A secret" });
+    const { key, upload } = await spaceKey("isolated-b");
+    const sha = await sha256Hex("space A secret");
+    const push = () => asKey(key, "/api/push", { method: "POST", body: JSON.stringify({ files: [{ path: "a.html", sha256: sha }] }) });
+    expect(await (await push()).json()).toEqual({ missing: [sha] });
+    await upload("space A secret");
+    expect((await push()).status).toBe(200);
+  });
+
+  it("changes only the settings a PATCH names", async () => {
+    const spy = beforeBatch(() => env.DB.prepare("INSERT INTO settings (key, value) VALUES ('link_previews', '1') ON CONFLICT (key) DO UPDATE SET value = '1'").run());
+    try {
+      expect((await patchSettings({ viewStats: true })).status).toBe(200);
+      expect(await env.DB.prepare("SELECT value FROM settings WHERE key = 'link_previews'").first("value")).toBe("1");
+    } finally {
+      spy.mockRestore();
+      await patchSettings({ viewStats: false, linkPreviews: false });
+    }
+  });
+
+  it("never evicts a doc starred after the eviction was planned", async () => {
+    const { push } = await quotaKey(20, "fifo"); // two 9-byte docs fit, a third doesn't
+    const a = await ok(await push("starred-a"));
+    await ok(await push("starred-b"));
+    // c's push plans to delete a; a is starred before it commits.
+    const star = beforeBatch(() => env.DB.prepare("UPDATE docs SET favorite = 1 WHERE id = ?").bind(a.id).run());
+    await ok(await push("starred-c")).finally(() => star.mockRestore());
+    expect(await (await dash(`/dashboard/api/docs/${a.id}`)).json()).toMatchObject({ favorite: true });
+  });
+
+  it("never evicts a doc that got a new version after the eviction was planned", async () => {
+    const { push } = await quotaKey(20, "fifo");
+    const a = await ok(await push("version-a"));
+    const b = await ok(await push("version-b"));
+    // c's push plans to delete a; someone else adds a version to a before it commits.
+    const version = beforeBatch(() =>
+      env.DB.batch([
+        env.DB.prepare("INSERT INTO versions (doc_id, n, manifest_hash, size, created_at) VALUES (?, 2, 'm', 1, ?)").bind(a.id, Date.now()),
+        env.DB.prepare("UPDATE docs SET latest = 2 WHERE id = ?").bind(a.id),
+      ]),
+    );
+    await ok(await push("version-c")).finally(() => version.mockRestore());
+    const detail = (await (await dash(`/dashboard/api/docs/${a.id}`)).json()) as { versions: { n: number }[] };
+    expect(detail.versions.map((v) => v.n)).toEqual([2, 1]); // the planned delete of the whole doc was skipped
+    expect((await dash(`/dashboard/api/docs/${b.id}`)).status).toBe(200);
+  });
+
+  const dropSpace = (id: string) => env.DB.prepare("DELETE FROM spaces WHERE id = ?").bind(id).run();
+
+  it("refuses a push into a space deleted mid-request, leaving no doc in it", async () => {
+    const { space, key, upload } = await spaceKey("vanishing");
+    const sha = await upload("vanishing doc");
+    const spy = beforeBatch(() => dropSpace(space));
+    const res = await asKey(key, "/api/push", { method: "POST", body: JSON.stringify({ files: [{ path: "v.html", sha256: sha }] }) }).finally(() => spy.mockRestore());
+    expect(res.status).toBe(409);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS c FROM docs WHERE space_id = ?").bind(space).first("c")).toBe(0);
+  });
+
+  it("refuses a key for a space deleted mid-request", async () => {
+    const { id: space } = (await (await dash("/dashboard/api/spaces", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "vanishing-key" }) })).json()) as { id: string };
+    // The space goes right before the key's INSERT runs, after any check createKey made.
+    const prepare = env.DB.prepare.bind(env.DB);
+    const hook = vi.spyOn(env.DB, "prepare").mockImplementation((sql: string) => {
+      const stmt = prepare(sql);
+      if (!sql.startsWith("INSERT INTO api_keys")) return stmt;
+      return { bind: (...args: unknown[]) => ({ run: async () => (await dropSpace(space), stmt.bind(...args).run()) }) } as unknown as D1PreparedStatement;
+    });
+    const made = await dash("/dashboard/api/keys", { method: "POST", headers: sameOrigin, body: JSON.stringify({ name: "late", space }) }).finally(() => hook.mockRestore());
+    expect(made.status).toBe(400);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS c FROM api_keys WHERE space_id = ?").bind(space).first("c")).toBe(0);
   });
 });
 

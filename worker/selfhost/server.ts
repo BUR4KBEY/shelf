@@ -1,14 +1,14 @@
 // shelf in one process, for the Docker image: the Worker (src/) on Bun, with the stand-ins in store.ts for its bindings.
 // A password (SHELF_PASSWORD) signs the owner in to the dashboard, where Cloudflare Access does on Cloudflare.
 import { timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import migrations from "shelf:migrations";
 import { sameString } from "../src/auth";
 import worker from "../src/index";
-import { LOCK_ICON, cardPage } from "../src/page";
-import { escapeHtml, hex, sha256Hex } from "../src/util";
-import { d1, openDb, r2, rateLimit } from "./store";
+import { LOCK_ICON, cardPage, localPath } from "../src/page";
+import { escapeHtml, hex, ipKey, sha256Hex } from "../src/util";
+import { d1, loadSecret, openDb, r2, rateLimit, removeTempFiles, rotateSecret } from "./store";
 
 // Cloudflare-only: compares two buffers. Callers check the lengths first.
 const subtle = crypto.subtle as SubtleCrypto & { timingSafeEqual?: (a: ArrayBufferView | ArrayBuffer, b: ArrayBufferView | ArrayBuffer) => boolean };
@@ -28,24 +28,29 @@ if (PASSWORD.length < 12) {
 }
 
 await mkdir(join(DATA, "blobs"), { recursive: true });
+// No upload runs before the server starts, so any temporary file is one a crash left half-written.
+await removeTempFiles(join(DATA, "blobs"));
 const db = openDb(join(DATA, "shelf.db"), migrations);
 const env = {
   DB: d1(db),
   BUCKET: r2(join(DATA, "blobs")),
-  // Same limits as wrangler.jsonc: password attempts per IP and doc, and here per IP at the dashboard's sign-in too.
+  // Same limits as wrangler.jsonc: password attempts per IP and doc, and here per IP at the dashboard's sign-in too; views counted per IP.
   UNLOCK_LIMIT: rateLimit(10, 60),
+  VIEW_LIMIT: rateLimit(60, 60),
+  // The audience of the ctx.access this server makes for a signed-in owner (below); the Worker trusts no other.
+  ACCESS_AUD: "shelf",
+  // Where the dashboard's Sign out posts (/dashboard/api/me).
+  LOGOUT: "/logout",
 } as unknown as Env;
 const signIns = rateLimit(10, 60);
+// All sign-ins together: an attacker spread over many networks still gets at most this many guesses a minute.
+const allSignIns = rateLimit(100, 60);
 
-// Sessions are signed with a key kept in the data volume and the password, so changing the password signs everyone out.
-const secretPath = join(DATA, "session.key");
-let secret = await readFile(secretPath, "utf8").catch((e) => (e.code === "ENOENT" ? null : Promise.reject(e)));
-if (secret === null) {
-  secret = hex(crypto.getRandomValues(new Uint8Array(32)).buffer);
-  // `wx`: never overwrite a key another process just wrote. writeFile's mode applies on create, unlike Bun.write's.
-  await writeFile(secretPath, secret, { mode: 0o600, flag: "wx" });
-}
-const sessionKey = await crypto.subtle.importKey("raw", new TextEncoder().encode(`${secret}:${PASSWORD}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+// Sessions are signed with a key kept in the data volume and the password, so changing the password signs everyone out,
+// and so does signing out, which replaces the key.
+const KEY_PATH = join(DATA, "session.key");
+const hmacKey = (secret: string) => crypto.subtle.importKey("raw", new TextEncoder().encode(`${secret}:${PASSWORD}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+let sessionKey = await hmacKey(await loadSecret(KEY_PATH));
 const SESSION_DAYS = 30;
 const sign = async (exp: number) => hex(await crypto.subtle.sign("HMAC", sessionKey, new TextEncoder().encode(`session:${exp}`)));
 
@@ -55,7 +60,7 @@ async function signedIn(req: Request): Promise<boolean> {
 }
 
 /** Only a path on this origin, so the form can't be used as an open redirect. */
-const safeNext = (next: unknown) => (typeof next === "string" && /^\/(?![/\\])/.test(next) ? next : "/dashboard");
+const safeNext = (next: unknown, req: Request) => localPath(next, new URL(req.url).origin) ?? "/dashboard";
 
 function signInPage(req: Request, status: number, next: string, error = ""): Response {
   const card = `${LOCK_ICON}<div><h1>Sign in</h1><p>Enter the password this shelf was started with (SHELF_PASSWORD).</p></div>
@@ -68,14 +73,27 @@ function signInPage(req: Request, status: number, next: string, error = ""): Res
 async function signIn(req: Request, ip: string): Promise<Response> {
   const form = await req.formData().catch(() => null);
   const password = form?.get("password");
-  const next = safeNext(form?.get("next"));
-  if (!(await signIns.limit({ key: ip })).success) return signInPage(req, 429, next, "Too many attempts. Wait a minute.");
+  const next = safeNext(form?.get("next"), req);
+  if (!(await signIns.limit({ key: ipKey(ip) })).success || !(await allSignIns.limit({ key: "all" })).success) {
+    return signInPage(req, 429, next, "Too many attempts. Wait a minute.");
+  }
   // Hashed first so the comparison takes the same time whatever the lengths.
   if (typeof password !== "string" || !sameString(await sha256Hex(password), await sha256Hex(PASSWORD))) return signInPage(req, 401, next, "Wrong password.");
   const exp = Date.now() + SESSION_DAYS * 86_400_000;
   const secure = new URL(req.url).protocol === "https:" ? "; Secure" : "";
   const cookie = `shelf_session=${exp}.${await sign(exp)}; Path=/; Max-Age=${SESSION_DAYS * 86_400}; HttpOnly; SameSite=Lax${secure}`;
   return new Response(null, { status: 303, headers: { location: next, "set-cookie": cookie, "cache-control": "no-store" } });
+}
+
+/** Signs every browser out, a stolen cookie included: the key sessions are signed with is replaced. */
+async function signOut(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  // CSRF, as the dashboard API checks it: another site must not be able to sign the owner out.
+  if (req.headers.get("origin") !== url.origin) return Response.json({ error: "cross-origin request refused" }, { status: 403 });
+  // Only the owner rotates the key; anyone else just loses a cookie they didn't have.
+  if (await signedIn(req)) sessionKey = await hmacKey(await rotateSecret(KEY_PATH));
+  const secure = url.protocol === "https:" ? "; Secure" : "";
+  return new Response(null, { status: 303, headers: { location: "/login", "set-cookie": `shelf_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`, "cache-control": "no-store" } });
 }
 
 /** The request as the Worker sees it: the public URL, and the client's IP where Cloudflare puts it. */
@@ -102,8 +120,10 @@ const server = Bun.serve({
 
     if (path === "/login") {
       if (req.method === "POST") return signIn(req, ip);
-      if (req.method === "GET") return signInPage(req, 200, safeNext(new URL(req.url).searchParams.get("next")));
+      if (req.method === "GET") return signInPage(req, 200, safeNext(new URL(req.url).searchParams.get("next"), req));
     }
+
+    if (path === "/logout" && req.method === "POST") return signOut(req);
 
     const ctx = { waitUntil: (p: Promise<unknown>) => void p.catch(console.error), passThroughOnException() { }, props: {} } as ExecutionContext & { access?: unknown };
     if (path === "/dashboard" || path.startsWith("/dashboard/")) {
@@ -113,7 +133,7 @@ const server = Bun.serve({
         }
         return Response.json({ error: "sign in at /login" }, { status: 401 });
       }
-      ctx.access = { aud: "shelf", getIdentity: async () => ({ email: EMAIL }) };
+      ctx.access = { aud: env.ACCESS_AUD, getIdentity: async () => ({ email: EMAIL }) };
     }
     return worker.fetch(req, env, ctx);
   },

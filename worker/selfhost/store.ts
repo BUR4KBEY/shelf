@@ -1,7 +1,7 @@
 // Stand-ins for the Cloudflare bindings src/ uses, for the Docker image: D1 is a SQLite file (bun:sqlite), R2 objects
 // are files, and the rate limiter counts in memory (one process). preview/shims.ts does the same in the browser.
 import { Database } from "bun:sqlite";
-import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 class Statement {
@@ -40,6 +40,10 @@ export function openDb(path: string, migrations: string[]): Database {
   const db = new Database(path, { create: true });
   db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000");
   const { user_version: applied } = db.query("PRAGMA user_version").get() as { user_version: number };
+  if (applied > migrations.length) {
+    db.close();
+    throw new Error(`database schema is newer than this build (v${applied} > ${migrations.length}); run a newer image`);
+  }
   // Off while migrating: a migration that rebuilds a table would otherwise cascade-delete its children. Checked after.
   db.exec("PRAGMA foreign_keys = OFF");
   for (const [i, sql] of migrations.entries()) {
@@ -62,7 +66,7 @@ export function range(header: string, size: number) {
   const m = header.match(/^bytes=(\d*)-(\d*)$/);
   if (!m || (!m[1] && !m[2])) throw new Error("bad range");
   const offset = m[1] ? Number(m[1]) : Math.max(size - Number(m[2]), 0);
-  if (offset >= size) throw new Error("range not satisfiable");
+  if (offset >= size || (m[1] && m[2] && Number(m[2]) < offset)) throw new Error("range not satisfiable");
   return { offset, length: (m[1] && m[2] ? Math.min(Number(m[2]) + 1, size) : size) - offset };
 }
 
@@ -125,6 +129,11 @@ export function r2(root: string) {
   };
 }
 
+/** Deletes the temporary files `put` writes before renaming, under `root`. Only safe while no put is running. */
+export async function removeTempFiles(root: string): Promise<void> {
+  for await (const f of new Bun.Glob("**/*.tmp").scan({ cwd: root, dot: true })) await rm(join(root, f), { force: true });
+}
+
 /** The Rate Limiting binding: at most `limit` calls per key in each `period` seconds. */
 export function rateLimit(limit: number, period: number) {
   const windows = new Map<string, { n: number; until: number }>();
@@ -138,4 +147,28 @@ export function rateLimit(limit: number, period: number) {
       return { success: ++w.n <= limit };
     },
   };
+}
+
+/** The key sessions are signed with, from `path`; written there (0600) when missing or not 64 hex characters. */
+export async function loadSecret(path: string): Promise<string> {
+  const old = await readFile(path, "utf8").catch((e) => (e.code === "ENOENT" ? null : Promise.reject(e)));
+  if (old !== null && /^[0-9a-f]{64}$/.test(old)) return old;
+  // An empty or truncated key would sign guessable sessions. Removed first, so the new one is created with 0600.
+  if (old !== null) await rm(path);
+  const secret = newSecret();
+  // `wx`: never overwrite a key another process just wrote. writeFile's mode applies on create, unlike Bun.write's.
+  await writeFile(path, secret, { mode: 0o600, flag: "wx" });
+  return secret;
+}
+
+const newSecret = () => Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex");
+
+/** Replaces the key at `path` with a fresh one and returns it: every session signed with the old key stops verifying. */
+export async function rotateSecret(path: string): Promise<string> {
+  const secret = newSecret();
+  // Created 0600 and exclusively, as loadSecret does, then renamed over the old key so no reader ever sees a partial one.
+  const tmp = `${path}.${crypto.randomUUID()}.tmp`;
+  await writeFile(tmp, secret, { mode: 0o600, flag: "wx" });
+  await rename(tmp, path);
+  return secret;
 }

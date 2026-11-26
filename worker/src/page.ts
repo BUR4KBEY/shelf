@@ -123,12 +123,17 @@ const palette = (req: Request) => pick(cookie(req, "palette"), PALETTES);
 /** ` data-theme="dark" data-palette="teal"` for the <html> tag, from the cookies; without them the page follows the system, in indigo. */
 export const themeAttr = (req: Request) => (theme(req) === "system" ? "" : ` data-theme="${theme(req)}"`) + (palette(req) ? ` data-palette="${palette(req)}"` : "");
 
+/** `next` as a path on `origin`, else null. Parsed as a browser would, so `/\t/evil.example` (tabs are stripped) can't leave it. */
+export function localPath(next: unknown, origin: string): string | null {
+  const url = typeof next === "string" ? URL.parse(next, origin) : null;
+  return url?.origin === origin ? url.pathname + url.search + url.hash : null;
+}
+
 /** GET /theme/<system|light|dark>?next=<path>: remembers the theme in a cookie and goes back. A link, so the pages need no script. */
 export function setTheme(url: URL, value: string): Response | undefined {
   if (!THEMES.includes(value)) return;
-  const next = url.searchParams.get("next") ?? "";
   // Only a path on this origin, so the link cannot be used as an open redirect.
-  const location = /^\/(?![/\\])/.test(next) ? next : "/";
+  const location = localPath(url.searchParams.get("next"), url.origin) ?? "/";
   return new Response(null, { status: 303, headers: { location, "set-cookie": `theme=${value}; Path=/; Max-Age=${value === "system" ? 0 : 31536000}; SameSite=Lax`, "cache-control": "no-store" } });
 }
 

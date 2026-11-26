@@ -80,7 +80,7 @@ function range(header: string, size: number) {
   const m = header.match(/^bytes=(\d*)-(\d*)$/);
   if (!m || (!m[1] && !m[2])) throw new Error("bad range");
   const offset = m[1] ? Number(m[1]) : Math.max(size - Number(m[2]), 0);
-  if (offset >= size) throw new Error("range not satisfiable");
+  if (offset >= size || (m[1] && m[2] && Number(m[2]) < offset)) throw new Error("range not satisfiable");
   return { offset, length: (m[1] && m[2] ? Math.min(Number(m[2]) + 1, size) : size) - offset };
 }
 

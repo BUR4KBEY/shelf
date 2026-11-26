@@ -51,7 +51,13 @@ async function open(): Promise<State> {
   for (const [i, sql] of migrations.entries()) {
     if (i >= applied) db.exec(`BEGIN; ${sql}; PRAGMA user_version = ${i + 1}; COMMIT;`);
   }
-  const env = { DB: d1(db), BUCKET: r2, UNLOCK_LIMIT: { limit: async () => ({ success: true }) } } as unknown as Env;
+  const env = {
+    DB: d1(db),
+    BUCKET: r2,
+    ACCESS_AUD: base.access.aud, // the Worker trusts ctx.access only for its own Access app
+    UNLOCK_LIMIT: { limit: async () => ({ success: true }) },
+    VIEW_LIMIT: { limit: async () => ({ success: true }) },
+  } as unknown as Env;
   const jar = new Map(await store<[string, string][] | undefined>("state", "readonly", (s) => s.get("cookies")));
   const s = { db, env, jar };
   if (!saved) await seed(env);

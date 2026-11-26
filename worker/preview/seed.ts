@@ -406,7 +406,7 @@ export async function seed(env: Env) {
           const [, time] = at(null, ago, [8, 12]);
           // The version that was current then; none before the first upload.
           const n = uploads.filter(([, t]) => t <= time).length;
-          if (n) await run("INSERT INTO views (doc_id, n, at, visitor) VALUES (?, ?, ?, ?)", id, n, time, `seed-${ago}-${reader}`);
+          if (n) await run("INSERT INTO views (doc_id, n, slot, visitor, at, count) VALUES (?1, ?2, ?3, ?4, ?5, 1) ON CONFLICT (doc_id, n, slot, visitor) DO UPDATE SET at = max(at, ?5), count = count + 1", id, n, Math.floor(time / 900_000), `seed-${ago}-${reader}`, time);
         }
       }
     }
