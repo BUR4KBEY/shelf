@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Confirm } from "@/components/bits";
 import { Button } from "@/components/ui/button";
 
@@ -10,16 +10,6 @@ export function Banner() {
   const [confirm, setConfirm] = useState(false);
   // Per tab session, so the warning and Reset come back on the next visit.
   const [closed, setClosed] = useState(() => sessionStorage.getItem(CLOSED) === "1");
-  const ref = useRef<HTMLDivElement>(null);
-  // The text wraps, so the banner's height varies; --banner tells the sticky header and sidebar where to start.
-  useLayoutEffect(() => {
-    const root = document.documentElement.style;
-    const el = ref.current;
-    if (!el) return void root.setProperty("--banner", "0px");
-    const ro = new ResizeObserver(() => root.setProperty("--banner", `${el.offsetHeight}px`));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [closed]);
   const reset = async () => {
     await fetch("/__preview/reset", { method: "POST" });
     location.reload();
@@ -30,7 +20,7 @@ export function Banner() {
   };
   if (closed) return null;
   return (
-    <div ref={ref} role="region" aria-label="Preview" className="sticky top-0 z-30 flex items-center gap-3 border-b bg-primary py-2 pr-2 pl-4 text-sm text-primary-foreground">
+    <div role="region" aria-label="Preview" className="flex shrink-0 items-center gap-3 border-b bg-primary py-2 pr-2 pl-4 text-sm text-primary-foreground">
       <p className="min-w-0">
         <strong className="font-semibold">Preview.</strong>{" "}
         <span className="max-sm:hidden">

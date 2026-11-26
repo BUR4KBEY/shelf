@@ -1,26 +1,38 @@
 @import "../../dashboard/src/index.css";
 @source "../../dashboard/src";
 
-/* The banner sits above the dashboard, so its sticky header and sidebar start below it, and so does a section scrolled to.
-   Banner.tsx sets --banner to its measured height, 0 once closed; this is the value before the first render. */
-:root {
-  --banner: 2.5rem;
-  scroll-padding-top: var(--banner);
+/* The banner sits above the dashboard, which scrolls in the space left below it, so no scrollbar runs beside the banner.
+   That space is a size container: 100cqh is its height, whatever the banner's. */
+/* Nothing may scroll the page itself, or the banner would leave the top. */
+html,
+body {
+  height: 100%;
+  overflow: clip;
 }
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+/* relative: absolute bits (Radix Select's hidden <select>, sr-only text) otherwise hang off body below the window and make the page scrollable. */
+#root > .min-h-dvh {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  container-type: size;
+}
+/* A section scrolled to lands below the sticky header, which only shows under lg. */
 @media (width < 64rem) {
-  :root {
-    scroll-padding-top: calc(var(--banner) + 3.5rem);
+  #root > .min-h-dvh {
+    scroll-padding-top: 3.5rem;
   }
-}
-#root .min-h-dvh {
-  min-height: calc(100dvh - var(--banner));
-}
-#root header.sticky {
-  top: var(--banner);
+  #root aside {
+    min-height: calc(100cqh - 3.5rem);
+  }
 }
 @media (width >= 64rem) {
   #root aside {
-    top: var(--banner);
-    height: calc(100dvh - var(--banner));
+    height: 100cqh;
   }
 }
