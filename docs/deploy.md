@@ -29,12 +29,12 @@ Then, in the Cloudflare dashboard:
 No Cloudflare account needed: one container runs the same Worker code on [Bun](https://bun.sh), with docs in a SQLite file and their files on disk, both under `/data`. Images for `linux/amd64` and `linux/arm64` are published with every release, tagged like the CLI (`1.2.3`, `1.2` and `latest`):
 
 ```sh
-docker run -d --name shelf -p 8080:8080 -v shelf-data:/data \
+docker run -d --name shelf --restart unless-stopped -p 8080:8080 -v shelf-data:/data \
   -e SHELF_PASSWORD='a long password' \
   ghcr.io/bur4kbey/shelf:latest
 ```
 
-Open `http://localhost:8080/dashboard` and sign in with `SHELF_PASSWORD`; that password is what Cloudflare Access does on Cloudflare. **Sign out** (next to your name at the bottom of the sidebar) signs every browser out, including any copy of the cookie someone else holds: it replaces the session key in the data volume. Everything else (the API, the CLI, MCP, `/view`) works as on Cloudflare: point the CLI at your URL.
+Open `http://localhost:8080/dashboard` and sign in with `SHELF_PASSWORD`; that password is what Cloudflare Access does on Cloudflare. **Sign out** (next to your name at the bottom of the sidebar) signs every browser out, including any copy of the cookie someone else holds: it replaces the session key in the data volume. Everything else (the API, the CLI, MCP, `/view`) works as on Cloudflare: point the CLI at your URL. `--restart unless-stopped` brings shelf back after a reboot, and `docker ps` shows it `healthy` once it answers requests.
 
 | Variable | |
 |---|---|
