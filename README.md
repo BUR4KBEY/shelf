@@ -18,6 +18,17 @@ on your own domain, in your own account, under your control.
   <img alt="The shelf dashboard: a log of uploads from agents, CI and machines, grouped by day" src=".github/assets/uploads-light.png">
 </picture>
 
+<table>
+  <tr>
+    <td width="50%"><img alt="An agent writes a launch plan and publishes it with the shelf CLI; the link opens the rendered doc, and the upload appears in the dashboard" src=".github/assets/demo-agent.gif"></td>
+    <td width="50%"><img alt="shelf push in a terminal prints a link; it opens the rendered doc, and the upload appears in the dashboard" src=".github/assets/demo.gif"></td>
+  </tr>
+  <tr>
+    <td align="center">An agent publishes on its own</td>
+    <td align="center">Or publish from your terminal</td>
+  </tr>
+</table>
+
 ## Why shelf
 
 - **Built for AI agents.** Every instance ships an MCP server, an `llms.txt` guide, a CLI and ready-made agent skills. Give an agent a key, and it publishes, reads and revises documents on its own.
