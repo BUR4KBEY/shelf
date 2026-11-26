@@ -31,6 +31,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAKE_LATEST: ${{ steps.release.outputs.latest }}
           AUR_KEY: ${{ secrets.AUR_KEY }}
+          NIX_DEPLOY_KEY: ${{ secrets.NIX_DEPLOY_KEY }}
 
   # The self-hosted server (worker/Dockerfile) at ghcr.io/<owner>/shelf: v1.2.3 is tagged 1.2.3, 1.2, and latest if it is
   # the highest release.
