@@ -1,24 +1,13 @@
 name: preview
 on:
-  # Branches in this repo deploy on their own. Fork PRs get no secrets here and are skipped.
+  # Branches in this repo deploy on their own. Fork PRs never deploy: the preview runs the PR's code with a Cloudflare
+  # token that can also change production, so no review is worth that risk.
   pull_request:
     types: [opened, synchronize, reopened]
-  # Fork PRs deploy only after you review them: the owner comments `/deploy-preview <sha>` on the PR, or runs this by hand.
-  issue_comment:
-    types: [created]
-  workflow_dispatch:
-    inputs:
-      pr:
-        description: Pull request number
-        type: number
-        required: true
-      sha:
-        description: The full 40-character id of the commit you reviewed; it must still be the PR's head
-        type: string
-        required: true
-  # Runs the base branch's workflow with secrets so fork previews get deleted too. Never checks out PR code.
+  # Runs the base branch's workflow with secrets, so it never checks out PR code: marks fork PRs' `preview` status and
+  # deletes previews when a PR closes.
   pull_request_target:
-    types: [closed]
+    types: [opened, synchronize, reopened, closed]
 
 permissions:
   contents: read
@@ -32,10 +21,7 @@ env:
 jobs:
   # Picks the PR and the exact commit to deploy, and marks the `preview` status pending. Runs no PR code.
   target:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.author_association == 'OWNER' && startsWith(github.event.comment.body, '/deploy-preview'))
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -48,19 +34,14 @@ jobs:
       - id: target
         env:
           GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number || inputs.pr || github.event.issue.number }}
-          SHA: ${{ github.event.pull_request.head.sha || inputs.sha }}
-          COMMENT: ${{ github.event.comment.body }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          [ -z "$COMMENT" ] || read -r _ SHA _ <<< "$COMMENT"
           pr=$(gh pr view "$PR" --json headRefOid,title)
           head=$(jq -r .headRefOid <<< "$pr")
-          # Only the commit you reviewed: if the author pushed since, the head no longer matches.
-          # The full id: a short prefix can be matched by another commit made to share it.
-          if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ || "$head" != "$SHA" ]]; then
-            msg="Not deploying \`${SHA:-no commit}\`: give the full id of the commit you reviewed. This PR's head is now $head."
-            [ -z "$COMMENT" ] || gh pr comment "$PR" --body "$msg"
-            echo "::error::$msg"
+          # A newer push started its own run, which deploys instead.
+          if [ "$head" != "$SHA" ]; then
+            echo "::error::$SHA is no longer this PR's head ($head)."
             exit 1
           fi
           gh api "repos/$GH_REPO/statuses/$head" -f state=pending -f context=preview -f description=Deploying -f target_url="$RUN_URL" > /dev/null
@@ -130,8 +111,20 @@ jobs:
             gh api "repos/$GH_REPO/statuses/$SHA" -f state=failure -f context=preview -f description="Deploy failed" -f target_url="$RUN_URL" > /dev/null
           fi
 
+  # `preview` is a required check, so fork PRs would wait forever. Marks it done without running their code.
+  fork-status:
+    if: github.event_name == 'pull_request_target' && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: gh api "repos/$GH_REPO/statuses/$SHA" -f state=success -f context=preview -f description="Fork PRs get no preview" > /dev/null
+
   cleanup:
-    if: github.event_name == 'pull_request_target'
+    if: github.event_name == 'pull_request_target' && github.event.action == 'closed'
     runs-on: ubuntu-latest
     concurrency:
       group: preview-${{ github.event.pull_request.number }}
