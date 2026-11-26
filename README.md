@@ -139,6 +139,24 @@ More on the CLI: [docs/cli.md](docs/cli.md).
 | [What readers get](docs/readers.md) | URLs, passwords, sandboxing and file types |
 | [Development](docs/development.md) | Local setup, PR previews, the demo site and the tech stack |
 
+## Development
+
+```sh
+devenv shell -- true   # installs Node, pnpm, Bun, Go and the git hooks
+devenv up -d           # runs shelf locally, signed in to the dashboard
+devenv test            # typechecks and tests the Worker, dashboard and CLI, as CI does
+```
+
+Local setup, PR previews and the demo site: [docs/development.md](docs/development.md). The project layout: [AGENTS.md](AGENTS.md).
+
+## Contributing
+
+Contributions are welcome: bug reports, ideas and pull requests.
+
+- **Bugs and ideas:** [open an issue](https://github.com/BUR4KBEY/shelf/issues). For a bigger change, open one before you start, so we can agree on the approach.
+- **Pull requests:** keep each one focused, run `devenv test`, use [Conventional Commits](https://www.conventionalcommits.org/), and add screenshots for UI changes.
+- **Working with an AI agent?** Point it at [AGENTS.md](AGENTS.md). It covers the layout, the checks, and the places that have to change together.
+
 ## Inspiration
 
 shelf began as a self-hosted take on [postplan](https://www.npmjs.com/package/postplan), and then kept growing.
