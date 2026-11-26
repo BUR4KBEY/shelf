@@ -20,3 +20,9 @@ archives:
 
 checksum:
   name_template: checksums.txt
+
+# A tag like v1.3.0-rc.1 is published as a pre-release. Only the highest stable tag becomes the latest release:
+# release.yml sets MAKE_LATEST, so a patch to an older line doesn't take over the repo's "Latest" badge.
+release:
+  prerelease: auto
+  make_latest: '{{ envOrDefault "MAKE_LATEST" "true" }}'

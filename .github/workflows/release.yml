@@ -10,43 +10,67 @@ jobs:
   cli:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - id: release
+        # Same rule as the image's `latest` below: only the highest stable tag becomes the latest GitHub Release.
+        run: |
+          top=$(git tag --list 'v*' --sort=-v:refname | grep -v -- - | head -1)
+          [[ "$GITHUB_REF_NAME" == "$top" ]] && latest=true || latest=false
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version-file: cli/go.mod
-      - uses: goreleaser/goreleaser-action@v6
+          go-version: 1.27.3
+      - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
         with:
-          version: "~> v2"
+          version: v2.20.3
           args: release --clean
           workdir: cli
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAKE_LATEST: ${{ steps.release.outputs.latest }}
 
-  # The self-hosted server (worker/Dockerfile) at ghcr.io/<owner>/shelf: v1.2.3 is tagged 1.2.3, 1.2 and latest.
+  # The self-hosted server (worker/Dockerfile) at ghcr.io/<owner>/shelf: v1.2.3 is tagged 1.2.3, 1.2, and latest if it is
+  # the highest release.
   docker:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Every tag, to find the highest.
+          fetch-depth: 0
+      - id: release
+        # Only the highest stable tag moves `latest`: a patch to an older line or a pre-release must not roll it back.
+        # Pre-releases are dropped first: git sorts v1.3.0-rc.1 above v1.3.0.
+        run: |
+          top=$(git tag --list 'v*' --sort=-v:refname | grep -v -- - | head -1)
+          [[ "$GITHUB_REF_NAME" == "$top" ]] && latest=true || latest=false
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ steps.release.outputs.image }}
+          flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-      - uses: docker/build-push-action@v6
+            type=raw,value=latest,enable=${{ steps.release.outputs.latest }}
+      - id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: worker
           platforms: linux/amd64,linux/arm64
@@ -56,3 +80,8 @@ jobs:
           build-args: COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.release.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
