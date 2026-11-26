@@ -47,7 +47,7 @@ Pre-commit hooks run gofmt, `go vet`, the Worker typechecks and nixfmt. Don't sk
 ## Keep these in sync
 
 - **Bindings:** a new D1 query shape, R2 call or binding in `src/` must work in `selfhost/store.ts` and `preview/shims.ts` too.
-- **Schema:** change the database only with a new migration file. Never edit an applied one. Backup and import (`backup.ts`) must handle the new columns.
+- **Schema:** change the database only with a new migration file, numbered one past the highest (`0012_…`). Never edit or rename an applied one: D1 tracks them by file name. Backup and import (`backup.ts`) must handle the new columns.
 - **Agent surfaces:** a change to the HTTP API also updates `mcp.ts` (each tool calls the API handler it mirrors), `llms.ts`, the CLI where it applies, `skills/`, and `docs/api.md` or `docs/agents.md`.
 - **Look:** colours and fonts live in `dashboard/src/index.css` and are mirrored in `src/page.ts`. The logo in `src/favicon.svg` matches `Logo` in `dashboard/src/components/bits.tsx`.
 - **Docs:** a change people can see updates `docs/` in the same PR, and the README when it changes what shelf is or how to start.
@@ -63,4 +63,4 @@ Pre-commit hooks run gofmt, `go vet`, the Worker typechecks and nixfmt. Don't sk
 
 - [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary`, lowercase and imperative. Scopes in use: `worker`, `dashboard`, `cli`, `selfhost`, `release`, `nix`, `devenv`.
 - PRs merge with rebase-merge, so each commit lands on `main` as written. Keep commits small and each one working.
-- Each PR from this repo gets a preview deploy. A PR that changes the UI includes screenshots.
+- Each PR from this repo gets a preview deploy. Every PR includes evidence from your own run, as the PR template asks: screenshots (before and after) or a video for anything visible, command output for the CLI, API, MCP and self-host.

@@ -154,7 +154,7 @@ Local setup, PR previews and the demo site: [docs/development.md](docs/developme
 Contributions are welcome: bug reports, ideas and pull requests.
 
 - **Bugs and ideas:** [open an issue](https://github.com/BUR4KBEY/shelf/issues). For a bigger change, open one before you start, so we can agree on the approach.
-- **Pull requests:** keep each one focused, run `devenv test`, use [Conventional Commits](https://www.conventionalcommits.org/), and add screenshots for UI changes.
+- **Pull requests:** keep each one focused, run `devenv test`, and use [Conventional Commits](https://www.conventionalcommits.org/). Every PR shows evidence that it works: screenshots or a video for anything visible, command output for the rest. The PR template lists what to include.
 - **Working with an AI agent?** Point it at [AGENTS.md](AGENTS.md). It covers the layout, the checks, and the places that have to change together.
 
 ## Inspiration
