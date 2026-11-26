@@ -14,9 +14,9 @@ Entering the shell installs git hooks that run gofmt, `go vet`, the Worker typec
 
 Each pull request from a branch in this repo gets a [Worker Preview](https://developers.cloudflare.com/workers/previews/) at `https://pr-<number>-shelf.<subdomain>.workers.dev`, commented on the PR and deleted when it closes (`.github/workflows/preview.yml`). Previews use their own `shelf-preview` R2 bucket and D1 database, never production data.
 
-Pull requests from forks never get a preview: the preview runs the PR's code with the Cloudflare token, which can also change the production Worker and every D1 database in the account. To try a fork's change, check it out and run it locally with `devenv up`.
+Pull requests from forks never get a preview: the preview runs the PR's code with the Cloudflare token, which can also change the production Worker and every D1 database in the account. To try a fork's change, check it out and run it locally with `devenv up`. Dependabot's pull requests don't get one either: GitHub gives them no secrets, and handing them the token would run every dependency update with it.
 
-Every deploy sets a `preview` commit status: pending while it deploys, then success with the preview's URL, or failure. Make `preview` a required status check in the `main` ruleset. Fork PRs get a success status that says they have no preview, without running their code, so they can still merge.
+Every deploy sets a `preview` commit status: pending while it deploys, then success with the preview's URL, or failure. Make `preview` a required status check in the `main` ruleset. Fork and Dependabot PRs get a success status that says they have no preview, without running their code, so they can still merge.
 
 To set it up on your own deployment:
 
