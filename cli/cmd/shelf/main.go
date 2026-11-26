@@ -22,6 +22,7 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+	"unicode"
 )
 
 var version = "dev"
@@ -180,13 +181,18 @@ func loadConfig() (config, error) {
 			return c, err
 		}
 	}
-	if v := os.Getenv("SHELF_URL"); v != "" {
+	c.URL = strings.TrimRight(c.URL, "/")
+	envKey := os.Getenv("SHELF_KEY")
+	if v := strings.TrimRight(os.Getenv("SHELF_URL"), "/"); v != "" {
+		// The saved key belongs to the saved server; never send it to another one.
+		if v != c.URL && c.Key != "" && envKey == "" {
+			return c, fmt.Errorf("SHELF_URL (%s) differs from the shelf you logged in to (%s); set SHELF_KEY for it too, or unset SHELF_URL", v, c.URL)
+		}
 		c.URL = v
 	}
-	if v := os.Getenv("SHELF_KEY"); v != "" {
-		c.Key = v
+	if envKey != "" {
+		c.Key = envKey
 	}
-	c.URL = strings.TrimRight(c.URL, "/")
 	if c.URL == "" || c.Key == "" {
 		return c, errors.New("not logged in: run shelf login, or set SHELF_URL and SHELF_KEY")
 	}
@@ -236,11 +242,37 @@ func checkResp(resp *http.Response) error {
 	} else if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/plain") && len(bytes.TrimSpace(b)) > 0 {
 		msg = string(bytes.TrimSpace(b))
 	}
-	return &httpError{msg, resp.StatusCode}
+	return &httpError{clean(msg), resp.StatusCode}
 }
 
+// clean replaces control characters in a server-supplied string so it can't drive the terminal (ESC, CSI, OSC).
+func clean(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return '\uFFFD'
+		}
+		return r
+	}, s)
+}
+
+// client refuses to follow a redirect of a write, which Go would re-send as a GET that looks like success.
+// No overall Timeout: it would also cut off large uploads and downloads on slow links.
+var client = &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	if m := via[0].Method; m != "GET" && m != "HEAD" {
+		return fmt.Errorf("server redirected to %s; run shelf login with that URL", req.URL)
+	}
+	// Go copies custom headers to any host; a doc password belongs to the server it was typed for.
+	if req.URL.Host != via[0].URL.Host {
+		req.Header.Del("X-Doc-Password")
+	}
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	return nil
+}}
+
 func send(req *http.Request) ([]byte, error) {
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -420,20 +452,21 @@ func push(args []string) error {
 		Path string `json:"path"`
 		ID   string `json:"id"`
 	}{c.URL, abs, d.ID})
+	// The doc is already published: a failed mapping write must not hide the receipt and invite a duplicate retry.
 	if err := writeAtomic(mapPath, m); err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "shelf: warning: could not save the local doc mapping (%v); the next push of this path may make a new doc\n", err)
 	}
 
 	if *asJSON {
 		return printRaw(raw)
 	}
-	fmt.Println(d.URL)
+	fmt.Println(clean(d.URL))
 	if d.Created {
 		fmt.Printf("version %d\n", d.Version)
 	} else {
 		fmt.Printf("version %d (unchanged)\n", d.Version)
 	}
-	fmt.Println("pinned:", d.VersionURL)
+	fmt.Println("pinned:", clean(d.VersionURL))
 	return nil
 }
 
@@ -487,8 +520,8 @@ func ls(args []string) error {
 			title = *d.Title
 		}
 		// The lock emoji is two columns wide but one rune; VS16 makes tabwriter count it as two.
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n", mark(d.Favorite, "★"), mark(d.Locked, "🔒\ufe0f"), ref, d.Latest,
-			time.UnixMilli(d.UpdatedAt).Format(layout), exp, proj, title)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n", mark(d.Favorite, "★"), mark(d.Locked, "🔒\ufe0f"), clean(ref), d.Latest,
+			time.UnixMilli(d.UpdatedAt).Format(layout), exp, clean(proj), clean(title))
 	}
 	return tw.Flush()
 }
@@ -566,7 +599,7 @@ func set(args []string) error {
 	if err := json.Unmarshal(raw, &d); err != nil {
 		return err
 	}
-	fmt.Println(d.URL)
+	fmt.Println(clean(d.URL))
 	return nil
 }
 
@@ -603,18 +636,23 @@ func open(args []string) error {
 	if err := json.Unmarshal(raw, &d); err != nil {
 		return err
 	}
-	fmt.Println(d.URL)
-	var cmd *exec.Cmd
+	// The URL goes to the OS opener, which would also run file:, smb: or app-specific handlers.
+	if u, err := url.Parse(d.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("refusing to open non-http(s) URL %q", d.URL)
+	}
+	fmt.Println(clean(d.URL))
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", d.URL)
+		return launch("rundll32", "url.dll,FileProtocolHandler", d.URL)
 	case "darwin":
-		cmd = exec.Command("open", d.URL)
+		return launch("open", d.URL)
 	default:
-		cmd = exec.Command("xdg-open", d.URL)
+		return launch("xdg-open", d.URL)
 	}
-	return cmd.Start()
 }
+
+// launch starts the OS URL opener; a var so tests can see what would run.
+var launch = func(name string, arg ...string) error { return exec.Command(name, arg...).Start() }
 
 func get(args []string) error {
 	fl := flag.NewFlagSet("get", flag.ContinueOnError)
@@ -644,7 +682,7 @@ func get(args []string) error {
 		req.Header.Set("X-Doc-Password", pw)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -665,7 +703,12 @@ func get(args []string) error {
 		name = "download"
 		if _, params, err := mime.ParseMediaType(resp.Header.Get("Content-Disposition")); err == nil && params["filename"] != "" {
 			// Base keeps a hostile server from writing outside the current directory.
-			if b := filepath.Base(params["filename"]); b != "." && b != ".." && b != string(filepath.Separator) {
+			b := filepath.Base(params["filename"])
+			// Dotfiles (.npmrc, .envrc) are loaded by other tools on their own, so the server can't pick one; -o can.
+			if strings.HasPrefix(b, ".") || strings.ContainsFunc(b, unicode.IsControl) {
+				return fmt.Errorf("the server named this file %q; pass -o %q to save it under that name", b, b)
+			}
+			if b != string(filepath.Separator) {
 				name = b
 			}
 		}
@@ -723,6 +766,10 @@ func manifest(root string) (files []file, isDir bool, err error) {
 		f, err := hashFile(root, filepath.Base(root))
 		return []file{f}, false, err
 	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, true, err
+	}
 	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -739,6 +786,16 @@ func manifest(root string) (files []file, isDir bool, err error) {
 		// Stat follows symlinks to files; sockets, devices and links to dirs are skipped.
 		if info, err := os.Stat(p); err != nil || !info.Mode().IsRegular() {
 			return err
+		}
+		// Links are followed only inside the folder, so a link to ~/.ssh/id_rsa is never uploaded.
+		if d.Type()&fs.ModeSymlink != 0 {
+			target, err := filepath.EvalSymlinks(p)
+			if err != nil {
+				return err
+			}
+			if rel, err := filepath.Rel(realRoot, target); err != nil || !filepath.IsLocal(rel) {
+				return fmt.Errorf("%s links outside the folder (to %s); refusing to upload it", p, target)
+			}
 		}
 		rel, err := filepath.Rel(root, p)
 		if err != nil {
@@ -791,7 +848,8 @@ func pushManifest(c config, body map[string]any, files []file) ([]byte, doc, err
 			return raw, d, nil
 		}
 		if attempt > 0 {
-			return nil, d, fmt.Errorf("server still lacks %d file(s) after upload", len(d.Missing))
+			// The server drops a key's older unpushed uploads to fit newer ones, so a push bigger than the quota ends here.
+			return nil, d, fmt.Errorf("server still lacks %d file(s) after upload; the files may not fit this key's quota together", len(d.Missing))
 		}
 		bySHA := map[string]file{}
 		for _, f := range files {
