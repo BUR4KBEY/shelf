@@ -1,16 +1,11 @@
 @import "../../dashboard/src/index.css";
 @source "../../dashboard/src";
 
-/* The banner sits above the dashboard, so its sticky header and sidebar start below it, and so does a section scrolled to. */
+/* The banner sits above the dashboard, so its sticky header and sidebar start below it, and so does a section scrolled to.
+   Banner.tsx sets --banner to its measured height, 0 once closed; this is the value before the first render. */
 :root {
   --banner: 2.5rem;
   scroll-padding-top: var(--banner);
-}
-/* From sm up the banner's text takes two lines. */
-@media (width >= 40rem) {
-  :root {
-    --banner: 3.5rem;
-  }
 }
 @media (width < 64rem) {
   :root {
