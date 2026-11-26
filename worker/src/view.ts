@@ -2,7 +2,7 @@ import { marked } from "marked";
 import { type Doc, appSettings, findDoc } from "./api";
 import { sameString, unlockToken, verifyPassword } from "./auth";
 import { CREDIT_BADGE, LOCK_ICON, MD_CSS, cardPage, darkReaderScript, notFound, notice, themeAttr } from "./page";
-import { escapeHtml, sha256Hex } from "./util";
+import { escapeHtml, ipKey, sha256Hex } from "./util";
 
 // Server-side type policy by extension; client-sent types are ignored.
 // Anything not listed is served as a download.
@@ -40,7 +40,9 @@ interface FileRow {
   size: number;
 }
 
-const ip = (req: Request) => req.headers.get("cf-connecting-ip") ?? "local";
+const clientIp = (req: Request) => req.headers.get("cf-connecting-ip") ?? "local";
+/** Rate limits count an IPv6 client by its /64: one customer can hold millions of addresses. */
+const ip = (req: Request) => ipKey(clientIp(req));
 
 /** The crawlers chat apps send to build a card for a pasted link; iMessage borrows the Facebook and Twitter ones. Also in robots.txt (index.ts). */
 export const PREVIEW_BOTS = ["Slackbot-LinkExpanding", "Slackbot", "Twitterbot", "facebookexternalhit", "Facebot", "Discordbot", "TelegramBot", "WhatsApp", "LinkedInBot", "SkypeUriPreview", "Mastodon"];
@@ -51,13 +53,19 @@ const BOT = /bot|crawl|spider|slurp|preview|fetch|http|curl|wget|python|node|go-
 /**
  * Records a reader opening a doc. Not counted: bots, link previews, prefetches, the owner opening it from the dashboard
  * (ownerOpen's `owner` cookie) and media seeks. `visitor` hashes the IP and browser with the day; neither is stored.
+ * Opens add to one row per visitor and 15-minute slot (migrations/0010_view_counts.sql), so reloads can't grow the table,
+ * and at most VIEW_LIMIT opens per IP a minute (wrangler.jsonc) count at all.
  */
 async function recordView(req: Request, env: Env, doc: Doc, n: number): Promise<void> {
   const ua = req.headers.get("user-agent") ?? "";
   if (req.method !== "GET" || !ua || BOT.test(ua) || req.headers.has("range") || req.headers.has("sec-purpose") || /(?:^|;\s*)owner=1(?:;|$)/.test(req.headers.get("cookie") ?? "")) return;
+  // Keyed by IP alone: a script rotating its User-Agent is a new visitor, and a new row, on every open.
+  if (!(await env.VIEW_LIMIT.limit({ key: ip(req) })).success) return;
   const now = Date.now();
-  const visitor = (await sha256Hex(`${Math.floor(now / 86_400_000)}\n${ip(req)}\n${ua}`)).slice(0, 16);
-  await env.DB.prepare("INSERT INTO views (doc_id, n, at, visitor) VALUES (?, ?, ?, ?)").bind(doc.id, n, now, visitor).run();
+  const visitor = (await sha256Hex(`${Math.floor(now / 86_400_000)}\n${clientIp(req)}\n${ua}`)).slice(0, 16);
+  await env.DB.prepare("INSERT INTO views (doc_id, n, slot, visitor, at, count) VALUES (?1, ?2, ?3, ?4, ?5, 1) ON CONFLICT (doc_id, n, slot, visitor) DO UPDATE SET at = ?5, count = count + 1")
+    .bind(doc.id, n, Math.floor(now / 900_000), visitor, now)
+    .run();
 }
 
 /** Our own page, not user content: no sandbox, so the form can submit. */
@@ -92,14 +100,15 @@ export async function unlock(req: Request, env: Env, ref: string): Promise<Respo
   const next = typeof nextField === "string" && nextField.startsWith("/view/") ? nextField : `/view/${ref}`;
   if (!(await env.UNLOCK_LIMIT.limit({ key: `${ip(req)}:${doc.id}` })).success) return lockedPage(req, 429, ref, next, "Too many attempts. Wait a minute.");
   if (typeof password !== "string" || !(await verifyPassword(password, doc.password_hash))) return lockedPage(req, 401, ref, next, "Wrong password.");
-  return new Response(null, { status: 303, headers: { location: next, "set-cookie": await unlockCookie(doc), "cache-control": "no-store" } });
+  return new Response(null, { status: 303, headers: { location: next, "set-cookie": await unlockCookie(req, doc), "cache-control": "no-store" } });
 }
 
 // Path=/view so pinned versions (/view/x@2) get it too. SameSite=None: the sandboxed doc has an
 // opaque origin, so its own image and CSS requests are cross-site and would drop a Lax cookie.
+// None needs Secure, which browsers drop over plain http (a self-hosted shelf on a LAN), so there it is Lax: the page opens, its assets may not.
 // shortcut: one cookie per unlocked doc, all sent on every /view request; fine below a few hundred docs.
-const unlockCookie = async (doc: Doc) =>
-  `u_${doc.id}=${await unlockToken(doc.id, doc.password_hash!)}; Path=/view; Max-Age=2592000; HttpOnly; Secure; SameSite=None`;
+const unlockCookie = async (req: Request, doc: Doc) =>
+  `u_${doc.id}=${await unlockToken(doc.id, doc.password_hash!)}; Path=/view; Max-Age=2592000; HttpOnly; ${new URL(req.url).protocol === "https:" ? "Secure; SameSite=None" : "SameSite=Lax"}`;
 
 /**
  * GET /dashboard/open/<ref>[@n][/path], behind Cloudflare Access: the signed-in owner skips the password form.
@@ -109,8 +118,8 @@ const unlockCookie = async (doc: Doc) =>
 export async function ownerOpen(req: Request, env: Env, ref: string, viewPath: string): Promise<Response> {
   const doc = await findDoc(env, ref);
   const headers = new Headers({ location: `${viewPath}${new URL(req.url).search}`, "cache-control": "no-store" });
-  headers.append("set-cookie", "owner=1; Path=/view; Max-Age=10; HttpOnly; Secure; SameSite=Lax");
-  if (doc?.password_hash) headers.append("set-cookie", await unlockCookie(doc));
+  headers.append("set-cookie", `owner=1; Path=/view; Max-Age=10; HttpOnly; SameSite=Lax${new URL(req.url).protocol === "https:" ? "; Secure" : ""}`);
+  if (doc?.password_hash) headers.append("set-cookie", await unlockCookie(req, doc));
   return new Response(null, { status: 302, headers });
 }
 
@@ -166,8 +175,9 @@ export async function view(req: Request, env: Env, ctx: ExecutionContext, ref: s
   if (!file) return notFound(req);
   // Only a browser opening the page gets the badge: `shelf get`, curl, agents and chat apps' crawlers get the doc's own bytes.
   const credit = !previewBot && !!settings?.credit && !!req.headers.get("accept")?.includes("text/html");
-  const res = await serveFile(req, env, doc, n, pin !== undefined, file, entry && previewBot, credit);
-  if (entry && settings!.viewStats && res.status === 200) ctx.waitUntil(recordView(req, env, doc, n));
+  const res = await serveFile(req, env, doc, n, file, entry && previewBot, credit);
+  // A 304 is a reader opening the doc from their cache: still a view.
+  if (entry && settings!.viewStats && (res.status === 200 || res.status === 304)) ctx.waitUntil(recordView(req, env, doc, n));
   return res;
 }
 
@@ -175,12 +185,19 @@ export async function view(req: Request, env: Env, ctx: ExecutionContext, ref: s
  * `card`: a chat app is building a card for the link, so HTML and Markdown get Open Graph tags (the doc's title and the site name).
  * `credit`: an HTML or Markdown doc gets the "Shared with shelf" badge in its corner. Other files are served as uploaded.
  */
-async function serveFile(req: Request, env: Env, doc: Doc, n: number, pinned: boolean, file: FileRow, card: boolean, credit: boolean): Promise<Response> {
+async function serveFile(req: Request, env: Env, doc: Doc, n: number, file: FileRow, card: boolean, credit: boolean): Promise<Response> {
   const url = new URL(req.url);
   const name = file.path.slice(file.path.lastIndexOf("/") + 1);
   const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
   const markdown = ext === "md" && !url.searchParams.has("raw");
-  const range = req.headers.has("range") && !markdown;
+  // The file's hash: a version's bytes never change. Access was checked before this, so a withdrawn version never answers 304.
+  // Only for the bytes as uploaded: rendered Markdown, link cards and the badge depend on settings and the build, not the hash.
+  const etag = `"${file.sha256}"`;
+  const tagged = !doc.password_hash && !markdown && !((card || credit) && INLINE[ext]?.startsWith("text/html"));
+  if (tagged && req.headers.get("if-none-match")?.split(",").some((t) => t.trim().replace(/^W\//, "") === etag)) {
+    return new Response(null, { status: 304, headers: { etag, "cache-control": "no-cache" } });
+  }
+  const range = req.headers.has("range") && !markdown && (req.headers.get("if-range") ?? etag) === etag;
 
   let obj: R2ObjectBody | null;
   try {
@@ -197,13 +214,14 @@ async function serveFile(req: Request, env: Env, doc: Doc, n: number, pinned: bo
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer", // unguessable URLs must not leak to linked sites
     "x-robots-tag": "noindex",
-    "cache-control": doc.password_hash ? "private, no-store" : pinned ? "public, max-age=31536000, immutable" : "no-cache",
+    "cache-control": doc.password_hash ? "private, no-store" : "no-cache",
     // The sandboxed doc has an opaque origin, so its own fonts and module scripts are CORS requests.
     "access-control-allow-origin": "*",
     "accept-ranges": "bytes",
     "x-shelf-doc": doc.id,
     "x-shelf-version": String(n),
   });
+  if (tagged) headers.set("etag", etag);
   // Chrome's PDF viewer renders nothing under a sandbox CSP, and a PDF cannot run page script.
   if (ext !== "pdf") {
     // No allow-same-origin: doc scripts run with an opaque origin and cannot read cookies or call the API.

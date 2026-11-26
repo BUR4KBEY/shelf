@@ -1,5 +1,5 @@
 import page from "./dashboard.html";
-import { UPLOAD_SELECT, appSettings } from "./api";
+import { ANALYTICS_DAYS, UPLOAD_SELECT, appSettings } from "./api";
 import { darkReaderScript, themeAttr } from "./page";
 import { json, randomId, sha256Hex } from "./util";
 
@@ -36,12 +36,14 @@ export async function createKey(req: Request, env: Env): Promise<Response> {
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (!name || name.length > 64) return json({ error: "name: 1 to 64 chars" }, 400);
   const space = body?.space ?? "default";
-  if (!(await spaceExists(env, space))) return json({ error: "space not found" }, 400);
+  if (typeof space !== "string") return json({ error: "space not found" }, 400);
   const id = `k_${randomId(10)}`;
   const key = `sk_${randomId(43)}`; // ≈256 bits
-  await env.DB.prepare("INSERT INTO api_keys (id, name, hash, created_at, space_id) VALUES (?, ?, ?, ?, ?)")
+  // Checked in the INSERT itself: no foreign key stops a key landing in a space deleted since a separate check.
+  const { meta } = await env.DB.prepare("INSERT INTO api_keys (id, name, hash, created_at, space_id) SELECT ?1, ?2, ?3, ?4, ?5 WHERE EXISTS (SELECT 1 FROM spaces WHERE id = ?5)")
     .bind(id, name, await sha256Hex(key), Date.now(), space)
     .run();
+  if (!meta.changes) return json({ error: "space not found" }, 400);
   return json({ id, name, space, key });
 }
 
@@ -172,9 +174,6 @@ export async function getKey(env: Env, id: string): Promise<Response> {
   return json({ ...key.results[0], docs: docs.results, uploads: uploads.results, times: times.results.map((r) => r.t) });
 }
 
-/** How far back the analytics page goes: a year and the year before it, so a year can be compared with the one before. */
-const ANALYTICS_DAYS = 728;
-
 /**
  * Every key's uploads, for the analytics page. Counts are per key and space, so the page can filter by space; a key
  * that is gone or the dashboard (null) gets rows too. `tz` is the browser's getTimezoneOffset(), so `day` (days since
@@ -200,7 +199,7 @@ export async function getAnalytics(req: Request, env: Env): Promise<Response> {
     ),
     env.DB.prepare("SELECT id, quota_bytes AS quota FROM api_keys WHERE quota_bytes IS NOT NULL"),
     env.DB.prepare(
-      "SELECT w.doc_id AS docId, d.space_id AS space, CAST((w.at - ?1) / 86400000 AS INTEGER) AS day, COUNT(*) AS views, COUNT(DISTINCT w.visitor) AS readers FROM views w JOIN docs d ON d.id = w.doc_id WHERE w.at >= ?2 GROUP BY 1, 2, 3",
+      "SELECT w.doc_id AS docId, d.space_id AS space, CAST((w.at - ?1) / 86400000 AS INTEGER) AS day, SUM(w.count) AS views, COUNT(DISTINCT w.visitor) AS readers FROM views w JOIN docs d ON d.id = w.doc_id WHERE w.at >= ?2 GROUP BY 1, 2, 3",
     ).bind(shift, since),
   ]);
   const { viewStats } = await appSettings(env);

@@ -6,6 +6,8 @@ export const SLUG = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 export const SLUG_LIMIT = 128; // the longest slug length the owner may allow
 export const MAX_FILES = 1000;
 const DAY = 86_400_000;
+/** How far back the analytics page goes: a year and the year before it, so a year can be compared with the one before. The sweep drops older view rows. */
+export const ANALYTICS_DAYS = 728;
 const UNIT: Record<string, number> = { m: 60_000, h: 3_600_000, d: DAY, w: 7 * DAY };
 
 export interface Doc {
@@ -97,16 +99,21 @@ export async function patchAppSettings(req: Request, env: Env): Promise<Response
     return json({ error: `the default expiry (${next.defaultExpires}) can't be longer than the longest allowed (${next.maxExpires})` }, 400);
   }
   const upsert = env.DB.prepare("INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = ?2");
-  await env.DB.batch([
-    next.defaultExpires === null ? env.DB.prepare("DELETE FROM settings WHERE key = 'default_expires'") : upsert.bind("default_expires", next.defaultExpires),
-    upsert.bind("max_expires", next.maxExpires),
-    upsert.bind("isolate_spaces", next.isolateSpaces ? "1" : "0"),
-    upsert.bind("max_slug_length", String(next.maxSlugLength)),
-    upsert.bind("view_stats", next.viewStats ? "1" : "0"),
-    upsert.bind("link_previews", next.linkPreviews ? "1" : "0"),
-    upsert.bind("credit", next.credit ? "1" : "0"),
-  ]);
-  return json(next);
+  const writes: [string, unknown, string | null][] = [
+    ["default_expires", d, next.defaultExpires],
+    ["max_expires", max, next.maxExpires],
+    ["isolate_spaces", iso, next.isolateSpaces ? "1" : "0"],
+    ["max_slug_length", slugMax, String(next.maxSlugLength)],
+    ["view_stats", stats, next.viewStats ? "1" : "0"],
+    ["link_previews", previews, next.linkPreviews ? "1" : "0"],
+    ["credit", credit, next.credit ? "1" : "0"],
+  ];
+  // Only the settings the body names: writing back the rest from the read above would undo a change made since.
+  const stmts = writes
+    .filter(([, given]) => given !== undefined)
+    .map(([key, , value]) => (value === null ? env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(key) : upsert.bind(key, value)));
+  if (stmts.length) await env.DB.batch(stmts);
+  return json(await appSettings(env));
 }
 
 interface Settings {
@@ -150,6 +157,14 @@ async function settingsColumns(env: Env, s: Settings, doc: Doc | null, caller: C
     if (typeof s.space !== "string" || !(await env.DB.prepare("SELECT 1 FROM spaces WHERE id = ?").bind(s.space).first())) {
       return json({ error: "space not found" }, 400);
     }
+  }
+  // A key's own space's toggles hold through settings too: an expiry lets the sweep delete the doc, and a new password lets the key read it.
+  if (caller && doc && !caller.canDelete && s.expires != null && expiresMs !== 0) {
+    return json({ error: "keys in this space can't make docs expire; the owner can, from the dashboard" }, 403);
+  }
+  // As in read_doc, another space's password is never the key's to skip, even with isolation off.
+  if (caller && doc?.password_hash && s.password !== undefined && (!caller.readLocked || doc.space_id !== caller.space)) {
+    return json({ error: "keys in this space can't change a locked doc's password; the owner can, from the dashboard" }, 403);
   }
 
   const cols: Record<string, unknown> = {};
@@ -201,20 +216,27 @@ interface PushBody extends Settings {
   files: { path: string; sha256: string }[];
 }
 
-/** A key's quota and the bytes its versions keep on the shelf. Every version counts in full, even files it shares. */
+/**
+ * A key's quota and the bytes its versions keep on the shelf. Every version counts in full, even files it shares.
+ * `pending`: the bytes of its uploads no push has put in a doc yet.
+ */
 interface Quota {
   quota_bytes: number | null;
   quota_strategy: "reject" | "fifo";
   used: number;
+  pending: number;
 }
 
-export const keyQuota = (env: Env, keyId: string) =>
-  env.DB.prepare("SELECT quota_bytes, quota_strategy, (SELECT COALESCE(SUM(size), 0) FROM versions WHERE key_id = k.id) AS used FROM api_keys k WHERE id = ?")
-    .bind(keyId)
+/** `except`: a blob left out of `pending`, since uploading it again takes no more room. */
+export const keyQuota = (env: Env, keyId: string, except: string | null = null) =>
+  env.DB.prepare(
+    "SELECT quota_bytes, quota_strategy, (SELECT COALESCE(SUM(size), 0) FROM versions WHERE key_id = k.id) AS used, (SELECT COALESCE(SUM(size), 0) FROM uploads WHERE key_id = k.id AND sha256 IS NOT ?2) AS pending FROM api_keys k WHERE id = ?1",
+  )
+    .bind(keyId, except)
     .first<Quota>();
 
-const overQuota = (q: Quota, size: number) =>
-  json({ error: `quota: this key may keep ${q.quota_bytes} bytes and keeps ${q.used}, so ${size} more don't fit${q.quota_strategy === "fifo" ? ", even after deleting its oldest uploads that may go" : ""}` }, 413);
+const overQuota = (q: Quota, size: number, pending = 0) =>
+  json({ error: `quota: this key may keep ${q.quota_bytes} bytes and keeps ${q.used}${pending ? `, plus ${pending} uploaded and not pushed yet` : ""}, so ${size} more don't fit${q.quota_strategy === "fifo" ? ", even after deleting its oldest uploads that may go" : ""}` }, 413);
 
 /**
  * Statements that delete a key's oldest uploads until `need` bytes are free, or null when they can't free that much.
@@ -234,10 +256,13 @@ async function evictions(env: Env, keyId: string, target: string, need: number):
     if (need <= 0) break;
     const count = left.get(r.doc)!;
     if (r.doc !== target && r.n === r.latest && count > 1) continue;
+    // The plan is read before the batch, so each statement rechecks it: a doc starred or given a new version since stays.
+    // shortcut: a skipped statement frees nothing, so the key can end up a little over its quota; fine for one owner's agents.
+    const notLatest = r.doc === target ? "" : " AND n != (SELECT latest FROM docs WHERE id = ?1)";
     stmts.push(
       r.doc !== target && count === 1
-        ? env.DB.prepare("DELETE FROM docs WHERE id = ?").bind(r.doc)
-        : env.DB.prepare("DELETE FROM versions WHERE doc_id = ? AND n = ?").bind(r.doc, r.n),
+        ? env.DB.prepare("DELETE FROM docs WHERE id = ?1 AND favorite = 0 AND latest = ?2 AND (SELECT COUNT(*) FROM versions WHERE doc_id = ?1) = 1").bind(r.doc, r.n)
+        : env.DB.prepare(`DELETE FROM versions WHERE doc_id = ?1 AND n = ?2 AND (SELECT favorite FROM docs WHERE id = ?1) = 0${notLatest}`).bind(r.doc, r.n),
     );
     left.set(r.doc, count - 1);
     need -= r.size;
@@ -286,7 +311,15 @@ export async function push(req: Request, env: Env, caller: Caller | null): Promi
 
   const shas = [...new Set(body.files.map((f) => f.sha256))];
   const heads = await Promise.all(shas.map((s) => env.BUCKET.head(`docs/${s}`)));
-  const missing = shas.filter((_, i) => !heads[i]);
+  // An isolated key has only the blobs its space's docs hold or it uploaded itself; any other sha could be another space's file.
+  const own = caller?.scope
+    ? await env.DB.prepare(
+        "SELECT f.sha256 AS sha FROM files f JOIN docs d ON d.id = f.doc_id WHERE d.space_id = ?2 AND f.sha256 IN (SELECT value FROM json_each(?1)) UNION SELECT sha256 FROM uploads WHERE key_id = ?3 AND sha256 IN (SELECT value FROM json_each(?1))",
+      )
+        .bind(JSON.stringify(shas), caller.scope, caller.id)
+        .all<{ sha: string }>()
+    : null;
+  const missing = shas.filter((s, i) => !heads[i] || (own && !own.results.some((r) => r.sha === s)));
   if (missing.length) return json({ missing });
 
   // Sizes come from R2, never from the client.
@@ -312,9 +345,15 @@ export async function push(req: Request, env: Env, caller: Caller | null): Promi
   }
   if (!doc) {
     const title = body.title ?? (files.length === 1 ? files[0].path : null);
+    // Only into a space that still exists: no foreign key stops a doc landing in one deleted since the key was checked.
     // The dashboard's `space` setting, if any, moves it right after.
     stmts.push(
-      env.DB.prepare("INSERT INTO docs (id, title, latest, created_at, updated_at, space_id) VALUES (?, ?, 0, ?, ?, ?)").bind(id, title, now, now, caller?.space ?? "default"),
+      env.DB.prepare("INSERT INTO docs (id, title, latest, created_at, updated_at, space_id) SELECT ?1, ?2, 0, ?3, ?3, ?4 WHERE EXISTS (SELECT 1 FROM spaces WHERE id = ?4)").bind(
+        id,
+        title,
+        now,
+        caller?.space ?? "default",
+      ),
     );
   }
   if (Object.keys(cols).length) stmts.push(updateStmt(env, id, cols));
@@ -330,36 +369,75 @@ export async function push(req: Request, env: Env, caller: Caller | null): Promi
       ).bind(id, JSON.stringify(files)),
     );
   }
+  // Its blobs are in a doc now, so they no longer count as the key's pending uploads.
+  if (caller) stmts.push(env.DB.prepare("DELETE FROM uploads WHERE key_id = ? AND sha256 IN (SELECT value FROM json_each(?))").bind(caller.id, JSON.stringify(shas)));
   stmts.push(env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(id));
-  let results: D1Result<Doc>[];
+  let saved: Doc | undefined;
   try {
-    results = await env.DB.batch<Doc>(stmts);
+    saved = (await env.DB.batch<Doc>(stmts)).at(-1)!.results[0];
   } catch (e) {
     if (String(e).includes("UNIQUE constraint failed: docs.slug")) return json({ error: "slug is taken" }, 409);
-    throw e;
+    // Its files had no version to go under, so the batch, evictions too, rolled back.
+    if (!String(e).includes("NOT NULL constraint failed: files.n")) throw e;
   }
-  const saved = results.at(-1)!.results[0];
+  // No doc: it, or the space a new one was going into, was deleted meanwhile.
+  if (!saved) return json({ error: "the doc or its space was deleted during this push; push again" }, 409);
   const out = docJson(req, saved);
   return json({ ...out, version: saved.latest, versionUrl: `${new URL(req.url).origin}/view/${id}@${saved.latest}`, created });
 }
 
-/**
- * Streams the body into R2. R2 rejects it if the bytes do not hash to `sha`.
- * A key's blob must fit its quota (or its room left, under reject), so a key can't fill R2 with blobs it never pushes.
- */
+/** Streams the body into R2 through storeBlob. */
 export async function putBlob(req: Request, env: Env, sha: string, keyId: string | null): Promise<Response> {
-  if (!req.headers.has("content-length")) return json({ error: "content-length required" }, 411);
-  const q = keyId ? await keyQuota(env, keyId) : null;
-  if (q && q.quota_bytes !== null) {
-    const length = Number(req.headers.get("content-length"));
-    if (length > (q.quota_strategy === "fifo" ? q.quota_bytes : q.quota_bytes - q.used)) return overQuota(q, length);
-  }
+  const length = Number(req.headers.get("content-length"));
+  if (!req.headers.has("content-length") || !Number.isSafeInteger(length) || length < 0) return json({ error: "content-length required" }, 411);
+  return (await storeBlob(env, sha, req.body ?? "", length, keyId)) ?? new Response(null, { status: 204 });
+}
+
+/**
+ * Stores `length` bytes in R2, which rejects them if they do not hash to `sha`; an error response, or null once stored.
+ * A key's blob must fit its quota (or its room left, under reject) together with its uploads no push has committed yet,
+ * so a key can't fill R2 with blobs it never pushes. When those uploads are what's in the way, its oldest go first.
+ * `keyId` is null for the dashboard.
+ */
+export async function storeBlob(env: Env, sha: string, body: ReadableStream | Uint8Array | string, length: number, keyId: string | null): Promise<Response | null> {
+  const q = keyId ? await keyQuota(env, keyId, sha) : null;
+  const room = q && q.quota_bytes !== null ? (q.quota_strategy === "fifo" ? q.quota_bytes : q.quota_bytes - q.used) : Infinity;
+  if (q && length > room) return overQuota(q, length);
+  if (q && length + q.pending > room) await reclaimUploads(env, keyId!, sha, length + q.pending - room);
   try {
-    await env.BUCKET.put(`docs/${sha}`, req.body ?? "", { sha256: sha });
+    await env.BUCKET.put(`docs/${sha}`, body, { sha256: sha });
   } catch (e) {
     return json({ error: `upload rejected: ${(e as Error).message}` }, 400);
   }
-  return new Response(null, { status: 204 });
+  if (keyId) {
+    await env.DB.prepare("INSERT INTO uploads (key_id, sha256, size, at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (key_id, sha256) DO UPDATE SET size = ?3, at = ?4")
+      .bind(keyId, sha, length, Date.now())
+      .run();
+  }
+  return null;
+}
+
+/**
+ * Drops a key's oldest uploads no push has committed, other than `except`, until `need` bytes are free. Each blob goes
+ * too unless a doc or another key's upload holds it.
+ * shortcut: a push (another key's, or the dashboard's, which leaves no uploads row) can reference a blob between the check
+ * and the delete and then lose it, the same race the daily sweep has; fine for one owner.
+ */
+async function reclaimUploads(env: Env, keyId: string, except: string, need: number): Promise<void> {
+  const { results } = await env.DB.prepare("SELECT sha256, size FROM uploads WHERE key_id = ? AND sha256 != ? ORDER BY at, rowid").bind(keyId, except).all<{ sha256: string; size: number }>();
+  const gone: string[] = [];
+  for (const r of results) {
+    if (need <= 0) break;
+    gone.push(r.sha256);
+    need -= r.size;
+  }
+  const shas = JSON.stringify(gone);
+  await env.DB.prepare("DELETE FROM uploads WHERE key_id = ? AND sha256 IN (SELECT value FROM json_each(?))").bind(keyId, shas).run();
+  const { results: held } = await env.DB.prepare("SELECT sha256 FROM files WHERE sha256 IN (SELECT value FROM json_each(?1)) UNION SELECT sha256 FROM uploads WHERE sha256 IN (SELECT value FROM json_each(?1))")
+    .bind(shas)
+    .all<{ sha256: string }>();
+  const orphans = gone.filter((s) => !held.some((h) => h.sha256 === s));
+  if (orphans.length) await env.BUCKET.delete(orphans.map((s) => `docs/${s}`));
 }
 
 /** Docs in `scope` (null: every space), favorites first; `?project=` narrows them to one project, in any case. */
@@ -381,10 +459,10 @@ export async function getDoc(req: Request, env: Env, ref: string, scope: string 
   const shift = Number.isInteger(tz) && Math.abs(tz) <= 840 ? tz * 60_000 : 0;
   const [versions, views, days] = await env.DB.batch<Record<string, unknown>>([
     env.DB.prepare(
-      "SELECT v.n, v.message, v.size, v.created_at AS createdAt, v.key_id AS keyId, k.name AS keyName, v.disabled, (SELECT COUNT(*) FROM files f WHERE f.doc_id = v.doc_id AND f.n = v.n) AS files, (SELECT COUNT(*) FROM views w WHERE w.doc_id = v.doc_id AND w.n = v.n) AS views FROM versions v LEFT JOIN api_keys k ON k.id = v.key_id WHERE v.doc_id = ? ORDER BY v.n DESC",
+      "SELECT v.n, v.message, v.size, v.created_at AS createdAt, v.key_id AS keyId, k.name AS keyName, v.disabled, (SELECT COUNT(*) FROM files f WHERE f.doc_id = v.doc_id AND f.n = v.n) AS files, (SELECT coalesce(SUM(count), 0) FROM views w WHERE w.doc_id = v.doc_id AND w.n = v.n) AS views FROM versions v LEFT JOIN api_keys k ON k.id = v.key_id WHERE v.doc_id = ? ORDER BY v.n DESC",
     ).bind(doc.id),
-    env.DB.prepare("SELECT COUNT(*) AS total, COUNT(DISTINCT visitor) AS readers, MAX(at) AS lastAt FROM views WHERE doc_id = ?").bind(doc.id),
-    env.DB.prepare("SELECT CAST((at - ?2) / 86400000 AS INTEGER) AS day, COUNT(*) AS views FROM views WHERE doc_id = ?1 AND at >= ?3 GROUP BY 1").bind(doc.id, shift, Date.now() - 31 * DAY),
+    env.DB.prepare("SELECT coalesce(SUM(count), 0) AS total, COUNT(DISTINCT visitor) AS readers, MAX(at) AS lastAt FROM views WHERE doc_id = ?").bind(doc.id),
+    env.DB.prepare("SELECT CAST((at - ?2) / 86400000 AS INTEGER) AS day, SUM(count) AS views FROM views WHERE doc_id = ?1 AND at >= ?3 GROUP BY 1").bind(doc.id, shift, Date.now() - 31 * DAY),
   ]);
   return json({ ...docJson(req, doc), views: { ...views.results[0], days: days.results }, versions: versions.results.map((v) => ({ ...v, disabled: v.disabled === 1 })) });
 }
@@ -519,8 +597,9 @@ export async function cleanupStatus(env: Env): Promise<{ runs: Cleanup[]; expire
 }
 
 /**
- * Daily cron, or the dashboard's Run now: drops expired docs, then deletes blobs no version references, and records the run,
- * failed or not. Blobs uploaded in the last day are kept so a push in progress never loses its uploads.
+ * Daily cron, or the dashboard's Run now: drops expired docs and view counts older than the analytics window, then deletes
+ * blobs no version references, and records the run, failed or not. Blobs uploaded in the last day are kept so a push in
+ * progress never loses its uploads.
  * shortcut: a day-old orphan blob re-pushed in the same second the sweep deletes it is lost; fine for one owner.
  * shortcut: a run killed by the Workers CPU limit records nothing; the dashboard's overdue warning catches a cron that keeps dying.
  */
@@ -530,6 +609,9 @@ export async function sweep(env: Env, now = Date.now(), trigger: Cleanup["trigge
   try {
     const expired = await env.DB.prepare("DELETE FROM docs WHERE expires_at IS NOT NULL AND expires_at <= ?").bind(now).run();
     run.docs = expired.meta.changes ?? 0;
+    // Uploads no push committed stop counting against their key's quota once their blob may go too.
+    await env.DB.prepare("DELETE FROM uploads WHERE at < ?").bind(now - DAY).run();
+    await env.DB.prepare("DELETE FROM views WHERE at < ?").bind(now - (ANALYTICS_DAYS + 1) * DAY).run();
     let cursor: string | undefined;
     do {
       const page = await env.BUCKET.list({ prefix: "docs/", cursor });

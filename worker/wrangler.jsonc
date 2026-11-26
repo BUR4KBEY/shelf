@@ -11,10 +11,16 @@
   // No IDs: wrangler (and the Deploy to Cloudflare button) creates the bucket and database on first deploy.
   "r2_buckets": [{ "binding": "BUCKET" }],
   "d1_databases": [{ "binding": "DB", "database_name": "shelf" }],
-  // Password attempts per IP and doc.
-  "ratelimits": [{ "name": "UNLOCK_LIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }],
+  // UNLOCK_LIMIT: password attempts per IP and doc. VIEW_LIMIT: views counted per IP (src/view.ts); past it a doc is still
+  // served, only not counted, so a script rotating its User-Agent can't add a row per request.
+  "ratelimits": [
+    { "name": "UNLOCK_LIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+    { "name": "VIEW_LIMIT", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } }
+  ],
   // Daily: delete expired docs and blobs nothing references.
   "triggers": { "crons": ["17 3 * * *"] },
+  // The dashboard trusts ctx.access only for the audience in the ACCESS_AUD secret, which `pnpm run setup:access` stores.
+  // Until it runs, a deployed dashboard refuses everyone. `pnpm run dev` and the tests pass "local-dev", as access.dev below.
   // Local `wrangler dev` only: pretend Cloudflare Access signed this user in, so the dashboard works offline.
   "access": { "dev": { "aud": "local-dev", "identity": { "email": "you@localhost" } } },
   // PR previews (`wrangler preview`, see .github/workflows/preview.yml) on workers.dev. Previews inherit no bindings,
@@ -27,6 +33,9 @@
     "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "shelf-preview" }],
     // Same database as wrangler.preview-migrations.jsonc, which applies migrations to it.
     "d1_databases": [{ "binding": "DB", "database_name": "shelf-preview", "database_id": "7e32ae96-174c-4c79-bd91-fb5317eb1df6" }],
-    "ratelimits": [{ "name": "UNLOCK_LIMIT", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } }]
+    "ratelimits": [
+      { "name": "UNLOCK_LIMIT", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } },
+      { "name": "VIEW_LIMIT", "namespace_id": "1004", "simple": { "limit": 60, "period": 60 } }
+    ]
   }
 }

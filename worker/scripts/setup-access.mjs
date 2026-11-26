@@ -1,12 +1,15 @@
 // Puts Cloudflare Access in front of the shelf dashboard: one allow-policy for the given emails,
 // one self-hosted app for <domain>/dashboard. Safe to rerun: both are found by name and updated.
+// Then stores the app's audience tag as the Worker's ACCESS_AUD secret: the Worker trusts only this app's sign-ins,
+// so another Access app covering the same host can't hand out the dashboard.
 //
 //   CLOUDFLARE_API_TOKEN=... pnpm run setup:access -- --domain shelf.example.com --email you@example.com
 //
-// The token needs "Access: Apps and Policies → Edit". Set CLOUDFLARE_ACCOUNT_ID if it can see more than one account.
+// The token needs "Access: Apps and Policies → Edit" and "Workers Scripts → Edit". Set CLOUDFLARE_ACCOUNT_ID if it
+// can see more than one account. --worker names the Worker if it isn't "shelf".
 import { parseArgs } from "node:util";
 
-const { values: args } = parseArgs({ options: { domain: { type: "string" }, email: { type: "string", multiple: true } } });
+const { values: args } = parseArgs({ options: { domain: { type: "string" }, email: { type: "string", multiple: true }, worker: { type: "string", default: "shelf" } } });
 const token = process.env.CLOUDFLARE_API_TOKEN;
 if (!token || !args.domain || !args.email?.length) {
   console.error("usage: CLOUDFLARE_API_TOKEN=... pnpm run setup:access -- --domain <host> --email <you@example.com> [--email ...]");
@@ -70,3 +73,13 @@ try {
 
 console.log(`${existingPolicy ? "updated" : "created"} policy "${policyName}" allowing ${args.email.join(", ")}`);
 console.log(`app "${appName}" protects https://${domain}/dashboard (aud ${app.aud})`);
+
+try {
+  await cf("PUT", `/accounts/${account}/workers/scripts/${args.worker}/secrets`, { name: "ACCESS_AUD", text: app.aud, type: "secret_text" });
+} catch (e) {
+  console.error(String(e.message));
+  console.error(`Couldn't store the audience on the Worker "${args.worker}": deploy it first (pnpm run deploy), check the token can edit Workers, then rerun.`);
+  console.error(`Or set it by hand: echo ${app.aud} | pnpm exec wrangler secret put ACCESS_AUD`);
+  process.exit(1);
+}
+console.log(`stored the aud as the Worker "${args.worker}"'s ACCESS_AUD secret: the dashboard trusts only this app`);

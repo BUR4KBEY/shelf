@@ -5,7 +5,8 @@ export default defineConfig(async () => ({
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
-      miniflare: { bindings: { TEST_MIGRATIONS: await readD1Migrations("./migrations") } },
+      // ACCESS_AUD is a secret in production (scripts/setup-access.mjs); here it matches the test's ctx.access.
+      miniflare: { bindings: { TEST_MIGRATIONS: await readD1Migrations("./migrations"), ACCESS_AUD: "local-dev" } },
     }),
   ],
   // selfhost/ has its own tests, for Bun (`bun test selfhost`).

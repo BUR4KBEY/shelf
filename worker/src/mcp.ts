@@ -1,4 +1,4 @@
-import { deleteDoc, findDoc, getDoc, listDocs, patchDoc, push } from "./api";
+import { deleteDoc, findDoc, getDoc, listDocs, patchDoc, push, storeBlob } from "./api";
 import type { Caller } from "./auth";
 import { hex, json } from "./util";
 
@@ -121,8 +121,16 @@ async function publish(req: Request, env: Env, caller: Caller, args: Args) {
   if (first.status !== 200) return fromApi(first);
   const { missing } = (await first.clone().json()) as { missing?: string[] };
   if (!missing) return fromApi(first);
-  await Promise.all(missing.map((sha) => env.BUCKET.put(`docs/${sha}`, blobs.get(sha)!, { sha256: sha })));
-  return fromApi(await push(call(req, "POST", body), env, caller));
+  // One at a time: each blob's quota check counts the ones stored before it.
+  for (const sha of missing) {
+    const bytes = blobs.get(sha)!;
+    const refused = await storeBlob(env, sha, bytes, bytes.length, caller.id);
+    if (refused) return fromApi(refused);
+  }
+  const done = await push(call(req, "POST", body), env, caller);
+  // A blob reclaims the key's older unpushed ones, this publish's too, only when together they're over the quota.
+  if (((await done.clone().json()) as { missing?: string[] }).missing) return text("quota: these files together don't fit this key's quota", true);
+  return fromApi(done);
 }
 
 async function readDoc(env: Env, caller: Caller, args: Args) {

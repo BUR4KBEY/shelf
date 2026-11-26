@@ -66,8 +66,9 @@ export function App() {
     animate(sideWidth, wantSide.current ? "19rem" : "3.5rem", { duration: reduce ? 0 : 0.25, ease: "easeOut" }).then(() => setSide(wantSide.current));
   };
   const [palette, setPalette] = useState(false);
-  const [email, setEmail] = useState("");
-  useEffect(() => void api<{ email: string }>("/me").then((me) => setEmail(me.email), () => { }), []);
+  // `logout`: set only when self-hosted, where signing out is the server's (/logout); Access signs in on Cloudflare.
+  const [me, setMe] = useState<{ email: string; logout: string | null }>({ email: "", logout: null });
+  useEffect(() => void api<typeof me>("/me").then(setMe, () => { }), []);
   useEffect(() => {
     // Without this a file dropped outside an upload view makes the browser open it.
     const stop = (e: DragEvent) => e.dataTransfer?.types.includes("Files") && e.preventDefault();
@@ -120,7 +121,7 @@ export function App() {
               <aside ref={asideRef} className={cn("bg-sidebar max-lg:min-h-[calc(100dvh-3.5rem)] lg:sticky lg:top-0 lg:h-dvh lg:overflow-x-hidden lg:overflow-y-auto lg:border-r", !menu && "max-lg:hidden")}>
                 {/* Full width while the column slides, so the column clips it instead of squeezing it. */}
                 <div className={cn("max-lg:contents lg:h-full lg:w-[calc(19rem-1px)]", !side && "lg:hidden")}>
-                  <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} openKey={openKey} settings={settings} analytics={analytics} email={email} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} onCollapse={toggleSide} onSearch={() => setPalette(true)} />
+                  <Sidebar docs={docs.data} uploads={uploads.data} keys={keys.data} colorOf={colorOf} openId={openId} openKey={openKey} settings={settings} analytics={analytics} email={me.email} logout={me.logout} onNavigate={() => setMenu(false)} onKeysChanged={keys.reload} onCollapse={toggleSide} onSearch={() => setPalette(true)} />
                 </div>
                 <div className={cn("hidden h-full w-14 flex-col items-center gap-3 pt-5 pb-6", !side && "lg:flex")}>
                   <a href="#/" aria-label="shelf" className={cn(focusRing, "rounded-md p-1")}>

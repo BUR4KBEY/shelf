@@ -59,9 +59,14 @@ export default {
     if (path === "/") return Response.redirect(`${url.origin}/dashboard`, 302);
 
     if (path === "/dashboard" || path.startsWith("/dashboard/")) {
-      // ctx.access is set only when Cloudflare Access authenticated this request; previews check the Access JWT instead.
-      const preview = ctx.access ? null : await previewAccess(req, env);
-      if (!ctx.access && !preview) return notice(req, 403, "Sign-in required", "The dashboard is behind Cloudflare Access, and this request didn't come through it. See the README to set it up.");
+      // ctx.access is set only when Cloudflare Access authenticated this request, and trusted only for the shelf's own Access app:
+      // another app covering the host admits people who must not own the shelf. Previews check the Access JWT instead.
+      const access = ctx.access && !!env.ACCESS_AUD && ctx.access.aud === env.ACCESS_AUD ? ctx.access : undefined;
+      const preview = access ? null : await previewAccess(req, env);
+      if (!access && !preview && ctx.access && !env.ACCESS_AUD) {
+        return notice(req, 403, "Finish setup", "Cloudflare Access signed you in, but this shelf doesn't know its Access app yet. Run pnpm run setup:access (see the README); it stores the app's audience on the Worker.");
+      }
+      if (!access && !preview) return notice(req, 403, "Sign-in required", "The dashboard is behind Cloudflare Access, and this request didn't come through it. See the README to set it up.");
       if (path === "/dashboard" && req.method === "GET") return dashboardPage(req);
       if (req.method === "GET" && (m = path.match(/^\/dashboard\/open(\/([A-Za-z0-9-]{1,64})(?:@\d{1,9})?(?:\/.*)?)$/))) {
         return ownerOpen(req, env, m[2], `/view${m[1]}`);
@@ -70,7 +75,8 @@ export default {
         // CSRF: browsers always send Origin on non-GET requests, and a sandboxed doc sends "null".
         if (req.method !== "GET" && req.headers.get("origin") !== url.origin) return json({ error: "cross-origin request refused" }, 403);
         const sub = path.slice("/dashboard".length);
-        if (req.method === "GET" && sub === "/api/me") return json({ email: ctx.access ? ((await ctx.access.getIdentity())?.email ?? null) : preview!.email });
+        // `logout`: where the self-hosted server signs out (selfhost/server.ts); Access deployments have none.
+        if (req.method === "GET" && sub === "/api/me") return json({ email: access ? ((await access.getIdentity())?.email ?? null) : preview!.email, logout: (env as Env & { LOGOUT?: string }).LOGOUT ?? null });
         if (req.method === "GET" && sub === "/api/keys") return listKeys(env);
         if (req.method === "POST" && sub === "/api/keys") return createKey(req, env);
         if (req.method === "GET" && (m = sub.match(/^\/api\/keys\/(k_[A-Za-z0-9]{1,32})$/))) return getKey(env, m[1]);

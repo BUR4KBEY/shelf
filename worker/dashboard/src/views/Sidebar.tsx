@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ChartColumn, Clock, Lock, Monitor, Moon, PanelLeftClose, Rows3, Search, Settings, Star, Sun } from "lucide-react";
+import { ChartColumn, Clock, Lock, LogOut, Monitor, Moon, PanelLeftClose, Rows3, Search, Settings, Star, Sun } from "lucide-react";
+import { toast } from "sonner";
 import { AnimatePresence, motion } from "motion/react";
 import { Logo, Tip, display, focusRing, groupName } from "@/components/bits";
 import { isExpired } from "@/components/DocBits";
@@ -43,7 +44,7 @@ export function ThemeSwitch({ className }: { className?: string }) {
 }
 
 /** Every key, and the docs that matter now, always in reach. The log shows what happened; this shows what there is. */
-export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; colorOf: (keyId: string | null) => string; openId?: string; openKey?: string; settings: boolean; analytics: boolean; email: string; onNavigate: () => void; onKeysChanged: () => void; onCollapse: () => void; onSearch: () => void }) {
+export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; colorOf: (keyId: string | null) => string; openId?: string; openKey?: string; settings: boolean; analytics: boolean; email: string; logout: string | null; onNavigate: () => void; onKeysChanged: () => void; onCollapse: () => void; onSearch: () => void }) {
   const [showExpired, setShowExpired] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const isOpen = (d: Doc) => d.id === props.openId || (d.slug !== null && d.slug === props.openId);
@@ -160,9 +161,19 @@ export function Sidebar(props: { docs: Doc[]; uploads: Activity[]; keys: Key[]; 
       </section>
 
       <div className="mt-auto flex items-center justify-between gap-3">
-        <p className="truncate text-[0.8125rem] text-muted-foreground" title={props.email}>
-          {props.email}
-        </p>
+        <div className="flex min-w-0 items-center gap-1">
+          <p className="truncate text-[0.8125rem] text-muted-foreground" title={props.email}>
+            {props.email}
+          </p>
+          {props.logout && (
+            <Tip label="Sign out">
+              {/* fetch, not a form: the dashboard's CSP has form-action 'none'. The server redirects to its sign-in page. */}
+              <button type="button" aria-label="Sign out" onClick={() => fetch(props.logout!, { method: "POST" }).then((r) => (r.ok ? location.assign(r.url) : toast.error("Couldn't sign out.")), () => toast.error("Couldn't sign out."))} className={cn(focusRing, "grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:text-foreground max-lg:size-9")}>
+                <LogOut className="size-3.5" aria-hidden />
+              </button>
+            </Tip>
+          )}
+        </div>
         <ThemeSwitch />
       </div>
     </div>
