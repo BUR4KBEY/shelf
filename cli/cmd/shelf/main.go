@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -26,6 +27,13 @@ import (
 )
 
 var version = "dev"
+
+func init() {
+	// `go install …@v1.2.3` builds without the release's -ldflags; the module version is the same tag.
+	if info, ok := debug.ReadBuildInfo(); ok && version == "dev" && strings.HasPrefix(info.Main.Version, "v") {
+		version = strings.TrimPrefix(info.Main.Version, "v")
+	}
+}
 
 const usage = `shelf shares files and folders from your own shelf server.
 
