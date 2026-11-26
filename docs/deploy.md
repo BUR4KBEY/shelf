@@ -34,7 +34,7 @@ docker run -d --name shelf --restart unless-stopped -p 8080:8080 -v shelf-data:/
   ghcr.io/bur4kbey/shelf:latest
 ```
 
-Open `http://localhost:8080/dashboard` and sign in with `SHELF_PASSWORD`; that password is what Cloudflare Access does on Cloudflare. **Sign out** (next to your name at the bottom of the sidebar) signs every browser out, including any copy of the cookie someone else holds: it replaces the session key in the data volume. Everything else (the API, the CLI, MCP, `/view`) works as on Cloudflare: point the CLI at your URL. `--restart unless-stopped` brings shelf back after a reboot, and `docker ps` shows it `healthy` once it answers requests.
+Open `http://localhost:8080/dashboard` and sign in with `SHELF_PASSWORD`; that password is what Cloudflare Access does on Cloudflare. **Sign out** (next to your name at the bottom of the sidebar) signs every browser out, including any copy of the cookie someone else holds: it replaces the session key in the data volume. Everything else (the API, the CLI, MCP, `/view`) works as on Cloudflare: point the CLI at your URL. `--restart unless-stopped` brings shelf back after a reboot, and `docker ps` shows it `healthy` once it answers requests, `/data` is writable and the database reads. When it says `unhealthy`, `docker inspect --format '{{range .State.Health.Log}}{{.Output}}{{end}}' shelf` lists each check (`server`, `storage`, `database`) and which one failed.
 
 | Variable | |
 |---|---|

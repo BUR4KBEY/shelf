@@ -23,13 +23,12 @@ RUN bun selfhost/build.ts
 
 FROM oven/bun:1.4.5-slim@sha256:b780593f3e10918cbdaec3d5a08d52224b9198069a65eb47812085c2ec007643
 WORKDIR /app
-COPY --from=bundle /app/selfhost/dist/server.js ./
+COPY --from=bundle /app/selfhost/dist/server.js /app/selfhost/health.ts ./
 RUN mkdir /data && chown bun:bun /data
 USER bun
 ENV NODE_ENV=production SHELF_DATA=/data PORT=8080
 VOLUME /data
 EXPOSE 8080
-# `docker ps` shows healthy once the server answers. The slim image has no curl; bun's fetch does the same.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-  CMD ["bun", "-e", "fetch(`http://localhost:${process.env.PORT}/llms.txt`).then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+# `docker ps` shows healthy once the server answers and /data and the database work; the check's log says which failed.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD ["bun", "health.ts"]
 CMD ["bun", "server.js"]
