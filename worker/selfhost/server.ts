@@ -27,7 +27,13 @@ if (PASSWORD.length < 12) {
   process.exit(1);
 }
 
-await mkdir(join(DATA, "blobs"), { recursive: true });
+// A bind-mounted directory owned by another user fails here; say how to fix it instead of printing a stack trace.
+await mkdir(join(DATA, "blobs"), { recursive: true }).catch((e) => {
+  if (e.code !== "EACCES") throw e;
+  const id = `${process.getuid!()}:${process.getgid!()}`;
+  console.error(`${DATA} isn't writable by ${id} (uid:gid), the user shelf runs as. For a bind mount: sudo chown -R ${id} <the host directory>`);
+  process.exit(1);
+});
 // No upload runs before the server starts, so any temporary file is one a crash left half-written.
 await removeTempFiles(join(DATA, "blobs"));
 const db = openDb(join(DATA, "shelf.db"), migrations);
