@@ -63,10 +63,12 @@ export default {
       // another app covering the host admits people who must not own the shelf. Previews check the Access JWT instead.
       const access = ctx.access && !!env.ACCESS_AUD && ctx.access.aud === env.ACCESS_AUD ? ctx.access : undefined;
       const preview = access ? null : await previewAccess(req, env);
+      // Only an owner mid-setup lands here, so the card links straight to the setup steps.
+      const setup = `<a href="${REPO_URL}/blob/main/docs/deploy.md">Setup steps in shelf's docs</a>`;
       if (!access && !preview && ctx.access && !env.ACCESS_AUD) {
-        return notice(req, 403, "Finish setup", "Cloudflare Access signed you in, but this shelf doesn't know its Access app yet. Run pnpm run setup:access (see the README); it stores the app's audience on the Worker.");
+        return notice(req, 403, "Finish setup", "Cloudflare Access signed you in, but this shelf doesn't know its Access app yet. Run pnpm run setup:access; it stores the app's audience on the Worker.", setup);
       }
-      if (!access && !preview) return notice(req, 403, "Sign-in required", "The dashboard is behind Cloudflare Access, and this request didn't come through it. See the README to set it up.");
+      if (!access && !preview) return notice(req, 403, "Sign-in required", "The dashboard is behind Cloudflare Access, and this request didn't come through it.", setup);
       if (path === "/dashboard" && req.method === "GET") return dashboardPage(req);
       if (req.method === "GET" && (m = path.match(/^\/dashboard\/open(\/([A-Za-z0-9-]{1,64})(?:@\d{1,9})?(?:\/.*)?)$/))) {
         return ownerOpen(req, env, m[2], `/view${m[1]}`);
