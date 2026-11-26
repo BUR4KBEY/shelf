@@ -105,7 +105,7 @@ nix profile install github:BUR4KBEY/shelf   # or try it: nix run github:BUR4KBEY
 yay -S shelf-cli-bin                         # Arch (AUR); shelf-bin is a different tool
 ```
 
-Nix and the AUR install the release's prebuilt binary for Linux (x86_64, aarch64, armv7) and, with Nix, macOS (x86_64, aarch64). Each release tag commits the new `nix/package.nix` to `main`, so the flake installs nothing until the first release. It also publishes `shelf-cli-bin` to the AUR when the repo has an `AUR_KEY` secret: the private SSH key of the AUR account that owns the package.
+Nix and the AUR install the release's prebuilt binary for Linux (x86_64, aarch64, armv7) and, with Nix, macOS (x86_64, aarch64). Only the latest stable release updates them; a pre-release or a patch to an older line doesn't. Each such release commits the new `nix/package.nix` to `main` through the `NIX_DEPLOY_KEY` secret, a write deploy key that `main`'s ruleset lets bypass PRs, so the flake installs nothing until the first release. It also publishes `shelf-cli-bin` to the AUR when the repo has an `AUR_KEY` secret: the private SSH key of the AUR account that owns the package.
 
 ```sh
 shelf login                                  # server URL + API key, saved to ~/.config/shelf (0600)
