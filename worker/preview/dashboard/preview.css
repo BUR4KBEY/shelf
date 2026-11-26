@@ -6,6 +6,12 @@
   --banner: 2.5rem;
   scroll-padding-top: var(--banner);
 }
+/* From sm up the banner's text takes two lines. */
+@media (width >= 40rem) {
+  :root {
+    --banner: 3.5rem;
+  }
+}
 @media (width < 64rem) {
   :root {
     scroll-padding-top: calc(var(--banner) + 3.5rem);
