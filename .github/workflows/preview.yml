@@ -13,7 +13,7 @@ on:
         type: number
         required: true
       sha:
-        description: The commit you reviewed (at least 7 characters); it must still be the PR's head
+        description: The full 40-character id of the commit you reviewed; it must still be the PR's head
         type: string
         required: true
   # Runs the base branch's workflow with secrets so fork previews get deleted too. Never checks out PR code.
@@ -24,9 +24,8 @@ permissions:
   contents: read
   pull-requests: read
 
+# The Cloudflare token goes only to the jobs that call wrangler (deploy, cleanup), never to target or report.
 env:
-  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
   GH_REPO: ${{ github.repository }}
   RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
@@ -57,14 +56,16 @@ jobs:
           pr=$(gh pr view "$PR" --json headRefOid,title)
           head=$(jq -r .headRefOid <<< "$pr")
           # Only the commit you reviewed: if the author pushed since, the head no longer matches.
-          if [[ ! "$SHA" =~ ^[0-9a-f]{7,40}$ || "$head" != "$SHA"* ]]; then
-            msg="Not deploying \`${SHA:-no commit}\`: give the commit you reviewed. This PR's head is now ${head:0:7}."
+          # The full id: a short prefix can be matched by another commit made to share it.
+          if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ || "$head" != "$SHA" ]]; then
+            msg="Not deploying \`${SHA:-no commit}\`: give the full id of the commit you reviewed. This PR's head is now $head."
             [ -z "$COMMENT" ] || gh pr comment "$PR" --body "$msg"
             echo "::error::$msg"
             exit 1
           fi
           gh api "repos/$GH_REPO/statuses/$head" -f state=pending -f context=preview -f description=Deploying -f target_url="$RUN_URL" > /dev/null
-          { echo "pr=$PR"; echo "sha=$head"; echo "title=$(jq -r .title <<< "$pr")"; } >> "$GITHUB_OUTPUT"
+          # A newline in the title would start a new output line, so it could set sha= itself.
+          { echo "pr=$PR"; echo "sha=$head"; echo "title=$(jq -r '.title | gsub("[\r\n]"; " ")' <<< "$pr")"; } >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: target
@@ -72,6 +73,8 @@ jobs:
     concurrency:
       group: preview-${{ needs.target.outputs.pr }}
     env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       PREVIEW: pr-${{ needs.target.outputs.pr }}
     defaults:
       run:
@@ -79,19 +82,18 @@ jobs:
     outputs:
       url: ${{ steps.preview.outputs.url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.target.outputs.sha }}
           # PR code runs with the Cloudflare token; don't hand it a GitHub one in .git/config too.
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           package_json_file: worker/package.json
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 26
-          cache: pnpm
-          cache-dependency-path: worker/pnpm-lock.yaml
+          node-version: 26.13.1
+          # No cache: this job runs PR code, and a cache it saves would be restored by main's workflows.
       - run: pnpm install --frozen-lockfile
       # Every preview shares the shelf-preview database, so this PR's migrations land there for all previews.
       - run: pnpm exec wrangler d1 migrations apply DB --remote --config wrangler.preview-migrations.jsonc
@@ -134,6 +136,8 @@ jobs:
     concurrency:
       group: preview-${{ github.event.pull_request.number }}
     env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       PR: ${{ github.event.pull_request.number }}
       PREVIEW: pr-${{ github.event.pull_request.number }}
     defaults:
@@ -141,17 +145,16 @@ jobs:
         working-directory: worker
     steps:
       # The base branch, not the PR: this job has secrets for every PR, forks included.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           package_json_file: worker/package.json
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 26
-          cache: pnpm
-          cache-dependency-path: worker/pnpm-lock.yaml
+          node-version: 26.13.1
+          # No cache: one a PR's deploy run planted would run here with the Cloudflare token.
       # Only PRs that got a preview have the bot's comment; skip the rest.
       - run: |
           n=$(gh pr view "$PR" --json comments --jq '[.comments[] | select((.author.login | startswith("github-actions")) and (.body | startswith("Preview ")))] | length')

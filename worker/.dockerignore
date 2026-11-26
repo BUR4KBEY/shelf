@@ -3,3 +3,8 @@ node_modules
 src/dashboard.html
 selfhost/dist
 preview/dist
+# Local secrets: the build stage copies the whole folder.
+.env
+.env.*
+.dev.vars
+.dev.vars.*
