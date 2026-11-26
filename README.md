@@ -125,7 +125,7 @@ Setup for each client: [docs/agents.md](docs/agents.md).
 docker run -d --name shelf --restart unless-stopped -p 8080:8080 -v shelf-data:/data -e SHELF_PASSWORD='a long password' ghcr.io/bur4kbey/shelf:latest
 ```
 
-Behind a reverse proxy or tunnel? Add `-e SHELF_TRUST_PROXY=1`.
+Behind a reverse proxy or tunnel? Add `-e SHELF_TRUST_PROXY=1`, and publish the port only to the proxy (`-p 127.0.0.1:8080:8080`): anyone who reaches it directly could then forge their IP and get around the rate limits.
 
 Full steps for both: [docs/deploy.md](docs/deploy.md).
 
