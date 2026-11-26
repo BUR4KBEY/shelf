@@ -29,4 +29,7 @@ USER bun
 ENV NODE_ENV=production SHELF_DATA=/data PORT=8080
 VOLUME /data
 EXPOSE 8080
+# `docker ps` shows healthy once the server answers. The slim image has no curl; bun's fetch does the same.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
+  CMD ["bun", "-e", "fetch(`http://localhost:${process.env.PORT}/llms.txt`).then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
 CMD ["bun", "server.js"]

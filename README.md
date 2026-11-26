@@ -122,7 +122,7 @@ Setup for each client: [docs/agents.md](docs/agents.md).
 **Docker:** run one container.
 
 ```sh
-docker run -d -p 8080:8080 -v shelf-data:/data -e SHELF_PASSWORD='a long password' ghcr.io/bur4kbey/shelf:latest
+docker run -d --name shelf --restart unless-stopped -p 8080:8080 -v shelf-data:/data -e SHELF_PASSWORD='a long password' ghcr.io/bur4kbey/shelf:latest
 ```
 
 Full steps for both: [docs/deploy.md](docs/deploy.md).
