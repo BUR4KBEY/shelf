@@ -144,7 +144,7 @@ const server = Bun.serve({
 });
 
 // The daily cron (wrangler.jsonc `triggers`), on the same schedule so Settings → Cleanup shows the right next run.
-const CRON = "17 3 * * *";
+const CRON = "0 0 * * *";
 function scheduleCleanup() {
   const [minute, hour] = CRON.split(" ").map(Number);
   const next = new Date();
