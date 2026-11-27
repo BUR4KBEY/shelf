@@ -9,24 +9,24 @@
 let
   inherit (stdenvNoCC.hostPlatform) system;
   shaMap = {
-    x86_64-linux = "014bwlvr1ld3hkqyvi24whip8cjlk9zyfnsxi9ry8av23r1yycw3";
-    armv7l-linux = "15c81n4yv43q3i440iv55s3rf0jjf3cj801kd9l5yzrxljkqrn84";
-    aarch64-linux = "0jp63f1nl5a1piy6rd77kx7fvhayip1kp4glwn1rh7vxqwnnzxxf";
-    x86_64-darwin = "0vw11gggy1lklxa4b4ywwrrcqja8974xlmjv0s95a5z2lhkv537m";
-    aarch64-darwin = "0vnqnm00f2ag3mj4y4m84y6h7fisvh2jdjvcp9ncs8ghcrv328pv";
+    x86_64-linux = "0kcflq6rbrbnizssbbvab6lg162lgnw1192aycrsr17f92vvxq0x";
+    armv7l-linux = "05ffixhmpgra9cji0vi1kxqcmswrdi45qqv35h93dihzvpkpvnqc";
+    aarch64-linux = "0m2yqdrlr3z7fny59gjdnhxsf5mqhggabvs8spsqm7axcf5xdcmd";
+    x86_64-darwin = "1mmn3mnsfjnm1y67kfsqpk8ybjfpwnqp02fpa6xkakw5khbh9l1m";
+    aarch64-darwin = "1fd3y6qngmg0qf2h1an4nbrmpp7mfd0fibfvsz1qs1sachcljd4x";
   };
 
   urlMap = {
-    x86_64-linux = "https://github.com/BUR4KBEY/shelf/releases/download/v0.2.0/shelf_0.2.0_linux_amd64.tar.gz";
-    armv7l-linux = "https://github.com/BUR4KBEY/shelf/releases/download/v0.2.0/shelf_0.2.0_linux_armv7.tar.gz";
-    aarch64-linux = "https://github.com/BUR4KBEY/shelf/releases/download/v0.2.0/shelf_0.2.0_linux_arm64.tar.gz";
-    x86_64-darwin = "https://github.com/BUR4KBEY/shelf/releases/download/v0.2.0/shelf_0.2.0_darwin_amd64.tar.gz";
-    aarch64-darwin = "https://github.com/BUR4KBEY/shelf/releases/download/v0.2.0/shelf_0.2.0_darwin_arm64.tar.gz";
+    x86_64-linux = "https://github.com/BUR4KBEY/shelf/releases/download/v0.2.1/shelf_0.2.1_linux_amd64.tar.gz";
+    armv7l-linux = "https://github.com/BUR4KBEY/shelf/releases/download/v0.2.1/shelf_0.2.1_linux_armv7.tar.gz";
+    aarch64-linux = "https://github.com/BUR4KBEY/shelf/releases/download/v0.2.1/shelf_0.2.1_linux_arm64.tar.gz";
+    x86_64-darwin = "https://github.com/BUR4KBEY/shelf/releases/download/v0.2.1/shelf_0.2.1_darwin_amd64.tar.gz";
+    aarch64-darwin = "https://github.com/BUR4KBEY/shelf/releases/download/v0.2.1/shelf_0.2.1_darwin_arm64.tar.gz";
   };
 in
 stdenvNoCC.mkDerivation {
   pname = "shelf";
-  version = "0.2.0";
+  version = "0.2.1";
   src = fetchurl {
     url = urlMap.${system};
     sha256 = shaMap.${system};
