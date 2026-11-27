@@ -18,12 +18,12 @@ async function docRoutes(req: Request, env: Env, path: string, caller: Caller | 
   if (req.method === "GET" && path === "/api/docs") return listDocs(req, env, scope);
   if (req.method === "GET" && path === "/api/uploads") return listUploads(env, scope);
   if (req.method === "POST" && path === "/api/docs/bulk") return bulkDocs(req, env, caller);
-  if ((m = path.match(/^\/api\/docs\/([A-Za-z0-9-]{1,64})$/))) {
+  if ((m = path.match(/^\/api\/docs\/([A-Za-z0-9-]{1,128})$/))) {
     if (req.method === "GET") return getDoc(req, env, m[1], scope);
     if (req.method === "PATCH") return patchDoc(req, env, m[1], caller);
     if (req.method === "DELETE") return deleteDoc(env, m[1], caller);
   }
-  if (req.method === "PATCH" && (m = path.match(/^\/api\/docs\/([A-Za-z0-9-]{1,64})\/versions$/))) return patchVersions(req, env, m[1], caller);
+  if (req.method === "PATCH" && (m = path.match(/^\/api\/docs\/([A-Za-z0-9-]{1,128})\/versions$/))) return patchVersions(req, env, m[1], caller);
 }
 
 export default {
@@ -32,7 +32,7 @@ export default {
     const path = url.pathname;
     let m: RegExpMatchArray | null;
 
-    if ((m = path.match(/^\/view\/([A-Za-z0-9-]{1,64})(?:@(\d{1,9}))?(\/.*)?$/))) {
+    if ((m = path.match(/^\/view\/([A-Za-z0-9-]{1,128})(?:@(\d{1,9}))?(\/.*)?$/))) {
       const [, ref, pin, rest] = m;
       if (req.method === "POST" && rest === "/unlock" && !pin) return unlock(req, env, ref);
       if (req.method === "GET" || req.method === "HEAD") return view(req, env, ctx, ref, pin ? Number(pin) : undefined, rest);
@@ -70,7 +70,7 @@ export default {
       }
       if (!access && !preview) return notice(req, 403, "Sign-in required", "The dashboard is behind Cloudflare Access, and this request didn't come through it.", setup);
       if (path === "/dashboard" && req.method === "GET") return dashboardPage(req);
-      if (req.method === "GET" && (m = path.match(/^\/dashboard\/open(\/([A-Za-z0-9-]{1,64})(?:@\d{1,9})?(?:\/.*)?)$/))) {
+      if (req.method === "GET" && (m = path.match(/^\/dashboard\/open(\/([A-Za-z0-9-]{1,128})(?:@\d{1,9})?(?:\/.*)?)$/))) {
         return ownerOpen(req, env, m[2], `/view${m[1]}`);
       }
       if (path.startsWith("/dashboard/api/")) {

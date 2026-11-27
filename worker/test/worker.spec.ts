@@ -793,6 +793,13 @@ describe("dashboard", () => {
       expect(await (await patchApp({ maxSlugLength: 64 })).json()).toMatchObject({ maxSlugLength: 64 });
       expect((await withSlug("a".repeat(64))).status).toBe(200);
       expect((await withSlug("b".repeat(65))).status).toBe(400);
+      // The longest slug the owner may allow still opens at /view, the unlock form and the API.
+      await patchApp({ maxSlugLength: 128 });
+      const long = (await publish({ "long.html": "long slug" }, { slug: "c".repeat(128), password: "hunter22" })).slug!;
+      expect(await (await get(`/view/${long}`, { headers: { "x-doc-password": "hunter22" } })).text()).toBe("long slug");
+      const unlocked = await get(`/view/${long}/unlock`, { method: "POST", body: new URLSearchParams({ password: "hunter22" }) });
+      expect(unlocked.status).toBe(303);
+      expect((await api(`/api/docs/${long}`)).status).toBe(200);
       await patchApp({ maxSlugLength: 3 });
       expect((await withSlug("abcd")).status).toBe(400);
     } finally {

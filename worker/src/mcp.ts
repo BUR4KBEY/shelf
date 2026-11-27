@@ -168,7 +168,7 @@ async function readDoc(env: Env, caller: Caller, args: Args) {
 
 async function callTool(req: Request, env: Env, caller: Caller, name: unknown, args: Args) {
   const r = typeof args.ref === "string" ? args.ref : "";
-  if (name !== "publish" && name !== "list_docs" && name !== "read_doc" && !/^[A-Za-z0-9-]{1,64}$/.test(r)) return text("ref required", true);
+  if (name !== "publish" && name !== "list_docs" && name !== "read_doc" && !/^[A-Za-z0-9-]{1,128}$/.test(r)) return text("ref required", true);
   switch (name) {
     case "publish":
       return publish(req, env, caller, args);
